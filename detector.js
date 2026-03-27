@@ -187,6 +187,96 @@ export class LocationDetector {
             }
         }
 
+        // 방법 3: 영어 패턴 — 2단계 감지
+        // Step A: 이동 동사 + "the" + (형용사 무시) + 장소 명사 추출
+        // Step B: 장소성 단어(hall, room, station 등)로 필터
+
+        // 장소성 단어 목록 — 이 단어가 포함되면 장소로 인정
+        const placeWords = [
+            'hall', 'room', 'house', 'home', 'office', 'station', 'tower', 'castle',
+            'church', 'temple', 'shrine', 'school', 'academy', 'university', 'college',
+            'library', 'museum', 'hospital', 'clinic', 'shop', 'store', 'market',
+            'cafe', 'restaurant', 'bar', 'pub', 'tavern', 'inn', 'hotel',
+            'park', 'garden', 'forest', 'beach', 'lake', 'river', 'mountain',
+            'street', 'road', 'alley', 'bridge', 'gate', 'plaza', 'square',
+            'palace', 'manor', 'mansion', 'apartment', 'building', 'floor',
+            'kitchen', 'bedroom', 'bathroom', 'basement', 'attic', 'garage',
+            'gym', 'arena', 'stadium', 'court', 'field', 'ground',
+            'base', 'camp', 'bunker', 'barracks', 'armory', 'quarters',
+            'lab', 'laboratory', 'workshop', 'studio', 'warehouse',
+            'prison', 'cell', 'dungeon', 'cave', 'ruins',
+            'dock', 'port', 'harbor', 'airport', 'terminal',
+            'lounge', 'lobby', 'corridor', 'chamber',
+        ];
+
+        // 이동 동사 패턴 (동사 + the/a + ... + 장소 후보)
+        const engMoveVerbs = [
+            'headed to', 'walked to', 'went to', 'arrived at', 'moved to',
+            'returned to', 'ran to', 'rushed to', 'hurried to',
+            'entered', 'reached', 'left', 'marched to', 'marches to',
+            'stepped into', 'burst into', 'barged into',
+            'bang open into', 'open into',
+        ];
+
+        // 이동 동사가 문단에 있는지 + "into/inside/toward" 포함
+        const hasEngMove = engMoveVerbs.some(v => narrative.toLowerCase().includes(v)) ||
+            /\b(?:into|inside|toward|towards)\b/i.test(narrative);
+
+        if (hasEngMove) {
+            // 문장 단위로 쪼개서 검색
+            const sentences = narrative.split(/[.!?]+/).filter(s => s.trim());
+            for (const sent of sentences) {
+                const lower = sent.toLowerCase();
+
+                // 이 문장에 이동 표현이 있는지
+                const sentHasMove = engMoveVerbs.some(v => lower.includes(v)) ||
+                    /\b(?:into|inside|toward|towards)\b/.test(lower);
+                if (!sentHasMove) continue;
+
+                // 장소성 단어 찾기 (whole word 매칭)
+                for (const pw of placeWords) {
+                    const pwRegex = new RegExp('\\b' + pw + '(?:s)?\\b', 'i');
+                    const pwMatch = lower.match(pwRegex);
+                    if (!pwMatch) continue;
+                    const pwIdx = pwMatch.index;
+
+                    // pw 앞쪽에서 장소 전체 이름 추출 (최대 3단어)
+                    const beforePw = sent.substring(0, pwIdx).trim();
+                    const words = beforePw.split(/\s+/).filter(Boolean);
+
+                    // 실제 매칭된 단어 사용 (barracks 등 복수형 보존)
+                    const actualPw = sent.substring(pwIdx, pwIdx + pwMatch[0].length).trim();
+                    let placeName = actualPw;
+                    const modifiers = words.slice(-2);
+                    // 형용사/관사/동사/전치사 제거
+                    const skipMods = ['the', 'a', 'an', 'this', 'that', 'its', 'his', 'her', 'their', 'my', 'our',
+                        'old', 'new', 'big', 'small', 'dark', 'bright', 'lit', 'large', 'little',
+                        'metal', 'wooden', 'stone', 'steel', 'stainless', 'plastic', 'heavy',
+                        'entered', 'reached', 'left', 'to', 'at', 'into', 'from', 'of', 'in', 'on',
+                        'toward', 'towards', 'inside', 'through', 'open'];
+                    const goodMods = modifiers.filter(m =>
+                        !skipMods.includes(m.toLowerCase()) &&
+                        !m.includes('-') &&
+                        m.length > 1
+                    );
+
+                    if (goodMods.length > 0) {
+                        placeName = goodMods.join(' ') + ' ' + actualPw;
+                    }
+
+                    // 첫 글자 대문자
+                    placeName = placeName.charAt(0).toUpperCase() + placeName.slice(1);
+
+                    if (placeName.length >= 3 && placeName.length <= 30) {
+                        if (!this.lm.findByName(placeName)) {
+                            console.log(`[${EXTENSION_NAME}] New place candidate (eng): "${placeName}"`);
+                            return placeName;
+                        }
+                    }
+                }
+            }
+        }
+
         return null;
     }
 
