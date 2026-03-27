@@ -277,8 +277,59 @@ export class LocationDetector {
             }
         }
 
+        // 방법 4: 영어 존재/묘사 표현 — 이미 장소 안에 있는 경우
+        // "in the mess hall", "the smell of the kitchen", "sitting in the library"
+        const engPresencePatterns = [
+            /\b(?:in|inside|within|at)\s+(?:the\s+)?(?:[a-z-]+\s+)?/gi,  // "in the fluorescent-lit mess hall"
+            /\b(?:of|around)\s+(?:the\s+)?(?:[a-z-]+\s+)?/gi,            // "smell of the mess hall"
+        ];
+
+        // 장소성 단어가 텍스트에 하나라도 있으면 존재 감지 시도
+        const allSentences = narrative.split(/[.!?]+/).filter(s => s.trim());
+        for (const sent of allSentences) {
+            const lower = sent.toLowerCase();
+
+            // 이미 이동 감지에서 처리된 문장이면 스킵
+            const sentHasMove = engMoveVerbs.some(v => lower.includes(v)) ||
+                /\b(?:into|toward|towards)\b/.test(lower);
+            if (sentHasMove) continue;
+
+            // 존재 표현이 있는지 — 넓은 범위: "the [place]" 자체도 존재로 판단
+            const hasPresence = /\b(?:in|inside|within|at|of|around)\s+(?:the|a)\b/i.test(lower) ||
+                /\bthe\s+(?:[a-z-]+\s+)?/.test(lower);
+            if (!hasPresence) continue;
+
+            for (const pw of placeWords) {
+                const pwRegex = new RegExp('\\b' + pw + '(?:s)?\\b', 'i');
+                const pwMatch = lower.match(pwRegex);
+                if (!pwMatch) continue;
+                const pwIdx = pwMatch.index;
+
+                const beforePw = sent.substring(0, pwIdx).trim();
+                const words = beforePw.split(/\s+/).filter(Boolean);
+                const actualPw = sent.substring(pwIdx, pwIdx + pwMatch[0].length).trim();
+                let placeName = actualPw;
+                const modifiers = words.slice(-2);
+                const skipMods2 = ['the', 'a', 'an', 'this', 'that', 'its', 'his', 'her', 'their', 'my', 'our',
+                    'old', 'new', 'big', 'small', 'dark', 'bright', 'lit', 'large', 'little',
+                    'metal', 'wooden', 'stone', 'steel', 'stainless', 'plastic', 'heavy',
+                    'in', 'at', 'of', 'on', 'inside', 'within', 'around', 'from', 'through'];
+                const goodMods2 = modifiers.filter(m =>
+                    !skipMods2.includes(m.toLowerCase()) && !m.includes('-') && m.length > 1
+                );
+                if (goodMods2.length > 0) placeName = goodMods2.join(' ') + ' ' + actualPw;
+                placeName = placeName.charAt(0).toUpperCase() + placeName.slice(1);
+
+                if (placeName.length >= 3 && placeName.length <= 30) {
+                    if (!this.lm.findByName(placeName)) {
+                        console.log(`[${EXTENSION_NAME}] New place candidate (eng-presence): "${placeName}"`);
+                        return placeName;
+                    }
+                }
+            }
+        }
+
         return null;
-    }
 
     /**
      * 장소명 후보 유효성 검사
