@@ -330,6 +330,7 @@ export class LocationDetector {
         }
 
         return null;
+    }
 
     /**
      * 장소명 후보 유효성 검사
