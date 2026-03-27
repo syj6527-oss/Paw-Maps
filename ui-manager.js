@@ -1,7 +1,7 @@
 // 🗺️ RP World Tracker — ui-manager.js
 // UI: 설정 패널, 사이드 패널, 팝오버, 장소 목록, 이동 히스토리
 
-import { extension_settings, saveMetadataDebounced } from '../../../extensions.js';
+import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
 import { EXTENSION_NAME } from './index.js';
 import { MapRenderer } from './map-renderer.js';

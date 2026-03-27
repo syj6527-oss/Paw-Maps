@@ -1,8 +1,17 @@
 // 🗺️ RP World Tracker — prompt-injector.js
 // AI 프롬프트에 현재 위치 데이터 주입 (Selective Injection)
 
-import { extension_settings, setExtensionPrompt } from '../../../extensions.js';
+import { extension_settings } from '../../../extensions.js';
 import { EXTENSION_NAME, PROMPT_KEY } from './index.js';
+
+// SillyTavern 버전에 따라 setExtensionPrompt 위치가 다름
+function getSetExtensionPrompt() {
+    try {
+        if (typeof window.setExtensionPrompt === 'function') return window.setExtensionPrompt;
+        if (typeof globalThis.setExtensionPrompt === 'function') return globalThis.setExtensionPrompt;
+    } catch (_) { /* silent */ }
+    return null;
+}
 
 export class PromptInjector {
     constructor(locationManager) {
@@ -14,16 +23,24 @@ export class PromptInjector {
      */
     inject() {
         const text = this.generate();
+        const fn = getSetExtensionPrompt();
         try {
-            setExtensionPrompt(PROMPT_KEY, text || '', 1, 0);
-            if (text) console.log(`[${EXTENSION_NAME}] Prompt injected (${text.length} chars)`);
+            if (fn) {
+                fn(PROMPT_KEY, text || '', 1, 0);
+                if (text) console.log(`[${EXTENSION_NAME}] Prompt injected (${text.length} chars)`);
+            } else {
+                console.warn(`[${EXTENSION_NAME}] setExtensionPrompt not available — prompt stored but not injected`);
+                this._lastPrompt = text;
+            }
         } catch (e) {
-            console.warn(`[${EXTENSION_NAME}] Prompt injection unavailable:`, e.message);
+            console.warn(`[${EXTENSION_NAME}] Prompt injection error:`, e.message);
         }
     }
 
     clear() {
-        try { setExtensionPrompt(PROMPT_KEY, '', 1, 0); } catch (_) { /* silent */ }
+        const fn = getSetExtensionPrompt();
+        try { if (fn) fn(PROMPT_KEY, '', 1, 0); } catch (_) { /* silent */ }
+        this._lastPrompt = '';
     }
 
     /**
