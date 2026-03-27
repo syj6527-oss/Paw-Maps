@@ -72,32 +72,26 @@ async function init() {
         promptInjector.inject();
     });
 
-    // AI 메시지 수신 — 장소 자동 감지 + 프롬프트 주입
-    eventSource.on(event_types.MESSAGE_RECEIVED, async (messageIndex) => {
+    // ============================================================
+    // 장소 감지 공통 함수
+    // ============================================================
+    async function scanMessage(text, source = 'ai') {
         try {
             const s = extension_settings[EXTENSION_NAME];
             if (!s?.enabled || !s?.autoDetect) return;
-
-            const context = getContext();
-            if (!context?.chat?.length) return;
+            if (!text?.trim()) return;
 
             // chatId 확보
             if (!locationManager.currentChatId) await locationManager.loadChat();
             if (!locationManager.currentChatId) return;
 
-            // 최신 AI 메시지
-            const msg = context.chat[messageIndex];
-            if (!msg || msg.is_user) return;
-            const text = msg.mes || '';
-            if (!text.trim()) return;
-
-            console.log(`[${EXTENSION_NAME}] Scanning msg #${messageIndex}...`);
+            console.log(`[${EXTENSION_NAME}] Scanning ${source} message (${text.length} chars)...`);
 
             // 1. 등록된 장소 감지
             const result = detector.detect(text);
             if (result) {
                 const { location, type, confidence } = result;
-                console.log(`[${EXTENSION_NAME}] Detected: "${location.name}" (${type}, ${confidence})`);
+                console.log(`[${EXTENSION_NAME}] ✅ Detected: "${location.name}" (${type}, ${confidence})`);
 
                 if (locationManager.currentLocationId !== location.id) {
                     await locationManager.moveTo(location.id);
@@ -119,13 +113,61 @@ async function init() {
             // 2. 미등록 장소 발견
             const newPlace = detector.detectNewPlace(text);
             if (newPlace) {
-                console.log(`[${EXTENSION_NAME}] New place found: "${newPlace}"`);
+                console.log(`[${EXTENSION_NAME}] 🆕 New place found: "${newPlace}"`);
                 uiManager.showNewPlaceToast(newPlace);
+            } else {
+                console.log(`[${EXTENSION_NAME}] ❌ No location detected`);
             }
 
         } catch (err) {
             console.error(`[${EXTENSION_NAME}] Detection error:`, err);
         }
+    }
+
+    // ============================================================
+    // Event Hooks
+    // ============================================================
+
+    // AI 메시지 수신
+    eventSource.on(event_types.MESSAGE_RECEIVED, async (messageIndex) => {
+        const context = getContext();
+        if (!context?.chat?.length) return;
+
+        // messageIndex가 숫자가 아닐 수 있음 (SillyTavern 버전 차이)
+        let msg;
+        if (typeof messageIndex === 'number') {
+            msg = context.chat[messageIndex];
+        } else {
+            // 최신 메시지 사용
+            msg = context.chat[context.chat.length - 1];
+        }
+
+        if (!msg) return;
+        console.log(`[${EXTENSION_NAME}] MESSAGE_RECEIVED — is_user: ${msg.is_user}, length: ${(msg.mes || '').length}`);
+
+        // AI 메시지만 처리
+        if (msg.is_user) return;
+        await scanMessage(msg.mes || '', 'ai');
+    });
+
+    // 유저 메시지 전송 후 — 인풋 감지
+    eventSource.on(event_types.MESSAGE_SENT, async (messageIndex) => {
+        const context = getContext();
+        if (!context?.chat?.length) return;
+
+        let msg;
+        if (typeof messageIndex === 'number') {
+            msg = context.chat[messageIndex];
+        } else {
+            // 최신 유저 메시지 찾기
+            for (let i = context.chat.length - 1; i >= 0; i--) {
+                if (context.chat[i].is_user) { msg = context.chat[i]; break; }
+            }
+        }
+
+        if (!msg || !msg.is_user) return;
+        console.log(`[${EXTENSION_NAME}] MESSAGE_SENT — length: ${(msg.mes || '').length}`);
+        await scanMessage(msg.mes || '', 'user');
     });
 
     // 메시지 전송 전 — 프롬프트 갱신
