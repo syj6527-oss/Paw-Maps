@@ -47,13 +47,6 @@ export class LocationDetector {
             '갈 거', '갈게', '가줄', '가는 게',
             'shall we', 'let\'s go', 'want to go', 'how about',
         ];
-
-        // 미등록 장소 추출용 패턴
-        this.newPlacePatterns = [
-            /(.{2,10})(?:으로|로)\s*(?:향했|갔다|걸어갔|이동했|달려갔|들어갔|돌아왔|출발)/,
-            /(.{2,10})에\s*(?:도착했|당도했|들어섰)/,
-            /(.{2,10})(?:을|를)\s*(?:나서|나섰|떠났)/,
-        ];
     }
 
     /**
@@ -144,24 +137,85 @@ export class LocationDetector {
             .replace(/「[^」]*」/g, ' ')
             .replace(/"[^"]*"/g, ' ');
 
-        for (const pattern of this.newPlacePatterns) {
-            const match = narrative.match(pattern);
-            if (match && match[1]) {
-                let candidate = match[1].trim();
-                // 불필요한 접두사 제거
-                candidate = candidate.replace(/^[,.\s그리고그러나하지만그래서]+/, '').trim();
-                if (candidate.length < 2 || candidate.length > 10) continue;
-                // 이미 등록된 장소면 스킵
-                if (this.lm.findByName(candidate)) continue;
-                // 일반 단어 필터 (대명사, 접속사 등)
-                const skipWords = ['그곳', '여기', '저기', '거기', '이곳', '저곳', '그녀', '그는', '그가', '나는'];
-                if (skipWords.includes(candidate)) continue;
+        // 방법 1: [장소]의/에/에서/으로 + 같은 문단에 이동 동사
+        const placeParticlePatterns = [
+            // "식당의", "카페에", "도서관에서", "교실로"
+            /([가-힣]{2,8})(?:의|에서|에|으로|로)\s/g,
+        ];
 
-                console.log(`[${EXTENSION_NAME}] New place candidate: "${candidate}"`);
-                return candidate;
+        const paragraphs = narrative.split(/\n+/);
+        for (const para of paragraphs) {
+            // 문단에 이동 키워드가 있는지 먼저 체크
+            const hasMove = this.moveKw.some(kw => para.includes(kw)) ||
+                /걸어[가간갔]|돌아[가간왔옴]|들어[가간서섰]|나[서섰왔]|향[하해했]/.test(para);
+            if (!hasMove) continue;
+
+            for (const pattern of placeParticlePatterns) {
+                pattern.lastIndex = 0;
+                let match;
+                while ((match = pattern.exec(para)) !== null) {
+                    let candidate = match[1].trim();
+                    // "으로" 조사 분리 보정: "축으" + "로" → "축"으로 클리닝
+                    candidate = candidate.replace(/으$/, '');
+                    if (this._isValidPlace(candidate)) {
+                        console.log(`[${EXTENSION_NAME}] New place candidate (particle): "${candidate}"`);
+                        return candidate;
+                    }
+                }
             }
         }
+
+        // 방법 2: 직접 패턴 — [장소]+이동동사 (과거/현재/진행형 모두)
+        const directPatterns = [
+            /([가-힣]{2,8})(?:으로|로)\s*(?:향하|가|갔|간다|걸어|이동|달려|뛰어|들어|나서|떠나|돌아|출발)/g,
+            /([가-힣]{2,8})에\s*(?:도착|당도|들어서|들어섰|왔다|갔다|간다|온다)/g,
+            /([가-힣]{2,8})(?:을|를)\s*(?:나서|나섰|떠나|떠났|빠져나)/g,
+            // 1글자 장소 (집으로, 방에 등)
+            /([가-힣])(?:으로|로)\s*(?:향하|가|갔|간다|걸어|이동|돌아|출발)/g,
+            /([가-힣])에\s*(?:도착|왔다|갔다|간다|들어)/g,
+        ];
+
+        for (const pattern of directPatterns) {
+            pattern.lastIndex = 0;
+            const match = pattern.exec(narrative);
+            if (match && match[1]) {
+                const candidate = match[1].trim();
+                if (this._isValidPlace(candidate)) {
+                    console.log(`[${EXTENSION_NAME}] New place candidate (direct): "${candidate}"`);
+                    return candidate;
+                }
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * 장소명 후보 유효성 검사
+     */
+    _isValidPlace(candidate) {
+        if (!candidate) return false;
+        // 1글자 장소 허용 목록
+        const singleCharPlaces = ['집', '방', '숲', '강', '산', '역', '관', '점', '원', '장'];
+        if (candidate.length === 1) return singleCharPlaces.includes(candidate);
+        if (candidate.length > 8) return false;
+        // 이미 등록된 장소면 스킵
+        if (this.lm.findByName(candidate)) return false;
+        // 일반 단어 / 대명사 / 관형어 필터
+        const skipWords = [
+            '그곳', '여기', '저기', '거기', '이곳', '저곳', '어디',
+            '그녀', '그는', '그가', '나는', '우리', '너는',
+            '자신', '상대', '서로', '모두', '누군',
+            '이쪽', '저쪽', '그쪽', '앞쪽', '뒤쪽', '양쪽',
+            '한쪽', '바닥', '천장', '벽면', '구석', '가장',
+            '순간', '갑자', '아까', '지금', '오늘', '내일',
+            '이중문', '출입문', '철문', '나무문', '유리문',
+            '계단', '복도', '통로', '모퉁이',
+        ];
+        if (skipWords.includes(candidate)) return false;
+        // 한 글자 받침 없는 단어 제외 (조사 오탐 방지)
+        if (candidate.length === 2 && /[을를이가에]$/.test(candidate)) return false;
+        return true;
     }
 
     // ---- Helpers ----
