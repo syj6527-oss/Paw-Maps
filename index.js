@@ -146,6 +146,10 @@ async function init() {
 
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         pi.clear(); lastId = null;
+        // 타이밍: SillyTavern이 chatId 갱신할 때까지 대기
+        await new Promise(r => setTimeout(r, 200));
+        const newId = lm.getChatId();
+        dbg(`🔄 CHAT_CHANGED → ${newId}`);
         await lm.loadChat();
         pi.inject();
         if (ui.panelVisible) ui.refresh();
@@ -171,9 +175,19 @@ async function scanContext() {
         if (!s?.enabled || !s?.autoDetect || !lm.currentChatId) return;
         const ctx = getContext();
         if (!ctx?.characterId) return;
+
+        // 이미 장소 있으면 스킵
+        if (lm.locations.length > 0 && lm.currentLocationId) return;
+
+        // 1차: 기존 채팅 히스토리 전체 스캔 (진행 중인 채팅에 확장 설치 시)
+        if (ctx.chat?.length > 1) {
+            const found = await scanChatHistory(ctx);
+            if (found) return;
+        }
+
+        // 2차: 캐릭터 설명/시나리오에서 추출
         const char = ctx.characters?.[ctx.characterId];
         if (!char) return;
-
         const sources = [];
         if (char.description) sources.push(char.description);
         if (char.scenario) sources.push(char.scenario);
@@ -181,9 +195,8 @@ async function scanContext() {
         if (char.personality) sources.push(char.personality);
         try { const dp = document.querySelector('#depth_prompt_prompt'); if (dp?.value?.trim()) sources.push(dp.value); } catch(_){}
         try { const meta = ctx.chat_metadata; if (meta?.note_prompt) sources.push(meta.note_prompt); if (meta?.depth_prompt?.prompt) sources.push(meta.depth_prompt.prompt); } catch(_){}
-        if (!sources.length || (lm.locations.length > 0 && lm.currentLocationId)) return;
+        if (!sources.length) return;
 
-        // 1차: 설명문 전용 스캔 (이동 동사 없이 장소 추출)
         for (const text of sources) {
             const desc = det.detectFromDescription(text);
             if (desc) {
@@ -193,15 +206,56 @@ async function scanContext() {
                 return;
             }
         }
-
-        // 2차: 일반 감지 폴백
         for (const text of sources) {
             const result = det.detect(text);
-            if (result) { dbg(`📋 Context: "${result.location.name}"`); if (!lm.currentLocationId) { await lm.moveTo(result.location.id); pi.inject(); if (ui.panelVisible) ui.refresh(); } return; }
+            if (result) { dbg(`📋 Context: "${result.location.name}"`); await lm.moveTo(result.location.id); pi.inject(); if (ui.panelVisible) ui.refresh(); return; }
             const np = det.detectNewPlace(text, 'user');
             if (np) { dbg(`📋 Context new: "${np}"`); const loc = await lm.addLocation(np); if (loc) { await lm.moveTo(loc.id); pi.inject(); if (ui.panelVisible) ui.refresh(); } return; }
         }
     } catch(e) { console.error(`[${EXTENSION_NAME}] Context scan:`, e); }
+}
+
+// ========== 채팅 히스토리 전체 스캔 (기존 채팅에 확장 설치 시) ==========
+async function scanChatHistory(ctx) {
+    if (!ctx?.chat?.length) return false;
+    dbg(`📜 히스토리 스캔 시작: ${ctx.chat.length}개 메시지`);
+
+    let foundAny = false;
+    for (let i = 0; i < ctx.chat.length; i++) {
+        const msg = ctx.chat[i];
+        if (!msg?.mes?.trim()) continue;
+
+        const mode = msg.is_user ? 'user' : 'ai';
+        const text = msg.mes;
+
+        // 등록된 장소 감지
+        const result = det.detect(text);
+        if (result) {
+            if (lm.currentLocationId !== result.location.id) {
+                await lm.moveTo(result.location.id);
+                foundAny = true;
+            }
+            continue;
+        }
+
+        // 새 장소 발견
+        const np = det.detectNewPlace(text, mode);
+        if (np && !lm.findByName(np)) {
+            const loc = await lm.addLocation(np);
+            if (loc) {
+                await lm.moveTo(loc.id);
+                foundAny = true;
+            }
+        }
+    }
+
+    if (foundAny) {
+        dbg(`📜 히스토리 스캔 완료: ${lm.locations.length}개 장소, ${lm.movements.length}개 이동`);
+        pi.inject();
+        if (ui.panelVisible) ui.refresh();
+        wtNotify(`🐶 채팅 스캔 완료! ${lm.locations.length}개 장소 발견`, 'new', 3000);
+    }
+    return foundAny;
 }
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
