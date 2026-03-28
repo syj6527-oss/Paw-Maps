@@ -199,13 +199,20 @@ export class UIManager {
     // ---- Popover (인라인) ----
     showPop(id) {
         const l = this.lm.locations.find(x=>x.id===id); if(!l) return;
-        $('#wt-popover').attr('data-id', id).slideDown(200);
+        $('#wt-popover').attr('data-id', id);
         $('#wt-pop-title').text(l.name); $('#wt-pop-visits').text(l.visitCount||0);
         $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
-        // 스크롤 이동
-        setTimeout(()=>{ document.getElementById('wt-popover')?.scrollIntoView({behavior:'smooth',block:'nearest'}); },250);
+        // 지도 접고 팝오버 열기
+        $('#wt-map-wrap').slideUp(100);
+        $('#wt-map-toggle').text('🗺️ 지도 ▾');
+        $('#wt-popover').slideDown(200);
+        setTimeout(()=>{
+            const pop = document.getElementById('wt-popover');
+            const body = document.getElementById('wt-panel-body');
+            if (pop && body) body.scrollTop = pop.offsetTop - 10;
+        }, 350);
     }
     hidePop() { $('#wt-popover').slideUp(150); }
 
@@ -215,6 +222,7 @@ export class UIManager {
 
     // ---- 자동 등록 토스트 (인라인) ----
     showAutoToast(loc) {
+        $('#wt-auto-toast').hide(); // 이전 토스트 제거
         $('#wt-at-name').text(loc.name);
         const sim = this._findSim(loc.name);
         const sl = $('#wt-at-sim-list').empty();
@@ -246,7 +254,7 @@ export class UIManager {
         });
 
         $('#wt-auto-toast').slideDown(200);
-        setTimeout(()=>$('#wt-auto-toast').slideUp(200), 8000);
+        // 자동 사라짐 없음 — 유저가 버튼 누를 때까지 유지!
     }
 
     _findSim(name) {
