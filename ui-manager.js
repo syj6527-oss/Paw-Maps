@@ -92,14 +92,14 @@ export class UIManager {
                 <div id="wt-map-wrap" class="wt-map-wrap">
                     <div id="wt-map-container" class="wt-map-container"></div>
                     <div class="wt-compass-overlay">
-                        <svg width="36" height="40" viewBox="-24 -28 48 56">
-                            <circle r="22" fill="#FFF5E6" stroke="#C4A882" stroke-width="2.5" opacity="0.85"/>
-                            <path d="M0,-18 C-7,-9 -6,-3 0,0 C6,-3 7,-9 0,-18Z" fill="#F5A8A8" stroke="#D4908F" stroke-width="0.8"/>
-                            <path d="M0,18 C-7,9 -6,3 0,0 C6,3 7,9 0,18Z" fill="#A8D8EA" stroke="#80B0C8" stroke-width="0.8"/>
-                            <path d="M18,0 C9,-7 3,-6 0,0 C3,6 9,7 18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.8"/>
-                            <path d="M-18,0 C-9,-7 -3,-6 0,0 C-3,6 -9,7 -18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.8"/>
-                            <circle r="3" fill="#775537"/>
-                            <text y="-23" fill="#D4908F" font-size="7" font-weight="700" text-anchor="middle" font-family="serif">N</text>
+                        <svg width="40" height="40" viewBox="0 0 200 200">
+                            <circle cx="100" cy="110" r="70" fill="none" stroke="#D2B48C" stroke-width="4"/>
+                            <text x="100" y="32" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="26" fill="#D2B48C">N</text>
+                            <path d="M100 50 Q112 110 100 110 Q88 110 100 50 Z" fill="#F8BBD0" stroke="#D2B48C" stroke-width="1"/>
+                            <path d="M100 170 Q112 110 100 110 Q88 110 100 170 Z" fill="#BBDEFB" stroke="#D2B48C" stroke-width="1"/>
+                            <path d="M40 110 Q100 98 100 110 Q100 122 40 110 Z" fill="#FFF9C4" stroke="#D2B48C" stroke-width="1"/>
+                            <path d="M160 110 Q100 98 100 110 Q100 122 160 110 Z" fill="#FFF9C4" stroke="#D2B48C" stroke-width="1"/>
+                            <circle cx="100" cy="110" r="7" fill="#8D6E63"/>
                         </svg>
                     </div>
                 </div>
@@ -132,10 +132,10 @@ export class UIManager {
                     <button id="wt-btn-add" class="wt-btn-primary">✚ 추가</button>
                 </div>
 
-                <div class="wt-section-title"><span>장소 목록</span><span id="wt-loc-count" class="wt-badge">0</span></div>
-                <div id="wt-loc-list" class="wt-loc-list"></div>
-                <div class="wt-section-title"><span>🚶 이동 히스토리</span></div>
-                <div id="wt-move-list" class="wt-move-list"></div>
+                <div class="wt-section-toggle" id="wt-loc-toggle">📍 장소 목록 <span id="wt-loc-count" class="wt-badge">0</span> <span id="wt-loc-arrow">▾</span></div>
+                <div id="wt-loc-wrap" style="display:none"><div id="wt-loc-list" class="wt-loc-list"></div></div>
+                <div class="wt-section-toggle" id="wt-move-toggle">🚶 이동 히스토리 <span id="wt-move-arrow">▾</span></div>
+                <div id="wt-move-wrap" style="display:none"><div id="wt-move-list" class="wt-move-list"></div></div>
             </div>
         </div>`;
         $('body').append(html);
@@ -149,6 +149,8 @@ export class UIManager {
         $('#wt-btn-add').on('click', () => this._addLoc());
         $('#wt-input-name').on('keydown', e => { if(e.key==='Enter') this._addLoc(); });
         $('#wt-pop-close').on('click', () => this.hidePop());
+        $('#wt-loc-toggle').on('click', () => { $('#wt-loc-wrap').slideToggle(200); const a=$('#wt-loc-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
+        $('#wt-move-toggle').on('click', () => { $('#wt-move-wrap').slideToggle(200); const a=$('#wt-move-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-pop-save').on('click', () => this._popSave());
         $('#wt-pop-del').on('click', () => this._popDel());
         $('#wt-pop-move').on('click', () => this._popMove());
