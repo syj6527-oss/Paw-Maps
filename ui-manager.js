@@ -140,9 +140,7 @@ export class UIManager {
                         <div id="wt-search-results" class="wt-search-results" style="display:none"></div>
                     </div>
                     <div id="wt-map-wrap" class="wt-map-wrap">
-                        <div id="wt-map-container" class="wt-map-container">
-                            <div id="wt-map-debug" style="color:#775537;font-size:16px;font-weight:bold;padding:10px;text-align:center;position:absolute;top:10px;left:0;right:0;z-index:10">MAP LOADING...</div>
-                        </div>
+                        <div id="wt-map-container" class="wt-map-container"></div>
                         <div class="wt-compass-overlay">
                             <svg width="44" height="44" viewBox="0 0 44 44">
                                 <circle cx="22" cy="22" r="18" stroke="#A08060" stroke-width="1.5" fill="none"/>
@@ -259,7 +257,15 @@ export class UIManager {
 
     togglePanel(show) {
         this.panelVisible = show ?? !this.panelVisible;
-        if (this.panelVisible) { $('#wt-panel').addClass('wt-panel-open').css('opacity',(extension_settings[EXTENSION_NAME]?.panelOpacity??100)/100); this.refresh(); }
+        if (this.panelVisible) {
+            $('#wt-panel').addClass('wt-panel-open').css('opacity',(extension_settings[EXTENSION_NAME]?.panelOpacity??100)/100);
+            this.refresh();
+            // 모바일: 패널 열림 애니메이션 후 강제 렌더 (container height=0 방지)
+            setTimeout(() => {
+                if (this.mapRenderer) this.mapRenderer.render();
+                if (this.leafletRenderer?.map) this.leafletRenderer.invalidateSize();
+            }, 350);
+        }
         else { $('#wt-panel').removeClass('wt-panel-open'); this.hidePop(); }
     }
 
