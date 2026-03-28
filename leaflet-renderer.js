@@ -43,18 +43,20 @@ export class LeafletRenderer {
         // 지도 클릭 → 좌표 배치
         this.map.on('click', (e) => this._onMapClick(e));
 
-        // #1: 롱프레스 → 장소 이동 (500ms)
-        let _lpTimer = null, _lpLatLng = null;
-        this.map.on('mousedown touchstart', (e) => {
-            _lpLatLng = e.latlng;
+        // #1: 롱프레스 → 장소 이동 (native touch on container)
+        let _lpTimer = null;
+        const mapEl = this.map.getContainer();
+        mapEl.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
             _lpTimer = setTimeout(() => {
-                if (_lpLatLng && this.onLongPress) this.onLongPress(_lpLatLng);
+                const touch = e.changedTouches?.[0] || e.touches[0];
+                const pt = this.map.containerPointToLatLng(L.point(touch.clientX - mapEl.getBoundingClientRect().left, touch.clientY - mapEl.getBoundingClientRect().top));
+                if (this.onLongPress) this.onLongPress(pt);
                 _lpTimer = null;
             }, 600);
-        });
-        this.map.on('mousemove touchmove mouseup touchend drag', () => {
-            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-        });
+        }, { passive: true });
+        mapEl.addEventListener('touchmove', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }, { passive: true });
+        mapEl.addEventListener('touchend', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }, { passive: true });
 
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
         return true;

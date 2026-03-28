@@ -192,7 +192,10 @@ export class UIManager {
 
                 <!-- 팝오버 (인라인!) -->
                 <div id="wt-popover" class="wt-popover-inline" style="display:none">
-                    <div class="wt-pop-header"><span id="wt-pop-title"></span><button id="wt-pop-close" class="wt-btn-icon">✕</button></div>
+                    <div class="wt-pop-header">
+                        <input type="text" id="wt-pop-title" style="font-size:14px;font-weight:700;color:var(--wt-brown);background:transparent;border:none;border-bottom:1.5px dashed transparent;outline:none;flex:1;padding:2px 0;font-family:inherit" onfocus="this.style.borderBottomColor='var(--wt-yellow-d)'" onblur="this.style.borderBottomColor='transparent'"/>
+                        <button id="wt-pop-close" class="wt-btn-icon">✕</button>
+                    </div>
                     <div class="wt-pop-body">
                         <div class="wt-pop-stats">
                             <div><span class="wt-stat-l">방문</span><span id="wt-pop-visits">0</span>회</div>
@@ -496,7 +499,7 @@ export class UIManager {
     showPop(id) {
         const l = this.lm.locations.find(x=>x.id===id); if(!l) return;
         $('#wt-popover').attr('data-id', id);
-        $('#wt-pop-title').text(l.name); $('#wt-pop-visits').text(l.visitCount||0);
+        $('#wt-pop-title').val(l.name); $('#wt-pop-visits').text(l.visitCount||0);
         $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
@@ -517,12 +520,16 @@ export class UIManager {
 
     async _popSave() {
         const id=$('#wt-popover').attr('data-id');
+        const newName = $('#wt-pop-title').val().trim();
         const aliases = $('#wt-pop-aliases').val().split(',').map(a=>a.trim()).filter(Boolean);
-        await this.lm.updateLocation(id,{
+        const update = {
             memo:$('#wt-pop-memo').val().trim(),
             status:$('#wt-pop-status').val().trim(),
             aliases: aliases,
-        });
+        };
+        // 이름 변경
+        if (newName) update.name = newName;
+        await this.lm.updateLocation(id, update);
         toastSuccess('저장!'); this.pi?.inject(); this.refresh();
     }
     async _popDel() { const id=$('#wt-popover').attr('data-id'); const l=this.lm.locations.find(x=>x.id===id); if(!confirm(`"${l?.name}" 삭제?`))return; await this.lm.deleteLocation(id); this.hidePop(); this.pi?.inject(); this.refresh(); }
