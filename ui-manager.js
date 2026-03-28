@@ -92,14 +92,16 @@ export class UIManager {
                 <div id="wt-map-wrap" class="wt-map-wrap">
                     <div id="wt-map-container" class="wt-map-container"></div>
                     <div class="wt-compass-overlay">
-                        <svg width="40" height="40" viewBox="0 0 200 200">
-                            <circle cx="100" cy="110" r="70" fill="none" stroke="#D2B48C" stroke-width="4"/>
-                            <text x="100" y="32" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="26" fill="#D2B48C">N</text>
-                            <path d="M100 50 Q112 110 100 110 Q88 110 100 50 Z" fill="#F8BBD0" stroke="#D2B48C" stroke-width="1"/>
-                            <path d="M100 170 Q112 110 100 110 Q88 110 100 170 Z" fill="#BBDEFB" stroke="#D2B48C" stroke-width="1"/>
-                            <path d="M40 110 Q100 98 100 110 Q100 122 40 110 Z" fill="#FFF9C4" stroke="#D2B48C" stroke-width="1"/>
-                            <path d="M160 110 Q100 98 100 110 Q100 122 160 110 Z" fill="#FFF9C4" stroke="#D2B48C" stroke-width="1"/>
-                            <circle cx="100" cy="110" r="7" fill="#8D6E63"/>
+                        <svg width="40" height="40" viewBox="0 0 120 120">
+                            <circle cx="60" cy="65" r="40" stroke="#8D6E63" stroke-width="4" fill="none"/>
+                            <circle cx="60" cy="65" r="5" fill="#8D6E63"/>
+                            <g stroke="#D2B48C" stroke-width="1" stroke-opacity="0.5">
+                                <path d="M60 55 C65 60,75 45,60 25 C45 45,55 60,60 55Z" fill="#FFB3BA"/>
+                                <path d="M60 75 C65 70,75 90,60 105 C45 90,55 70,60 75Z" fill="#BAE1FF"/>
+                                <path d="M70 65 C75 60,90 50,105 65 C90 80,75 70,70 65Z" fill="#FFFFBA"/>
+                                <path d="M50 65 C45 60,30 50,15 65 C30 80,45 70,50 65Z" fill="#FFFFBA"/>
+                            </g>
+                            <text x="60" y="32" text-anchor="middle" font-weight="bold" font-size="14" fill="#FFB3BA">N</text>
                         </svg>
                     </div>
                 </div>
@@ -219,17 +221,15 @@ export class UIManager {
         $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
-        // 지도 접고 팝오버 열기
-        $('#wt-map-wrap').slideUp(100);
+        // 즉시 열기 (애니메이션 없음 → 터치 오류 방지)
+        $('#wt-map-wrap').hide();
         $('#wt-map-toggle').text('🗺️ 지도 ▾');
-        $('#wt-popover').slideDown(200);
-        setTimeout(()=>{
-            const pop = document.getElementById('wt-popover');
-            const body = document.getElementById('wt-panel-body');
-            if (pop && body) body.scrollTop = pop.offsetTop - 10;
-        }, 350);
+        $('#wt-popover').show();
+        const pop = document.getElementById('wt-popover');
+        const body = document.getElementById('wt-panel-body');
+        if (pop && body) body.scrollTop = pop.offsetTop - 10;
     }
-    hidePop() { $('#wt-popover').slideUp(150); }
+    hidePop() { $('#wt-popover').hide(); }
 
     async _popSave() { const id=$('#wt-popover').attr('data-id'); await this.lm.updateLocation(id,{memo:$('#wt-pop-memo').val().trim(),status:$('#wt-pop-status').val().trim()}); toastSuccess('저장!'); this.pi?.inject(); this.refresh(); }
     async _popDel() { const id=$('#wt-popover').attr('data-id'); const l=this.lm.locations.find(x=>x.id===id); if(!confirm(`"${l?.name}" 삭제?`))return; await this.lm.deleteLocation(id); this.hidePop(); this.pi?.inject(); this.refresh(); }
