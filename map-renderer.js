@@ -66,8 +66,9 @@ export class MapRenderer {
             const dist = this.lm.getDistanceBetween(m.fromId, m.toId);
             const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
             if (dist) {
-                const lvl = dist.level || 3;
-                const dots = '●'.repeat(lvl) + '○'.repeat(5 - lvl);
+                const lvl = dist.level || 5;
+                const filled = Math.min(lvl, 10);
+                const dots = '●'.repeat(Math.ceil(filled/2)) + '○'.repeat(Math.ceil((10-filled)/2));
                 this.svg.appendChild(this._el('text', { x: mx, y: my - 8, 'text-anchor': 'middle', fill: '#9A8A7A', 'font-size': '9' }, dots));
                 if (dist.distanceText) {
                     this.svg.appendChild(this._el('text', { x: mx, y: my + 6, 'text-anchor': 'middle', fill: '#A08060', 'font-size': '10' }, dist.distanceText));
@@ -142,8 +143,8 @@ export class MapRenderer {
         const dists = this.lm.distances || [];
         if (locs.length < 2) return;
 
-        // 거리 level → 픽셀 거리 매핑
-        const levelToPx = { 1: 70, 2: 110, 3: 160, 4: 220, 5: 300 };
+        // 거리 level → 픽셀 거리 매핑 (1~10)
+        const levelToPx = { 1: 60, 2: 80, 3: 100, 4: 130, 5: 160, 6: 200, 7: 240, 8: 280, 9: 330, 10: 400 };
 
         // 첫 노드가 (0,0)이면 초기 배치 필요
         const needsInit = locs.some(l => l.x === 0 && l.y === 0);
@@ -181,7 +182,7 @@ export class MapRenderer {
                 const b = locs.find(l => l.id === d.toId);
                 if (!a || !b) continue;
 
-                const ideal = levelToPx[d.level || 3] || 160;
+                const ideal = levelToPx[d.level || 5] || 160;
                 const dx = b.x - a.x, dy = b.y - a.y;
                 const actual = Math.sqrt(dx * dx + dy * dy) || 1;
                 const force = (actual - ideal) * 0.15;

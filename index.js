@@ -215,17 +215,15 @@ async function scanContext() {
     } catch(e) { console.error(`[${EXTENSION_NAME}] Context scan:`, e); }
 }
 
-// ========== 채팅 히스토리 전체 스캔 (기존 채팅에 확장 설치 시) ==========
+// ========== 최근 메시지 스캔 (기존 채팅에 확장 설치 시 — 최근 4개만) ==========
 async function scanChatHistory(ctx) {
     if (!ctx?.chat?.length) return false;
-    dbg(`📜 히스토리 스캔 시작: ${ctx.chat.length}개 메시지`);
+    const recent = ctx.chat.slice(-4); // 최근 4개
+    dbg(`📜 최근 ${recent.length}개 메시지 스캔`);
 
     let foundAny = false;
-    for (let i = 0; i < ctx.chat.length; i++) {
-        const msg = ctx.chat[i];
+    for (const msg of recent) {
         if (!msg?.mes?.trim()) continue;
-
-        const mode = msg.is_user ? 'user' : 'ai';
         const text = msg.mes;
 
         // 등록된 장소 감지
@@ -238,22 +236,19 @@ async function scanChatHistory(ctx) {
             continue;
         }
 
-        // 새 장소 발견
-        const np = det.detectNewPlace(text, mode);
+        // 새 장소 발견 — 엄격 모드
+        const np = det.detectNewPlace(text, 'ai');
         if (np && !lm.findByName(np)) {
             const loc = await lm.addLocation(np);
-            if (loc) {
-                await lm.moveTo(loc.id);
-                foundAny = true;
-            }
+            if (loc) { await lm.moveTo(loc.id); foundAny = true; }
         }
     }
 
     if (foundAny) {
-        dbg(`📜 히스토리 스캔 완료: ${lm.locations.length}개 장소, ${lm.movements.length}개 이동`);
+        dbg(`📜 스캔 완료: ${lm.locations.length}개 장소`);
         pi.inject();
         if (ui.panelVisible) ui.refresh();
-        wtNotify(`🐶 채팅 스캔 완료! ${lm.locations.length}개 장소 발견`, 'new', 3000);
+        wtNotify(`🐶 현재 위치 감지 완료!`, 'move', 2000);
     }
     return foundAny;
 }

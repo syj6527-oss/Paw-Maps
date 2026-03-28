@@ -180,7 +180,7 @@ export class UIManager {
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:#9A8A7A">
                                 <span>가까움</span>
-                                <input type="range" id="wt-pop-dist-level" min="1" max="5" value="3" style="flex:1;height:4px"/>
+                                <input type="range" id="wt-pop-dist-level" min="1" max="10" value="5" style="flex:1;height:4px"/>
                                 <span>멀음</span>
                                 <span id="wt-pop-dist-lvl-val" style="font-weight:600;color:var(--wt-brown);min-width:16px">3</span>
                             </div>
@@ -613,14 +613,23 @@ export class UIManager {
                     const lng = parseFloat($(this).attr('data-lng'));
                     await self.lm.updateLocation(locId, { lat, lng });
                     resultsDiv.hide();
-                    toastSuccess(`📍 좌표 저장! (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
-                    // Leaflet 모드면 렌더
-                    if (self.leafletRenderer?.map) self.leafletRenderer.render();
+                    toastSuccess(`📍 좌표 저장! 실제 지도로 전환...`);
+
+                    // Leaflet 모드로 자동 전환 + 핀 표시
+                    self.hidePop();
+                    self._setMapMode('leaflet');
+                    // Leaflet 초기화 대기 후 렌더
+                    setTimeout(() => {
+                        if (self.leafletRenderer?.map) {
+                            self.leafletRenderer.render();
+                            self.leafletRenderer.map.setView([lat, lng], 15);
+                        }
+                    }, 500);
                 });
                 resultsDiv.append(item);
             }
         } catch(e) {
-            resultsDiv.html('<div style="padding:4px;color:#F5A8A8">검색 오류</div>');
+            resultsDiv.html('<div style="padding:4px;color:#F5A8A8">네트워크 오류 — Nominatim 접속 불가</div>');
             console.error(`[rp-world-tracker] Geo:`, e);
         }
     }
@@ -629,12 +638,12 @@ export class UIManager {
         const locId = $('#wt-popover').attr('data-id');
         const targetId = $('#wt-pop-dist-target').val();
         const value = $('#wt-pop-dist-value').val().trim();
-        const level = parseInt($('#wt-pop-dist-level').val()) || 3;
+        const level = parseInt($('#wt-pop-dist-level').val()) || 5;
         if (!locId || !targetId) return;
         const text = value || `거리 ${level}`;
 
         await this.lm.setDistance(locId, targetId, text, null, level);
-        $('#wt-pop-dist-value').val(''); $('#wt-pop-dist-level').val(3); $('#wt-pop-dist-lvl-val').text('3');
+        $('#wt-pop-dist-value').val(''); $('#wt-pop-dist-level').val(5); $('#wt-pop-dist-lvl-val').text('5');
         this._updDistSection(locId);
         this.pi?.inject();
         toastSuccess(`📏 거리 저장!`);
