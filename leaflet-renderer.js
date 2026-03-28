@@ -48,13 +48,20 @@ export class LeafletRenderer {
         const mapEl = this.map.getContainer();
         mapEl.addEventListener('touchstart', (e) => {
             if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            const cx = touch.clientX - mapEl.getBoundingClientRect().left;
+            const cy = touch.clientY - mapEl.getBoundingClientRect().top;
+            console.log(`[WT-LP] touchstart at (${cx.toFixed(0)}, ${cy.toFixed(0)})`);
             _lpTimer = setTimeout(() => {
-                const touch = e.changedTouches?.[0] || e.touches[0];
-                const pt = this.map.containerPointToLatLng(L.point(touch.clientX - mapEl.getBoundingClientRect().left, touch.clientY - mapEl.getBoundingClientRect().top));
-                if (this.onLongPress) this.onLongPress(pt);
+                try {
+                    const pt = this.map.containerPointToLatLng(L.point(cx, cy));
+                    console.log(`[WT-LP] longpress! lat=${pt.lat.toFixed(4)} lng=${pt.lng.toFixed(4)}, handler=${!!this.onLongPress}`);
+                    if (this.onLongPress) this.onLongPress(pt);
+                    if (navigator.vibrate) navigator.vibrate(50);
+                } catch(err) { console.error('[WT-LP] error:', err); }
                 _lpTimer = null;
             }, 600);
-        }, { passive: true });
+        }, { passive: false });
         mapEl.addEventListener('touchmove', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }, { passive: true });
         mapEl.addEventListener('touchend', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }, { passive: true });
 
