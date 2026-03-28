@@ -54,7 +54,7 @@ export class MapRenderer {
         // 거리 기반 약도 자동 배치
         if (locations.length >= 2) this._autoLayout();
 
-        // 경로선
+        // 경로선 + 거리 표시
         const drawn = new Set();
         for (const m of movements) {
             const f = locations.find(l => l.id === m.fromId), t = locations.find(l => l.id === m.toId);
@@ -62,30 +62,62 @@ export class MapRenderer {
             const k = [m.fromId, m.toId].sort().join('-'); if (drawn.has(k)) continue; drawn.add(k);
             this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, class: 'wt-path-line' }));
 
-            // 거리 라벨 (거리 정보 있으면)
+            // 거리 라벨 + 레벨 점
             const dist = this.lm.getDistanceBetween(m.fromId, m.toId);
-            if (dist?.distanceText) {
-                const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
-                this.svg.appendChild(this._el('text', {
-                    x: mx, y: my - 6, class: 'wt-dist-label',
-                    'text-anchor': 'middle', fill: '#9A8A7A', 'font-size': '10'
-                }, dist.distanceText));
+            const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
+            if (dist) {
+                const lvl = dist.level || 3;
+                const dots = '●'.repeat(lvl) + '○'.repeat(5 - lvl);
+                this.svg.appendChild(this._el('text', { x: mx, y: my - 8, 'text-anchor': 'middle', fill: '#9A8A7A', 'font-size': '9' }, dots));
+                if (dist.distanceText) {
+                    this.svg.appendChild(this._el('text', { x: mx, y: my + 6, 'text-anchor': 'middle', fill: '#A08060', 'font-size': '10' }, dist.distanceText));
+                }
             }
         }
 
-        // 노드
+        // 노드 색상 결정 함수
+        const nodeColor = (loc) => {
+            if (loc.id === currentLocationId) return '#8B6EC7'; // Violet — 현재
+            const v = loc.visitCount || 0;
+            if (v >= 5) return '#5E84E2'; // Blue — 자주
+            if (v >= 2) return '#F6A93A'; // Orange — 일반
+            return '#F7EC8D'; // Yellow — 새 장소
+        };
+
+        // 노드 렌더링
         for (const loc of locations) {
             const cur = loc.id === currentLocationId;
+            const r = cur ? 26 : 18;
+            const color = nodeColor(loc);
             const g = this._el('g', { class: 'wt-location-node', 'data-id': loc.id, transform: `translate(${loc.x},${loc.y})` });
+
+            // 그림자 (현재 위치만)
+            if (cur) {
+                g.appendChild(this._el('circle', { r: r + 4, fill: color, opacity: '0.2', filter: 'url(#wt-glow)' }));
+            }
+
+            // 메인 원
             g.appendChild(this._el('circle', {
-                r: cur ? 22 : 16, fill: loc.color,
-                class: 'wt-node-circle',
-                stroke: cur ? '#775537' : '#9e8e7e', 'stroke-width': cur ? 3 : 1.5,
-                ...(cur ? { filter: 'url(#wt-glow)' } : {}),
+                r, fill: color, class: 'wt-node-circle',
+                stroke: cur ? '#775537' : '#9e8e7e',
+                'stroke-width': cur ? 3 : 1.5,
             }));
-            if (loc.visitCount > 0) g.appendChild(this._el('text', { class: 'wt-visit-badge', y: 4 }, loc.visitCount));
-            g.appendChild(this._el('text', { class: 'wt-location-label', y: cur ? 36 : 30 }, loc.name));
-            if (cur) g.appendChild(this._el('text', { class: 'wt-paw-marker', y: -28 }, '🐾'));
+
+            // 방문 횟수 (원 안에)
+            if (loc.visitCount > 0) {
+                g.appendChild(this._el('text', {
+                    class: 'wt-visit-badge', y: 5,
+                    fill: (color === '#F7EC8D') ? '#5A4030' : '#fff',
+                    'font-size': cur ? '14' : '12',
+                }, loc.visitCount));
+            }
+
+            // 장소명
+            g.appendChild(this._el('text', { class: 'wt-location-label', y: r + 16 }, loc.name));
+
+            // 🐾 현재 위치 마커
+            if (cur) g.appendChild(this._el('text', { class: 'wt-paw-marker', y: -(r + 10) }, '🐾'));
+
             this.svg.appendChild(g);
         }
 
