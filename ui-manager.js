@@ -414,23 +414,18 @@ export class UIManager {
                 this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
                 await this.leafletRenderer.init();
                 this.leafletRenderer.onLocationClick = id => this.showPop(id);
-                // #1: 롱프레스 → 장소 이동 메뉴
+                // #1: 롱프레스/우클릭 → 현재 장소 좌표 이동
                 this.leafletRenderer.onLongPress = async (latlng) => {
-                    const locs = this.lm.locations.filter(l => l.name);
-                    if (!locs.length) return;
-                    // 간단한 선택: 현재 위치를 이동
-                    const curLoc = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
-                    if (curLoc) {
-                        await this.lm.updateLocation(curLoc.id, { lat: latlng.lat, lng: latlng.lng });
-                        // 역지오코딩
-                        try {
-                            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&accept-language=ko`;
-                            const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.2' } });
-                            if (res.ok) { const d = await res.json(); if (d.display_name) console.log(`[rp-world-tracker] Reverse: ${d.display_name}`); }
-                        } catch(_) {}
-                        this.leafletRenderer.render();
-                        toastSuccess(`📍 "${curLoc.name}" 위치 이동!`);
-                    }
+                    const curId = this.lm.currentLocationId;
+                    if (!curId) return;
+
+                    await this.lm.updateLocation(curId, { lat: latlng.lat, lng: latlng.lng });
+
+                    // 마커 직접 이동 (re-render 없이)
+                    const marker = this.leafletRenderer.markers[curId];
+                    if (marker) marker.setLatLng(latlng);
+
+                    toastSuccess(`📍 위치 이동!`);
                 };
             }
             this.leafletRenderer.render();

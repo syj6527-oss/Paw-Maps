@@ -43,48 +43,13 @@ export class LeafletRenderer {
         // 지도 클릭 → 좌표 배치
         this.map.on('click', (e) => this._onMapClick(e));
 
-        // #1: 롱프레스 → 장소 이동 (마우스 + 터치 모두 지원)
-        let _lpTimer = null, _lpMoved = false;
-        this.map.on('mousedown', (e) => {
-            if (e.originalEvent.button !== 0) return; // 좌클릭만
-            _lpMoved = false;
-            _lpTimer = setTimeout(() => {
-                if (!_lpMoved && this.onLongPress) {
-                    console.log(`[WT-LP] mouse longpress at ${e.latlng.lat.toFixed(4)},${e.latlng.lng.toFixed(4)}`);
-                    this.onLongPress(e.latlng);
-                }
-                _lpTimer = null;
-            }, 600);
+        // #1: 롱프레스/우클릭 → 장소 이동 (contextmenu = PC 우클릭 + 모바일 롱프레스)
+        this.map.on('contextmenu', async (e) => {
+            L.DomEvent.preventDefault(e);
+            if (!this.onLongPress) return;
+            await this.onLongPress(e.latlng);
+            if (navigator.vibrate) navigator.vibrate(50);
         });
-        this.map.on('mousemove', () => { _lpMoved = true; if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
-        this.map.on('mouseup', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
-
-        // 모바일 터치
-        const mapEl = this.map.getContainer();
-        let _tpTimer = null, _tpCx = 0, _tpCy = 0;
-        mapEl.addEventListener('touchstart', (e) => {
-            if (e.touches.length !== 1) return;
-            const t = e.touches[0];
-            _tpCx = t.clientX; _tpCy = t.clientY;
-            _tpTimer = setTimeout(() => {
-                try {
-                    const rect = mapEl.getBoundingClientRect();
-                    const pt = this.map.containerPointToLatLng(L.point(_tpCx - rect.left, _tpCy - rect.top));
-                    console.log(`[WT-LP] touch longpress at ${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}, handler=${!!this.onLongPress}`);
-                    if (this.onLongPress) this.onLongPress(pt);
-                    if (navigator.vibrate) navigator.vibrate(50);
-                } catch(err) { console.error('[WT-LP]', err); }
-                _tpTimer = null;
-            }, 600);
-        }, { passive: false });
-        mapEl.addEventListener('touchmove', (e) => {
-            if (_tpTimer && e.touches[0]) {
-                const dx = Math.abs(e.touches[0].clientX - _tpCx);
-                const dy = Math.abs(e.touches[0].clientY - _tpCy);
-                if (dx > 10 || dy > 10) { clearTimeout(_tpTimer); _tpTimer = null; }
-            }
-        }, { passive: true });
-        mapEl.addEventListener('touchend', () => { if (_tpTimer) { clearTimeout(_tpTimer); _tpTimer = null; } }, { passive: true });
 
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
         return true;
@@ -142,15 +107,17 @@ export class LeafletRenderer {
             this.pathLines.push(line);
         }
 
-        // 좌표 있는 장소들이 보이도록 맵 조정
-        // 현재 위치 우선 → 전체 fitBounds 폴백
-        const curLoc = locations.find(l => l.id === currentLocationId);
-        if (curLoc?.lat && curLoc?.lng) {
-            this.map.setView([curLoc.lat, curLoc.lng], 14);
-        } else if (latlngs.length > 1) {
-            this.map.fitBounds(latlngs, { padding: [30, 30], maxZoom: 15 });
-        } else if (latlngs.length === 1) {
-            this.map.setView(latlngs[0], 14);
+        // 뷰 조정 (첫 렌더링만 — 롱프레스 후 줌아웃 방지)
+        if (!this._viewSet && latlngs.length > 0) {
+            const curLoc = locations.find(l => l.id === currentLocationId);
+            if (curLoc?.lat && curLoc?.lng) {
+                this.map.setView([curLoc.lat, curLoc.lng], 15);
+            } else if (latlngs.length > 1) {
+                this.map.fitBounds(latlngs, { padding: [30, 30], maxZoom: 15 });
+            } else {
+                this.map.setView(latlngs[0], 15);
+            }
+            this._viewSet = true;
         }
 
         // 현재 위치 좌표 없으면 안내 오버레이
