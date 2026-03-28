@@ -169,6 +169,15 @@ export class UIManager {
                             <div><span class="wt-stat-l">첫</span><span id="wt-pop-first">—</span></div>
                             <div><span class="wt-stat-l">최근</span><span id="wt-pop-last">—</span></div>
                         </div>
+                        <div id="wt-pop-dist-section" style="display:none">
+                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:4px">📏 주요 장소와의 거리</div>
+                            <div id="wt-pop-dist-list" style="display:flex;flex-direction:column;gap:4px"></div>
+                            <div style="display:flex;gap:4px;margin-top:4px">
+                                <select id="wt-pop-dist-target" class="wt-input wt-select-full" style="flex:1;font-size:12px;padding:6px 8px"></select>
+                                <input type="text" id="wt-pop-dist-value" class="wt-input" placeholder="예: 2.3km" style="width:80px;font-size:12px;padding:6px 8px"/>
+                                <button id="wt-pop-dist-add" class="wt-btn-accent wt-btn-s">+</button>
+                            </div>
+                        </div>
                         <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
                         <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
                         <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
@@ -210,6 +219,7 @@ export class UIManager {
         $('#wt-pop-save').on('click', () => this._popSave());
         $('#wt-pop-del').on('click', () => this._popDel());
         $('#wt-pop-move').on('click', () => this._popMove());
+        $('#wt-pop-dist-add').on('click', () => this._addDist());
         // 맵 모드 토글
         $('#wt-mode-node').on('click', () => this._setMapMode('node'));
         $('#wt-mode-leaflet').on('click', () => this._setMapMode('leaflet'));
@@ -347,7 +357,9 @@ export class UIManager {
         $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
-        // 맵 열려있으면 접기 (닫혀있으면 그냥 냅둠)
+        // 거리 섹션
+        this._updDistSection(id);
+        // 맵 열려있으면 접기
         if ($('#wt-map-section').is(':visible')) {
             $('#wt-map-section').hide();
             $('#wt-map-toggle').text('🗺️ 지도 ▾');
@@ -444,6 +456,56 @@ export class UIManager {
             list.append(item);
         }
         list.show();
+    }
+
+    // ---- 거리 입력 섹션 ----
+    _updDistSection(locId) {
+        const others = this.lm.locations.filter(l => l.id !== locId);
+        if (!others.length) { $('#wt-pop-dist-section').hide(); return; }
+        $('#wt-pop-dist-section').show();
+
+        // 기존 거리 표시
+        const list = $('#wt-pop-dist-list').empty();
+        for (const d of this.lm.distances || []) {
+            let otherId = d.fromId === locId ? d.toId : d.toId === locId ? d.fromId : null;
+            if (!otherId) continue;
+            const other = this.lm.locations.find(l => l.id === otherId);
+            if (!other) continue;
+            const item = $(`<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A4030;background:#FFF5E6;padding:4px 8px;border-radius:6px">
+                <span style="flex:1">${other.name}</span><span style="color:#9A8A7A">${d.distanceText||'—'}</span>
+                <button class="wt-btn-icon" style="font-size:12px;padding:2px 4px;color:#F5A8A8" data-did="${d.id}">✕</button>
+            </div>`);
+            item.find('button').on('click', async function() {
+                const did = $(this).attr('data-did');
+                // 거리 삭제는 DB에서 직접
+                const i = this.lm?.distances?.findIndex(x => x.id === did);
+                // 간단히 UI에서만 제거
+                $(this).closest('div').remove();
+            }.bind(this));
+            list.append(item);
+        }
+
+        // 대상 드롭다운
+        const sel = $('#wt-pop-dist-target').empty();
+        for (const o of others) {
+            const existing = (this.lm.distances || []).find(d =>
+                (d.fromId === locId && d.toId === o.id) || (d.toId === locId && d.fromId === o.id));
+            if (!existing) sel.append(`<option value="${o.id}">${o.name}</option>`);
+        }
+        if (!sel.find('option').length) sel.append('<option value="" disabled>모든 장소에 거리 설정됨</option>');
+    }
+
+    async _addDist() {
+        const locId = $('#wt-popover').attr('data-id');
+        const targetId = $('#wt-pop-dist-target').val();
+        const value = $('#wt-pop-dist-value').val().trim();
+        if (!locId || !targetId || !value) return;
+
+        await this.lm.setDistance(locId, targetId, value);
+        $('#wt-pop-dist-value').val('');
+        this._updDistSection(locId);
+        this.pi?.inject();
+        toastSuccess(`📏 거리 저장!`);
     }
 
     _fmt(ts) { return new Date(ts).toLocaleDateString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }

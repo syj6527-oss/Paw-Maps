@@ -143,6 +143,8 @@ async function init() {
         pi.clear(); lastId = null;
         if (ui.panelVisible) await ui.refresh();
         await lm.loadChat(); pi.inject();
+        // 캐릭터 카드/상태창/작가노트에서 장소 힌트 스캔
+        await scanContext();
     });
 
     eventSource.on(event_types.MESSAGE_SENDING, () => {
@@ -150,6 +152,73 @@ async function init() {
     });
 
     console.log(`[${EXTENSION_NAME}] Ready! 🐶`);
+}
+
+// 캐릭터 카드 / 작가노트 / 상태창 세계관 스캔
+async function scanContext() {
+    try {
+        const s = extension_settings[EXTENSION_NAME];
+        if (!s?.enabled || !s?.autoDetect) return;
+        if (!lm.currentChatId) return;
+
+        const ctx = getContext();
+        if (!ctx?.characterId) return;
+        const char = ctx.characters?.[ctx.characterId];
+        if (!char) return;
+
+        // 스캔할 텍스트 수집
+        const sources = [];
+        if (char.description) sources.push(char.description);
+        if (char.scenario) sources.push(char.scenario);
+        if (char.first_mes) sources.push(char.first_mes);
+        if (char.personality) sources.push(char.personality);
+
+        // 작가노트 / depth prompt
+        try {
+            const dp = document.querySelector('#depth_prompt_prompt');
+            if (dp?.value?.trim()) sources.push(dp.value);
+        } catch(_){}
+
+        // chat_metadata에서 상태창/작가노트
+        try {
+            const meta = ctx.chat_metadata;
+            if (meta?.note_prompt) sources.push(meta.note_prompt);
+            if (meta?.depth_prompt?.prompt) sources.push(meta.depth_prompt.prompt);
+        } catch(_){}
+
+        if (!sources.length) return;
+        const combined = sources.join('\n');
+
+        // 이미 등록된 장소가 있으면 초기 위치 설정만
+        if (lm.locations.length > 0 && lm.currentLocationId) return;
+
+        // 장소 키워드 스캔
+        let found = false;
+        for (const text of sources) {
+            if (found) break;
+            const result = det.detect(text);
+            if (result) {
+                dbg(`📋 Context: "${result.location.name}"`);
+                if (!lm.currentLocationId) {
+                    await lm.moveTo(result.location.id);
+                    pi.inject(); if (ui.panelVisible) ui.refresh();
+                }
+                found = true;
+                continue;
+            }
+            const np = det.detectNewPlace(text);
+            if (np) {
+                dbg(`📋 Context new: "${np}"`);
+                const loc = await lm.addLocation(np);
+                if (loc) {
+                    await lm.moveTo(loc.id);
+                    pi.inject(); if (ui.panelVisible) ui.refresh();
+                    found = true;
+                }
+            }
+        }
+        if (found) dbg('📋 Context scan done');
+    } catch(e) { console.error(`[${EXTENSION_NAME}] Context scan:`, e); }
 }
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });

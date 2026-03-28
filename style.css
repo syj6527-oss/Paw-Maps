@@ -1,8 +1,8 @@
 /* 🐶 월드맵 토스트 (번역기 스타일 통일) */
-.wt-toast{background:#A8E6CF!important;color:#2D5F42!important;border:none!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important;padding:10px 16px!important;font-size:13px!important;font-weight:600!important;font-family:-apple-system,'Noto Sans KR',sans-serif!important;opacity:1!important}
+.wt-toast{background:#A8E6CF!important;background-image:none!important;color:#2D5F42!important;border:none!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important;padding:10px 16px!important;font-size:13px!important;font-weight:600!important;font-family:-apple-system,'Noto Sans KR',sans-serif!important;opacity:1!important}
 .wt-toast .toast-title{color:#1A4030!important;font-weight:700!important;margin-right:6px!important}
 .wt-toast .toast-message{color:#2D5F42!important}
-.wt-toast-new{background:#FCE7AE!important;color:#5A4030!important}
+.wt-toast-new{background:#FCE7AE!important;background-image:none!important;color:#5A4030!important}
 .wt-toast-new .toast-title{color:#775537!important}
 .wt-toast-new .toast-message{color:#5A4030!important}
 
