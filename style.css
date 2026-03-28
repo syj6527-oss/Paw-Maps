@@ -64,12 +64,10 @@
 .wt-map-svg:active{cursor:grabbing}
 .wt-path-line{stroke:var(--wt-brown-f);stroke-width:2;stroke-dasharray:6 4;opacity:.35}
 .wt-node-circle{cursor:pointer}
-.wt-node-current{animation:wt-p 2s ease-in-out infinite}
-@keyframes wt-p{0%,100%{opacity:1}50%{opacity:.75}}
+.wt-node-circle{cursor:pointer}
+.wt-paw-marker{font-size:14px;text-anchor:middle;pointer-events:none;fill:#775537}
 .wt-location-label{fill:var(--wt-brown);font-size:11px;text-anchor:middle;pointer-events:none;font-weight:600}
 .wt-visit-badge{fill:var(--wt-brown);font-size:10px;font-weight:700;text-anchor:middle;pointer-events:none}
-.wt-footprint-marker{font-size:16px;text-anchor:middle;pointer-events:none;animation:wt-b 1s ease-in-out infinite}
-@keyframes wt-b{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .wt-empty-text{fill:var(--wt-text-dim);font-size:13px;text-anchor:middle}
 
 /* Popover (인라인) */

@@ -52,11 +52,35 @@ export class LocationManager {
         await this._saveCfg();
     }
 
+    // 한영 장소 사전 (이중 등록 방지)
+    static PLACE_DICT = [
+        ['집','Home','house'],['방','Room'],['학교','School'],['공원','Park'],['병원','Hospital'],
+        ['카페','Cafe','cafe','coffee shop'],['식당','Restaurant'],['사무실','Office'],
+        ['도서관','Library'],['교회','Church'],['가게','Shop','Store'],['시장','Market'],
+        ['역','Station'],['공항','Airport'],['호텔','Hotel'],['숲','Forest'],
+        ['해변','Beach'],['강','River'],['산','Mountain'],['궁전','Palace'],
+        ['성','Castle'],['감옥','Prison'],['동굴','Cave'],['항구','Port','Harbor'],
+        ['술집','Bar','Pub'],['체육관','Gym'],['극장','Theater','Theatre'],
+        ['마트','Mart','Supermarket'],['편의점','Convenience store'],
+    ];
+
     findByName(name) {
         const lo = name.toLowerCase();
-        return this.locations.find(l =>
+        // 직접 매칭
+        const direct = this.locations.find(l =>
             l.name.toLowerCase() === lo || (l.aliases || []).some(a => a.toLowerCase() === lo)
         );
+        if (direct) return direct;
+        // 한영 사전 매칭
+        for (const group of LocationManager.PLACE_DICT) {
+            const glo = group.map(w => w.toLowerCase());
+            if (!glo.includes(lo)) continue;
+            for (const loc of this.locations) {
+                const names = [loc.name.toLowerCase(), ...(loc.aliases || []).map(a => a.toLowerCase())];
+                if (names.some(n => glo.includes(n))) return loc;
+            }
+        }
+        return null;
     }
 
     async moveTo(locationId) {

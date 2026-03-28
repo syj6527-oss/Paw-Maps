@@ -22,7 +22,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 월드맵 <span class="wt-version">v0.2.0</span></b>
+                <b>🐶 월드맵 <span class="wt-version">v0.2.1</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -142,16 +142,17 @@ export class UIManager {
                     <div id="wt-map-wrap" class="wt-map-wrap">
                         <div id="wt-map-container" class="wt-map-container"></div>
                         <div class="wt-compass-overlay">
-                            <svg width="40" height="40" viewBox="0 0 120 120">
-                                <circle cx="60" cy="65" r="40" stroke="#8D6E63" stroke-width="4" fill="none"/>
-                                <circle cx="60" cy="65" r="5" fill="#8D6E63"/>
-                                <g stroke="#D2B48C" stroke-width="1" stroke-opacity="0.5">
-                                    <path d="M60 55 C65 60,75 45,60 25 C45 45,55 60,60 55Z" fill="#FFB3BA"/>
-                                    <path d="M60 75 C65 70,75 90,60 105 C45 90,55 70,60 75Z" fill="#BAE1FF"/>
-                                    <path d="M70 65 C75 60,90 50,105 65 C90 80,75 70,70 65Z" fill="#FFFFBA"/>
-                                    <path d="M50 65 C45 60,30 50,15 65 C30 80,45 70,50 65Z" fill="#FFFFBA"/>
-                                </g>
-                                <text x="60" y="32" text-anchor="middle" font-weight="bold" font-size="14" fill="#FFB3BA">N</text>
+                            <svg width="44" height="44" viewBox="0 0 44 44">
+                                <circle cx="22" cy="22" r="18" stroke="#A08060" stroke-width="1.5" fill="none"/>
+                                <circle cx="22" cy="22" r="2.5" fill="#A08060"/>
+                                <polygon points="22,6 19,16 25,16" fill="#F5A8A8" stroke="#A08060" stroke-width="0.5"/>
+                                <polygon points="22,38 19,28 25,28" fill="#A8D8EA" stroke="#A08060" stroke-width="0.5"/>
+                                <polygon points="6,22 16,19 16,25" fill="#FCE7AE" stroke="#A08060" stroke-width="0.5"/>
+                                <polygon points="38,22 28,19 28,25" fill="#FCE7AE" stroke="#A08060" stroke-width="0.5"/>
+                                <text x="22" y="4" text-anchor="middle" font-weight="700" font-size="7" fill="#F5A8A8">N</text>
+                                <text x="22" y="44" text-anchor="middle" font-weight="700" font-size="7" fill="#A8D8EA">S</text>
+                                <text x="3" y="24" text-anchor="middle" font-weight="700" font-size="7" fill="#C4A882">W</text>
+                                <text x="41" y="24" text-anchor="middle" font-weight="700" font-size="7" fill="#C4A882">E</text>
                             </svg>
                         </div>
                     </div>
@@ -180,6 +181,8 @@ export class UIManager {
                         </div>
                         <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
                         <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
+                        <div style="font-size:12px;color:#9A8A7A;margin-top:2px">🏷️ 별칭 (쉼표 구분)</div>
+                        <input type="text" id="wt-pop-aliases" class="wt-input" placeholder="예: 사격장, Shooting range" style="font-size:12px"/>
                         <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
                         <button id="wt-pop-move" class="wt-btn-ghost wt-btn-sm">📍 위치 수정</button>
                     </div>
@@ -258,7 +261,13 @@ export class UIManager {
 
         // 노드 그래프
         if (mode === 'node') {
-            if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
+            if (!this.mapRenderer) {
+                this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm);
+                this.mapRenderer.onLocationClick = id => this.showPop(id);
+                this.mapRenderer.onMoveRequest = (id, name) => {
+                    wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
+                };
+            }
             this.mapRenderer.render();
         }
 
@@ -285,7 +294,13 @@ export class UIManager {
             $('#wt-leaflet-wrap').hide();
             $('#wt-search-bar').hide();
             $('#wt-map-wrap').show();
-            if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
+            if (!this.mapRenderer) {
+                this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm);
+                this.mapRenderer.onLocationClick = id => this.showPop(id);
+                this.mapRenderer.onMoveRequest = (id, name) => {
+                    wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
+                };
+            }
             this.mapRenderer.render();
         } else if (mode === 'leaflet') {
             $('#wt-map-wrap').hide();
@@ -357,6 +372,7 @@ export class UIManager {
         $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
+        $('#wt-pop-aliases').val((l.aliases||[]).join(', '));
         // 거리 섹션
         this._updDistSection(id);
         // 맵 열려있으면 접기
@@ -371,7 +387,16 @@ export class UIManager {
     }
     hidePop() { $('#wt-popover').hide(); }
 
-    async _popSave() { const id=$('#wt-popover').attr('data-id'); await this.lm.updateLocation(id,{memo:$('#wt-pop-memo').val().trim(),status:$('#wt-pop-status').val().trim()}); toastSuccess('저장!'); this.pi?.inject(); this.refresh(); }
+    async _popSave() {
+        const id=$('#wt-popover').attr('data-id');
+        const aliases = $('#wt-pop-aliases').val().split(',').map(a=>a.trim()).filter(Boolean);
+        await this.lm.updateLocation(id,{
+            memo:$('#wt-pop-memo').val().trim(),
+            status:$('#wt-pop-status').val().trim(),
+            aliases: aliases,
+        });
+        toastSuccess('저장!'); this.pi?.inject(); this.refresh();
+    }
     async _popDel() { const id=$('#wt-popover').attr('data-id'); const l=this.lm.locations.find(x=>x.id===id); if(!confirm(`"${l?.name}" 삭제?`))return; await this.lm.deleteLocation(id); this.hidePop(); this.pi?.inject(); this.refresh(); }
     async _popMove() { const id=$('#wt-popover').attr('data-id'); await this.lm.moveTo(id); this.hidePop(); this.pi?.inject(); this.refresh(); }
 
@@ -464,8 +489,8 @@ export class UIManager {
         if (!others.length) { $('#wt-pop-dist-section').hide(); return; }
         $('#wt-pop-dist-section').show();
 
-        // 기존 거리 표시
         const list = $('#wt-pop-dist-list').empty();
+        const self = this;
         for (const d of this.lm.distances || []) {
             let otherId = d.fromId === locId ? d.toId : d.toId === locId ? d.fromId : null;
             if (!otherId) continue;
@@ -475,17 +500,17 @@ export class UIManager {
                 <span style="flex:1">${other.name}</span><span style="color:#9A8A7A">${d.distanceText||'—'}</span>
                 <button class="wt-btn-icon" style="font-size:12px;padding:2px 4px;color:#F5A8A8" data-did="${d.id}">✕</button>
             </div>`);
-            item.find('button').on('click', async function() {
+            item.find('button').on('click', function() {
                 const did = $(this).attr('data-did');
-                // 거리 삭제는 DB에서 직접
-                const i = this.lm?.distances?.findIndex(x => x.id === did);
-                // 간단히 UI에서만 제거
+                const idx = self.lm.distances.findIndex(x => x.id === did);
+                if (idx >= 0) self.lm.distances.splice(idx, 1);
                 $(this).closest('div').remove();
-            }.bind(this));
+                self.pi?.inject();
+                toastSuccess('📏 거리 삭제!');
+            });
             list.append(item);
         }
 
-        // 대상 드롭다운
         const sel = $('#wt-pop-dist-target').empty();
         for (const o of others) {
             const existing = (this.lm.distances || []).find(d =>

@@ -54,26 +54,25 @@ export class MapRenderer {
             const g = this._el('g', { class: 'wt-location-node', 'data-id': loc.id, transform: `translate(${loc.x},${loc.y})` });
             g.appendChild(this._el('circle', {
                 r: cur ? 20 : 15, fill: loc.color,
-                class: cur ? 'wt-node-circle wt-node-current' : 'wt-node-circle',
+                class: 'wt-node-circle',
                 stroke: cur ? '#775537' : '#9e8e7e', 'stroke-width': cur ? 3 : 1.5,
                 ...(cur ? { filter: 'url(#wt-glow)' } : {}),
             }));
             if (loc.visitCount > 0) g.appendChild(this._el('text', { class: 'wt-visit-badge', y: 4 }, loc.visitCount));
             g.appendChild(this._el('text', { class: 'wt-location-label', y: cur ? 34 : 30 }, loc.name));
-            if (cur) g.appendChild(this._el('text', { class: 'wt-footprint-marker', y: -28 }, '👣'));
+            if (cur) g.appendChild(this._el('text', { class: 'wt-paw-marker', y: -26 }, '🐾'));
             this.svg.appendChild(g);
         }
 
         if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
     }
 
-    // ========== Touch Handling ==========
+    // ========== Touch Handling (롱프레스 이동) ==========
     _touchStart(e) {
         if (e.touches.length === 2) {
-            // 핀치 줌 시작
             e.preventDefault();
             this._pinch = this._pinchDist(e);
-            this._pan = null; this.dragState = null;
+            this._pan = null; this._longPress = null;
             return;
         }
         if (e.touches.length === 1) {
@@ -83,13 +82,27 @@ export class MapRenderer {
             this._touchInfo = { x: t.clientX, y: t.clientY, time: Date.now(), nodeId: hitId, pt };
             this._wasDrag = false;
 
-            if (hitId) {
-                // 노드 드래그 시작
+            if (hitId && !this._movingNodeId) {
+                // 롱프레스 감지 시작 (500ms)
                 e.preventDefault();
-                const loc = this.lm.locations.find(l => l.id === hitId);
-                if (loc) this.dragState = { id: hitId, sx: pt.x, sy: pt.y, ox: loc.x, oy: loc.y };
+                this._longPress = setTimeout(() => {
+                    this._movingNodeId = hitId;
+                    const loc = this.lm.locations.find(l => l.id === hitId);
+                    if (loc && this.onMoveRequest) this.onMoveRequest(hitId, loc.name);
+                    this._longPress = null;
+                }, 500);
+            } else if (this._movingNodeId) {
+                // 이동 모드 중 — 터치한 위치로 노드 이동
+                e.preventDefault();
+                const loc = this.lm.locations.find(l => l.id === this._movingNodeId);
+                if (loc) {
+                    loc.x = Math.round(pt.x); loc.y = Math.round(pt.y);
+                    this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
+                    this.render();
+                }
+                this._movingNodeId = null;
             } else {
-                // 맵 팬 시작
+                // 맵 팬
                 this._pan = { sx: t.clientX, sy: t.clientY, vx: this.vb.x, vy: this.vb.y };
             }
         }
@@ -97,7 +110,6 @@ export class MapRenderer {
 
     _touchMove(e) {
         if (e.touches.length === 2 && this._pinch) {
-            // 핀치 줌
             e.preventDefault();
             const dist = this._pinchDist(e);
             const scale = this._pinch / dist;
@@ -111,60 +123,55 @@ export class MapRenderer {
         }
         if (e.touches.length === 1) {
             const t = e.touches[0];
-            if (this.dragState) {
-                // 노드 드래그
-                e.preventDefault();
-                const pt = this._svgPt(t);
-                const dx = pt.x - this.dragState.sx, dy = pt.y - this.dragState.sy;
-                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._wasDrag = true;
-                const loc = this.lm.locations.find(l => l.id === this.dragState.id);
-                if (loc) { loc.x = Math.round(this.dragState.ox + dx); loc.y = Math.round(this.dragState.oy + dy); this.render(); }
-            } else if (this._pan) {
-                // 맵 팬
+            // 롱프레스 중 이동하면 취소
+            if (this._longPress && this._touchInfo) {
+                const dx = Math.abs(t.clientX - this._touchInfo.x);
+                const dy = Math.abs(t.clientY - this._touchInfo.y);
+                if (dx > 10 || dy > 10) { clearTimeout(this._longPress); this._longPress = null; }
+            }
+            if (this._pan) {
                 e.preventDefault();
                 const dx = (t.clientX - this._pan.sx) * (this.vb.w / this.svg.getBoundingClientRect().width);
                 const dy = (t.clientY - this._pan.sy) * (this.vb.h / this.svg.getBoundingClientRect().height);
                 this.vb.x = this._pan.vx - dx;
                 this.vb.y = this._pan.vy - dy;
-                this._applyVB();
-                this._wasDrag = true;
+                this._applyVB(); this._wasDrag = true;
             }
         }
     }
 
     _touchEnd(e) {
-        if (this._touchInfo && !this._wasDrag && this._touchInfo.nodeId) {
+        clearTimeout(this._longPress); this._longPress = null;
+        if (this._touchInfo && !this._wasDrag && this._touchInfo.nodeId && !this._movingNodeId) {
             const dt = Date.now() - this._touchInfo.time;
             if (dt < 400) this.onLocationClick?.(this._touchInfo.nodeId);
         }
-        if (this.dragState && this._wasDrag) {
-            const loc = this.lm.locations.find(l => l.id === this.dragState.id);
-            if (loc) this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
-        }
-        this.dragState = null; this._pinch = null; this._pan = null; this._touchInfo = null;
+        this._pinch = null; this._pan = null; this._touchInfo = null;
     }
 
-    // ========== Mouse Handling ==========
+    // ========== Mouse Handling (롱프레스 이동) ==========
     _onDown(e) {
         const pt = this._svgPt(e);
         const hitId = this._hitTest(pt);
         this._wasDrag = false;
-        if (hitId) {
-            const loc = this.lm.locations.find(l => l.id === hitId);
-            if (loc) this.dragState = { id: hitId, sx: pt.x, sy: pt.y, ox: loc.x, oy: loc.y };
-        } else {
+        if (this._movingNodeId) {
+            // 이동 모드 — 클릭 위치로 노드 이동
+            const loc = this.lm.locations.find(l => l.id === this._movingNodeId);
+            if (loc) {
+                loc.x = Math.round(pt.x); loc.y = Math.round(pt.y);
+                this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
+                this.render();
+            }
+            this._movingNodeId = null;
+            return;
+        }
+        if (!hitId) {
             this._pan = { sx: e.clientX, sy: e.clientY, vx: this.vb.x, vy: this.vb.y };
         }
     }
 
     _onMove(e) {
-        if (this.dragState) {
-            const pt = this._svgPt(e);
-            const dx = pt.x - this.dragState.sx, dy = pt.y - this.dragState.sy;
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._wasDrag = true;
-            const loc = this.lm.locations.find(l => l.id === this.dragState.id);
-            if (loc) { loc.x = Math.round(this.dragState.ox + dx); loc.y = Math.round(this.dragState.oy + dy); this.render(); }
-        } else if (this._pan) {
+        if (this._pan) {
             const dx = (e.clientX - this._pan.sx) * (this.vb.w / this.svg.getBoundingClientRect().width);
             const dy = (e.clientY - this._pan.sy) * (this.vb.h / this.svg.getBoundingClientRect().height);
             this.vb.x = this._pan.vx - dx; this.vb.y = this._pan.vy - dy;
@@ -173,14 +180,7 @@ export class MapRenderer {
     }
 
     _onUp() {
-        if (this.dragState && this._wasDrag) {
-            const loc = this.lm.locations.find(l => l.id === this.dragState.id);
-            if (loc) this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
-        }
-        if (!this._wasDrag && !this.dragState && !this._pan) {
-            // click on empty space — do nothing
-        }
-        this.dragState = null; this._pan = null;
+        this._pan = null;
     }
 
     _zoom(factor, e) {
