@@ -139,6 +139,51 @@ export class LeafletRenderer {
         if (this.map) setTimeout(() => this.map.invalidateSize(), 200);
     }
 
+    // ========== Nominatim 검색 ==========
+    async search(query, contextHint = '') {
+        try {
+            const q = contextHint ? `${query}, ${contextHint}` : query;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&accept-language=ko`;
+            const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.2' } });
+            if (!res.ok) return [];
+            const data = await res.json();
+            return data.map(r => ({
+                name: r.display_name.split(',').slice(0, 2).join(','),
+                fullName: r.display_name,
+                lat: parseFloat(r.lat),
+                lng: parseFloat(r.lon),
+                type: r.type,
+            }));
+        } catch(e) { console.error(`[${EXTENSION_NAME}] Nominatim:`, e); return []; }
+    }
+
+    // 장소명으로 자동 좌표 배치
+    async autoGeocode(locId, name, contextHint = '') {
+        const results = await this.search(name, contextHint);
+        if (results.length > 0) {
+            const best = results[0];
+            await this.lm.updateLocation(locId, { lat: best.lat, lng: best.lng });
+            console.log(`[${EXTENSION_NAME}] Auto-geocoded "${name}" → ${best.lat.toFixed(4)},${best.lng.toFixed(4)}`);
+            this.render();
+            return best;
+        }
+        return null;
+    }
+
+    // 검색 결과를 지도에 임시 마커로 표시
+    showSearchResult(lat, lng, name) {
+        if (this._searchMarker) this.map.removeLayer(this._searchMarker);
+        this._searchMarker = L.marker([lat, lng])
+            .addTo(this.map)
+            .bindPopup(`<b>${name}</b><br><small>여기에 배치?</small>`)
+            .openPopup();
+        this.map.setView([lat, lng], 15);
+    }
+
+    clearSearchMarker() {
+        if (this._searchMarker) { this.map.removeLayer(this._searchMarker); this._searchMarker = null; }
+    }
+
     destroy() {
         if (this.map) { this.map.remove(); this.map = null; }
         this.markers = {};

@@ -19,8 +19,12 @@ export class LocationDetector {
             '들어갔','들어간','들어서','들어섰','나왔','나섰','떠났','돌아왔','돌아간','돌아오',
             '찾아갔','찾아왔','달려갔','뛰어갔','올라갔','내려갔','내려왔','건너갔',
             '문을 열','자리를 떠',
+            '놀러갔','놀러가','놀러간','여행갔','여행간','여행을 떠',
+            '출발했','출발한','다녀왔','다녀온','구경갔','구경하러',
+            '데려갔','데려간','끌고 갔','끌려갔','이사했','이사한',
             'headed to','walked to','went to','arrived at','entered','moved to',
             'returned to','reached','walked into','headed home','went home','got home','came home',
+            'drove to','ran to','rushed to','hurried to','traveled to','flew to',
         ];
         this.presKw = ['에서 앉','에서 서 있','에 앉아','에 서서','안에 있','안에서'];
         this.futureKw = ['갈래','갈까','가자','가볼까','어때','가고 싶','가보자','갈 거','갈게','shall we',"let's go",'want to go','how about'];
@@ -61,8 +65,10 @@ export class LocationDetector {
             'headed to','walked to','went to','arrived at','moved to',
             'returned to','ran to','rushed to','hurried to',
             'entered','reached','left','marched to',
-            'stepped into','burst into','bang open into',
+            'stepped into','burst into','stormed into',
             'headed home','went home','got home','came home',
+            'drove to','traveled to','flew to','took a taxi to',
+            'made it to','pulled up to','showed up at',
         ];
 
         this.skipMods = [

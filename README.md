@@ -1,36 +1,66 @@
 # 🗺️ RP World Tracker v0.2.0-beta
 
-**SillyTavern 확장 — RP 속 세계를 지도로 기록하세요**
+SillyTavern extension that auto-detects locations from RP text and tracks scene movement on a map.
 
-AI 응답에서 장소를 자동 감지하고, 캐릭터의 이동을 지도 위에 추적하는 확장입니다.
+## Features
 
-## ✨ 기능
+### 🔍 Auto Detection
+- Korean + English location detection (4 methods)
+- Auto-registration with edit/cancel toast
+- Case-insensitive matching, name/adjective/transit filters
 
-- 📍 **자동 장소 감지** — 한국어/영어 AI 응답 + 유저 인풋 양방향 감지
-- 🤖 **AI 프롬프트 주입** — 현재 위치/방문횟수/메모를 AI에게 자동 전달
-- 👤🎭 **유저/캐릭터 위치 분리** — 서로 다른 장소에 있을 때도 추적
-- 💭 **기억 모드** — 완벽한 기억 / 자연스러운 기억(요약) 선택
-- 🆕 **미등록 장소 발견** — 새 장소 감지 시 원클릭 등록 + 유사 장소 별칭 병합
-- 🔮 **패널 투명도** — 반투명으로 채팅 보면서 지도 확인
-- 📱 **모바일 최적화** — 모바일/웹 자동 반응형
+### 🗺️ Dual Map Mode
+- **📊 Node Graph** — SVG map with drag, pinch zoom, pan
+- **🌍 Real Map** — Leaflet with CartoDB Voyager tiles
+- Toggle between modes in the panel
 
-## 📦 설치
+### 🔎 Nominatim Search (Leaflet mode)
+- Search for real places by name
+- Auto-match coordinates to registered locations
+- Click search results to place on map
 
-```bash
-cd [SillyTavern]/data/default-user/extensions/third-party/
-git clone https://github.com/syj6527-oss/RP_World_Tracker.git rp-world-tracker
+### 🤖 AI Prompt Injection
+- Current scene location injected into AI context
+- Memory modes: Natural (fades) / Perfect (exact)
+- Visit stats, nearby locations, movement history
+
+### 📱 Mobile Compatible
+- Triple event system (RECEIVED + RENDERED + GENERATION_ENDED)
+- Safe toastr wrappers
+- Distance-based SVG hit testing
+- Inline popover & toast (no fixed positioning issues)
+
+### 🧭 Compass
+- Custom SVG compass rose (N/S/E/W petals)
+- Fixed position overlay on map
+
+## File Structure (11 files)
+```
+manifest.json          — Extension metadata
+index.js              — Entry point, events, CDN loader
+db.js                 — IndexedDB wrapper
+location-manager.js   — CRUD + movement tracking
+detector.js           — Korean/English location detection
+prompt-injector.js    — AI prompt generation
+map-renderer.js       — SVG node graph (zoom/pan/drag)
+leaflet-renderer.js   — Leaflet real map + Nominatim
+ui-manager.js         — Panel UI, popover, toast, search
+style.css             — Mobile-first responsive styles
+README.md             — This file
 ```
 
-## 🎮 사용법
+## Installation
+1. Copy to `SillyTavern/data/default-user/extensions/third-party/rp-world-tracker/`
+2. Enable in SillyTavern extensions menu
+3. Start an RP chat — locations auto-detected!
 
-1. 확장 설정에서 활성화
-2. 🗺️ 월드 맵 열기 (또는 Wand 메뉴)
-3. RP 진행 → 자동 감지!
+## Debug Mode
+Tap the 💭 emoji in settings 5 times to toggle debug mode.
 
-## 🎨 개발 원칙
-
-1. **자동 우선** — 유저는 구경만
-2. **AI 프롬프트 주입 최우선** — RP 퀄리티 체감 상승
-3. **감정 피드백 항상** — 방문 알림, 추억 메모
-
-## 📜 MIT License
+## Roadmap
+- [ ] Extension-specific AI model for detection
+- [ ] Location memory system (text → summary → decay)
+- [ ] Character card region auto-detect
+- [ ] Coordinate-based node auto-layout
+- [ ] Custom place words setting
+- [ ] Lorebook integration

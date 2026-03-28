@@ -209,7 +209,7 @@ export class MapRenderer {
     _hitTest(pt) {
         for (const loc of this.lm.locations) {
             const dx = pt.x - loc.x, dy = pt.y - loc.y;
-            if (Math.sqrt(dx * dx + dy * dy) < 45) return loc.id;
+            if (Math.sqrt(dx * dx + dy * dy) < 55) return loc.id;
         }
         return null;
     }

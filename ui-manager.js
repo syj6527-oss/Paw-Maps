@@ -98,6 +98,10 @@ export class UIManager {
                     </div>
                     <div id="wt-map-container" class="wt-map-container"></div>
                     <div id="wt-leaflet-container" class="wt-map-container" style="display:none"></div>
+                    <div id="wt-search-bar" class="wt-search-bar" style="display:none">
+                        <input type="text" id="wt-search-input" class="wt-input" placeholder="🔍 장소 검색 (예: 해운대, Central Park)"/>
+                        <div id="wt-search-results" class="wt-search-results" style="display:none"></div>
+                    </div>
                     <div class="wt-compass-overlay">
                         <svg width="40" height="40" viewBox="0 0 120 120">
                             <circle cx="60" cy="65" r="40" stroke="#8D6E63" stroke-width="4" fill="none"/>
@@ -166,6 +170,13 @@ export class UIManager {
         // 맵 모드 토글
         $('#wt-mode-node').on('click', () => this._setMapMode('node'));
         $('#wt-mode-leaflet').on('click', () => this._setMapMode('leaflet'));
+        // 검색
+        let _searchTimer = null;
+        $('#wt-search-input').on('input', () => {
+            clearTimeout(_searchTimer);
+            _searchTimer = setTimeout(() => this._doSearch(), 500);
+        });
+        $('#wt-search-input').on('keydown', e => { if(e.key==='Enter') { clearTimeout(_searchTimer); this._doSearch(); } });
         $('#wt-opacity').on('input', function(){ const v=$(this).val(); $('#wt-op-val').text(v+'%'); $('#wt-panel').css('opacity',v/100); extension_settings[EXTENSION_NAME].panelOpacity=+v; saveSettingsDebounced(); });
         const op = extension_settings[EXTENSION_NAME]?.panelOpacity ?? 100;
         $('#wt-opacity').val(op); $('#wt-op-val').text(op+'%');
@@ -209,12 +220,14 @@ export class UIManager {
 
         if (mode === 'node') {
             $('#wt-leaflet-container').hide();
+            $('#wt-search-bar').hide();
             $('#wt-map-container').show();
             if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
             this.mapRenderer.render();
         } else if (mode === 'leaflet') {
             $('#wt-map-container').hide();
             $('#wt-leaflet-container').show();
+            $('#wt-search-bar').show();
             if (!this.leafletRenderer) {
                 const ok = await loadLeaflet();
                 if (!ok) { toastWarn('Leaflet CDN 로드 실패! 인터넷 연결 확인'); this._setMapMode('node'); return; }
@@ -334,6 +347,39 @@ export class UIManager {
         const mg=catGroups.filter(g=>g.some(w=>lo.includes(w))); if(!mg.length)return[];
         const r=[]; for(const loc of this.lm.locations){ const ns=[loc.name.toLowerCase(),...(loc.aliases||[]).map(a=>a.toLowerCase())];
         for(const g of mg){if(ns.some(n=>g.some(w=>n.includes(w)))){r.push(loc);break;}}} return r.slice(0,3);
+    }
+
+    // ---- Nominatim 검색 ----
+    async _doSearch() {
+        const q = $('#wt-search-input').val().trim();
+        if (!q || q.length < 2) { $('#wt-search-results').hide(); return; }
+        if (!this.leafletRenderer) return;
+
+        const results = await this.leafletRenderer.search(q);
+        const list = $('#wt-search-results').empty();
+        if (!results.length) { list.html('<div class="wt-search-empty">결과 없음</div>').show(); return; }
+
+        for (const r of results) {
+            const item = $(`<div class="wt-search-item"><span class="wt-search-name">${r.name}</span></div>`);
+            item.on('click', () => {
+                // 지도 이동 + 임시 마커
+                this.leafletRenderer.showSearchResult(r.lat, r.lng, r.name);
+                $('#wt-search-results').hide();
+                // 좌표 없는 장소 중 이름 비슷한 거 있으면 자동 매칭
+                const match = this.lm.locations.find(l => !l.lat && l.name.toLowerCase().includes(q.toLowerCase()));
+                if (match) {
+                    if (confirm(`"${match.name}"에 이 좌표를 배치할까요?`)) {
+                        this.lm.updateLocation(match.id, { lat: r.lat, lng: r.lng }).then(() => {
+                            this.leafletRenderer.clearSearchMarker();
+                            this.leafletRenderer.render();
+                            toastSuccess(`📍 ${match.name} 배치!`);
+                        });
+                    }
+                }
+            });
+            list.append(item);
+        }
+        list.show();
     }
 
     _fmt(ts) { return new Date(ts).toLocaleDateString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
