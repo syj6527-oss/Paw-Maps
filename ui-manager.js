@@ -133,6 +133,7 @@ export class UIManager {
                     <div class="wt-map-mode-bar">
                         <button id="wt-mode-node" class="wt-mode-btn wt-mode-active">📊 노드</button>
                         <button id="wt-mode-leaflet" class="wt-mode-btn">🌍 실제 지도</button>
+                        <button id="wt-btn-layout" class="wt-mode-btn" style="font-size:11px;flex:0.6">🗺️ 약도</button>
                     </div>
                     <div id="wt-search-bar" class="wt-search-bar" style="display:none">
                         <input type="search" id="wt-search-input" class="wt-input" placeholder="🔍 장소 검색..." autocomplete="off" inputmode="search"/>
@@ -232,6 +233,13 @@ export class UIManager {
         // 맵 모드 토글
         $('#wt-mode-node').on('click', () => this._setMapMode('node'));
         $('#wt-mode-leaflet').on('click', () => this._setMapMode('leaflet'));
+        $('#wt-btn-layout').on('click', () => {
+            if (this.mapRenderer) {
+                this.mapRenderer._layoutDirty = true;
+                this.mapRenderer.render();
+                toastSuccess('🗺️ 약도 재생성!');
+            }
+        });
         // 검색
         let _searchTimer = null;
         $('#wt-search-input').on('input', () => {

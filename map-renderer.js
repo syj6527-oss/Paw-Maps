@@ -116,6 +116,7 @@ export class MapRenderer {
         // 첫 노드가 (0,0)이면 초기 배치 필요
         const needsInit = locs.some(l => l.x === 0 && l.y === 0);
         if (!needsInit && !this._layoutDirty) return;
+        this._layoutDirty = false;
 
         // 현재 위치를 중심에
         const curId = this.lm.currentLocationId;
