@@ -151,9 +151,11 @@ async function init() {
         await scanContext();
     });
 
-    eventSource.on(event_types.MESSAGE_SENDING, () => {
-        if (extension_settings[EXTENSION_NAME]?.enabled && extension_settings[EXTENSION_NAME]?.aiInjection) pi.inject();
-    });
+    if (event_types.MESSAGE_SENDING) {
+        eventSource.on(event_types.MESSAGE_SENDING, () => {
+            if (extension_settings[EXTENSION_NAME]?.enabled && extension_settings[EXTENSION_NAME]?.aiInjection) pi.inject();
+        });
+    }
 
     console.log(`[${EXTENSION_NAME}] Ready! 🐶`);
 }

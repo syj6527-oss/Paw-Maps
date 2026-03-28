@@ -65,6 +65,16 @@ export class MapRenderer {
         }
 
         if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
+
+        // ViewBox 자동 맞춤 — 모든 노드가 보이도록
+        if (locations.length) {
+            const xs = locations.map(l => l.x), ys = locations.map(l => l.y);
+            const minX = Math.min(...xs) - 60, maxX = Math.max(...xs) + 60;
+            const minY = Math.min(...ys) - 60, maxY = Math.max(...ys) + 60;
+            const w = Math.max(300, maxX - minX), h = Math.max(250, maxY - minY);
+            this.vb = { x: minX, y: minY, w, h };
+            this._applyVB();
+        }
     }
 
     // ========== Touch Handling (롱프레스 이동) ==========
