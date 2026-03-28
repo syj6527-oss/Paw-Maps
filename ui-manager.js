@@ -2,8 +2,9 @@
 
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
-import { EXTENSION_NAME, toast, toastWarn, toastSuccess } from './index.js';
+import { EXTENSION_NAME, toast, toastWarn, toastSuccess, loadLeaflet } from './index.js';
 import { MapRenderer } from './map-renderer.js';
+import { LeafletRenderer } from './leaflet-renderer.js';
 
 const catGroups = [
     ['hall','room','chamber','lounge'],['dining','mess','cafeteria','restaurant','kitchen','cafe','canteen'],
@@ -16,7 +17,7 @@ const catGroups = [
 ];
 
 export class UIManager {
-    constructor(lm, pi) { this.lm=lm; this.pi=pi; this.mapRenderer=null; this.panelVisible=false; }
+    constructor(lm, pi) { this.lm=lm; this.pi=pi; this.mapRenderer=null; this.leafletRenderer=null; this.panelVisible=false; }
 
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
@@ -81,6 +82,7 @@ export class UIManager {
                         <div id="wt-at-sim-list"></div>
                     </div>
                     <div class="wt-at-actions">
+                        <button id="wt-at-ok" class="wt-btn-accent wt-btn-s">✅ 추가</button>
                         <button id="wt-at-edit" class="wt-btn-primary wt-btn-s">✏️ 수정</button>
                         <button id="wt-at-undo" class="wt-btn-danger wt-btn-s">↩️ 취소</button>
                     </div>
@@ -90,7 +92,12 @@ export class UIManager {
 
                 <div class="wt-map-toggle" id="wt-map-toggle">🗺️ 지도 ▾</div>
                 <div id="wt-map-wrap" class="wt-map-wrap">
+                    <div class="wt-map-mode-bar">
+                        <button id="wt-mode-node" class="wt-mode-btn wt-mode-active">📊 노드</button>
+                        <button id="wt-mode-leaflet" class="wt-mode-btn">🌍 실제 지도</button>
+                    </div>
                     <div id="wt-map-container" class="wt-map-container"></div>
+                    <div id="wt-leaflet-container" class="wt-map-container" style="display:none"></div>
                     <div class="wt-compass-overlay">
                         <svg width="40" height="40" viewBox="0 0 120 120">
                             <circle cx="60" cy="65" r="40" stroke="#8D6E63" stroke-width="4" fill="none"/>
@@ -156,6 +163,9 @@ export class UIManager {
         $('#wt-pop-save').on('click', () => this._popSave());
         $('#wt-pop-del').on('click', () => this._popDel());
         $('#wt-pop-move').on('click', () => this._popMove());
+        // 맵 모드 토글
+        $('#wt-mode-node').on('click', () => this._setMapMode('node'));
+        $('#wt-mode-leaflet').on('click', () => this._setMapMode('leaflet'));
         $('#wt-opacity').on('input', function(){ const v=$(this).val(); $('#wt-op-val').text(v+'%'); $('#wt-panel').css('opacity',v/100); extension_settings[EXTENSION_NAME].panelOpacity=+v; saveSettingsDebounced(); });
         const op = extension_settings[EXTENSION_NAME]?.panelOpacity ?? 100;
         $('#wt-opacity').val(op); $('#wt-op-val').text(op+'%');
@@ -169,13 +179,52 @@ export class UIManager {
 
     async refresh() {
         await this.lm.loadChat();
-        if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
-        this.mapRenderer.render();
+        const s = extension_settings[EXTENSION_NAME];
+        const mode = s?.mapMode || 'node';
+
+        // 노드 그래프
+        if (mode === 'node') {
+            if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
+            this.mapRenderer.render();
+        }
+
+        // Leaflet
+        if (mode === 'leaflet' && this.leafletRenderer?.map) {
+            this.leafletRenderer.render();
+            this.leafletRenderer.invalidateSize();
+        }
+
         const cur = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
         $('#wt-scene-name').text(cur?.name || '—').css('color', cur?.color || '');
-        const s = extension_settings[EXTENSION_NAME];
-        if (s?.aiInjection && this.pi) { const t=this.pi.generate(); if(t){$('#wt-prompt-text').text(t);$('#wt-prompt-preview').slideDown(150);}else{$('#wt-prompt-preview').slideUp(150);} }
         this._updLocList(); this._updMoveList();
+    }
+
+    async _setMapMode(mode) {
+        const s = extension_settings[EXTENSION_NAME];
+        s.mapMode = mode; saveSettingsDebounced();
+
+        // UI 버튼 활성화
+        $('.wt-mode-btn').removeClass('wt-mode-active');
+        $(`#wt-mode-${mode}`).addClass('wt-mode-active');
+
+        if (mode === 'node') {
+            $('#wt-leaflet-container').hide();
+            $('#wt-map-container').show();
+            if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
+            this.mapRenderer.render();
+        } else if (mode === 'leaflet') {
+            $('#wt-map-container').hide();
+            $('#wt-leaflet-container').show();
+            if (!this.leafletRenderer) {
+                const ok = await loadLeaflet();
+                if (!ok) { toastWarn('Leaflet CDN 로드 실패! 인터넷 연결 확인'); this._setMapMode('node'); return; }
+                this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
+                await this.leafletRenderer.init();
+                this.leafletRenderer.onLocationClick = id => this.showPop(id);
+            }
+            this.leafletRenderer.render();
+            this.leafletRenderer.invalidateSize();
+        }
     }
 
     _updLocList() {
@@ -221,9 +270,11 @@ export class UIManager {
         $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
-        // 즉시 열기 (애니메이션 없음 → 터치 오류 방지)
-        $('#wt-map-wrap').hide();
-        $('#wt-map-toggle').text('🗺️ 지도 ▾');
+        // 맵 열려있으면 접기 (닫혀있으면 그냥 냅둠)
+        if ($('#wt-map-wrap').is(':visible')) {
+            $('#wt-map-wrap').hide();
+            $('#wt-map-toggle').text('🗺️ 지도 ▾');
+        }
         $('#wt-popover').show();
         const pop = document.getElementById('wt-popover');
         const body = document.getElementById('wt-panel-body');
@@ -256,6 +307,12 @@ export class UIManager {
             $('#wt-at-similar').show();
         } else { $('#wt-at-similar').hide(); }
 
+        // ✅ 추가 (확인) — 토스트만 닫기
+        $('#wt-at-ok').off('click').on('click', () => {
+            $('#wt-auto-toast').slideUp(200);
+        });
+
+        // ✏️ 수정
         $('#wt-at-edit').off('click').on('click', ()=>{
             $('#wt-auto-toast').slideUp(200);
             $('#wt-add-form').slideDown(200); $('#wt-add-arrow').text('▴');

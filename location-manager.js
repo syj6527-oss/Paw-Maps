@@ -32,7 +32,8 @@ export class LocationManager {
         const loc = {
             id: this.generateId(), chatId: this.currentChatId,
             name: name.trim(), aliases: aliases.map(a => a.trim()).filter(Boolean),
-            x: 0, y: 0, visitCount: 0, firstVisited: null, lastVisited: null,
+            x: 0, y: 0, lat: null, lng: null,
+            visitCount: 0, firstVisited: null, lastVisited: null,
             memo: memo.trim(), status: '', color: this._rndColor(), createdAt: Date.now(),
         };
         const p = this._autoPos(); loc.x = p.x; loc.y = p.y;

@@ -18,10 +18,32 @@ export function toastSuccess(msg) { try { if (typeof toastr !== 'undefined') toa
 const defaults = {
     enabled:true, autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
-    debugMode:false,
+    debugMode:false, mapMode:'node', // 'node' or 'leaflet'
 };
 
 let db, lm, det, pi, ui;
+
+// Leaflet CDN 동적 로드
+export async function loadLeaflet() {
+    if (window.L) return true;
+    try {
+        // CSS
+        if (!document.querySelector('link[href*="leaflet"]')) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+            document.head.appendChild(link);
+        }
+        // JS
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+            script.onload = () => { console.log(`[${EXTENSION_NAME}] Leaflet loaded!`); resolve(true); };
+            script.onerror = () => { console.warn(`[${EXTENSION_NAME}] Leaflet CDN failed`); resolve(false); };
+            document.head.appendChild(script);
+        });
+    } catch(e) { console.warn(`[${EXTENSION_NAME}] Leaflet load error:`, e); return false; }
+}
 
 function dbg(msg) {
     const s = extension_settings[EXTENSION_NAME];
