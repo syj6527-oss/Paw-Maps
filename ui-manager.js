@@ -34,11 +34,13 @@ export class UIManager {
                 <div class="wt-s-row"><label>💭 기억</label><select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🗺️ 월드 맵</button></div>
+                <div class="wt-s-row"><label><input type="checkbox" id="wt-s-debug"/> 🔧 디버그 모드</label></div>
             </div></div></div>`;
         $('#extensions_settings2').append(html);
         const s=extension_settings[EXTENSION_NAME];
         const bind=(sel,key,def)=>$(sel).prop('checked',s?.[key]??def).on('change',function(){s[key]=$(this).is(':checked');saveSettingsDebounced()});
         bind('#wt-s-enabled','enabled',true);bind('#wt-s-detect','autoDetect',true);bind('#wt-s-toast','showDetectToast',true);bind('#wt-s-inject','aiInjection',true);
+        bind('#wt-s-debug','debugMode',false);
         $('#wt-s-inject').on('change',()=>{s.aiInjection?this.pi?.inject():this.pi?.clear()});
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change',()=>{s.memoryMode=$('#wt-s-mem').val();saveSettingsDebounced();this.pi?.inject()});
         $('#wt-open-panel').on('click',()=>this.togglePanel());
@@ -187,7 +189,7 @@ export class UIManager {
     _updMoveList() {
         const list=$('#wt-move-list').empty();
         if(!this.lm.movements.length){list.html('<div class="wt-empty">아직 이동 기록이 없어요</div>');return;}
-        for(const m of [...this.lm.movements].sort((a,b)=>b.timestamp-a.timestamp).slice(0,20)){
+        for(const m of [...this.lm.movements].sort((a,b)=>a.timestamp-b.timestamp).slice(-20)){
             const f=this.lm.locations.find(l=>l.id===m.fromId),t=this.lm.locations.find(l=>l.id===m.toId);if(!f||!t)continue;
             const time=new Date(m.timestamp).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
             const dist=m.distance?`<span class="wt-mv-dist">${m.distance}</span>`:'';

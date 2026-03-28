@@ -14,37 +14,43 @@ export const PROMPT_KEY = 'rp-world-tracker-prompt';
 const defaults = {
     enabled:true, mapMode:'auto', autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
+    debugMode:false,
 };
 
 let db, lm, det, pi, ui;
 
-async function scanMessage(text) {
+function dbg(msg) {
+    const s = extension_settings[EXTENSION_NAME];
+    if (s?.debugMode) toastr.info(msg, '🔧 Debug', {timeOut:4000, positionClass:'toast-top-right'});
+    console.log(`[${EXTENSION_NAME}] ${msg}`);
+}
+
+async function scanMessage(text, label='') {
     try {
         const s = extension_settings[EXTENSION_NAME];
         if (!s?.enabled || !s?.autoDetect || !text?.trim()) return;
         if (!lm.currentChatId) await lm.loadChat();
-        if (!lm.currentChatId) return;
+        if (!lm.currentChatId) { dbg('❌ No chatId'); return; }
 
-        console.log(`[${EXTENSION_NAME}] Scan (${text.length}c)...`);
+        dbg(`🔍 Scan ${label} (${text.length}c)`);
 
-        // 등록된 장소 감지
         const result = det.detect(text);
         if (result) {
             const { location, type, confidence } = result;
-            console.log(`[${EXTENSION_NAME}] ✅ "${location.name}" (${type},${confidence})`);
+            dbg(`✅ Known: "${location.name}" (${type},${confidence})`);
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
                 if (s.showDetectToast) toastr.info(`👣 ${location.name} ${type==='move'?'이동':'위치'}`, '🗺️', {timeOut:3000,positionClass:'toast-bottom-right'});
                 pi.inject(); if (ui.panelVisible) ui.refresh();
-            }
-            return true; // 감지됨
+            } else { dbg('⏭️ Already here'); }
+            return true;
         }
 
-        // 미등록 장소 발견
         const np = det.detectNewPlace(text);
-        if (np) { console.log(`[${EXTENSION_NAME}] 🆕 "${np}"`); ui.showNewPlaceToast(np); return true; }
+        if (np) { dbg(`🆕 New: "${np}"`); ui.showNewPlaceToast(np); return true; }
+        dbg('❌ No location found');
         return false;
-    } catch(e) { console.error(`[${EXTENSION_NAME}] Scan error:`, e); return false; }
+    } catch(e) { dbg(`💥 Error: ${e.message}`); return false; }
 }
 
 async function init() {
@@ -63,24 +69,22 @@ async function init() {
         pi.clear(); if(ui.panelVisible) await ui.refresh(); await lm.loadChat(); pi.inject();
     });
 
-    // AI 응답 수신 → AI 아웃풋 먼저, 안 잡히면 직전 유저 인풋 스캔
+    // AI 응답 수신 → 유저 인풋 + AI 아웃풋 둘 다 스캔
     eventSource.on(event_types.MESSAGE_RECEIVED, async (idx) => {
         const ctx = getContext(); if (!ctx?.chat?.length) return;
         let aiMsg = typeof idx==='number' ? ctx.chat[idx] : ctx.chat[ctx.chat.length-1];
         if (!aiMsg || aiMsg.is_user) return;
 
-        // 직전 유저 인풋 찾기
         const aiIdx = typeof idx==='number' ? idx : ctx.chat.length-1;
         let userMsg = null;
         for (let i=aiIdx-1; i>=Math.max(0,aiIdx-3); i--) {
             if (ctx.chat[i]?.is_user) { userMsg = ctx.chat[i]; break; }
         }
 
-        console.log(`[${EXTENSION_NAME}] RECV — AI:${(aiMsg.mes||'').length}c User:${(userMsg?.mes||'').length}c`);
+        dbg(`📨 RECV — AI:${(aiMsg.mes||'').length}c User:${(userMsg?.mes||'').length}c`);
 
-        // 유저 인풋 먼저 스캔 → AI 아웃풋 스캔 (AI가 최종 씬 결정)
-        if (userMsg?.mes?.trim()) await scanMessage(userMsg.mes);
-        if (aiMsg.mes?.trim()) await scanMessage(aiMsg.mes);
+        if (userMsg?.mes?.trim()) await scanMessage(userMsg.mes, 'USER');
+        if (aiMsg.mes?.trim()) await scanMessage(aiMsg.mes, 'AI');
     });
 
     eventSource.on(event_types.MESSAGE_SENDING, () => {
