@@ -42,48 +42,142 @@ export class MapRenderer {
     // ========== Render ==========
     render() {
         if (!this.svg) return;
-        // 디버그 텍스트 제거
         document.getElementById('wt-map-debug')?.remove();
-        // 모바일 높이 재확인
         if (this.container) {
             const h = this.container.offsetHeight || this.container.clientHeight || 320;
             this.svg.setAttribute('height', Math.max(h, 320) + 'px');
         }
-        // ViewBox 강제 리셋
-        this.vb = { x: 0, y: 0, w: 600, h: 500 };
-        this._applyVB();
+
         this.svg.innerHTML = '<defs><filter id="wt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
         const { locations, movements, currentLocationId } = this.lm;
 
-        console.log(`[MAP] render: ${locations.length} locs, positions:`, locations.map(l => `${l.name}(${l.x},${l.y})`).join(', '));
+        // 거리 기반 약도 자동 배치
+        if (locations.length >= 2) this._autoLayout();
 
-        // 디버그: 항상 보이는 텍스트
-        this.svg.appendChild(this._el('text', { x: 300, y: 30, class: 'wt-location-label', 'font-size': '14' }, `🐶 ${locations.length}개 장소`));
-
+        // 경로선
         const drawn = new Set();
         for (const m of movements) {
             const f = locations.find(l => l.id === m.fromId), t = locations.find(l => l.id === m.toId);
             if (!f || !t) continue;
             const k = [m.fromId, m.toId].sort().join('-'); if (drawn.has(k)) continue; drawn.add(k);
             this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, class: 'wt-path-line' }));
+
+            // 거리 라벨 (거리 정보 있으면)
+            const dist = this.lm.getDistanceBetween(m.fromId, m.toId);
+            if (dist?.distanceText) {
+                const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
+                this.svg.appendChild(this._el('text', {
+                    x: mx, y: my - 6, class: 'wt-dist-label',
+                    'text-anchor': 'middle', fill: '#9A8A7A', 'font-size': '10'
+                }, dist.distanceText));
+            }
         }
 
+        // 노드
         for (const loc of locations) {
             const cur = loc.id === currentLocationId;
             const g = this._el('g', { class: 'wt-location-node', 'data-id': loc.id, transform: `translate(${loc.x},${loc.y})` });
             g.appendChild(this._el('circle', {
-                r: cur ? 20 : 15, fill: loc.color,
+                r: cur ? 22 : 16, fill: loc.color,
                 class: 'wt-node-circle',
                 stroke: cur ? '#775537' : '#9e8e7e', 'stroke-width': cur ? 3 : 1.5,
                 ...(cur ? { filter: 'url(#wt-glow)' } : {}),
             }));
             if (loc.visitCount > 0) g.appendChild(this._el('text', { class: 'wt-visit-badge', y: 4 }, loc.visitCount));
-            g.appendChild(this._el('text', { class: 'wt-location-label', y: cur ? 34 : 30 }, loc.name));
-            if (cur) g.appendChild(this._el('text', { class: 'wt-paw-marker', y: -26 }, '🐾'));
+            g.appendChild(this._el('text', { class: 'wt-location-label', y: cur ? 36 : 30 }, loc.name));
+            if (cur) g.appendChild(this._el('text', { class: 'wt-paw-marker', y: -28 }, '🐾'));
             this.svg.appendChild(g);
         }
 
         if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
+
+        // ViewBox 자동 맞춤
+        if (locations.length) {
+            const pad = 80;
+            const xs = locations.map(l => l.x), ys = locations.map(l => l.y);
+            const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
+            const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
+            this.vb = { x: minX, y: minY, w: Math.max(300, maxX - minX), h: Math.max(250, maxY - minY) };
+        } else {
+            this.vb = { x: 0, y: 0, w: 600, h: 500 };
+        }
+        this._applyVB();
+    }
+
+    // ========== 거리 기반 약도 자동 배치 ==========
+    _autoLayout() {
+        const locs = this.lm.locations;
+        const dists = this.lm.distances || [];
+        if (locs.length < 2) return;
+
+        // 거리 level → 픽셀 거리 매핑
+        const levelToPx = { 1: 70, 2: 110, 3: 160, 4: 220, 5: 300 };
+
+        // 첫 노드가 (0,0)이면 초기 배치 필요
+        const needsInit = locs.some(l => l.x === 0 && l.y === 0);
+        if (!needsInit && !this._layoutDirty) return;
+
+        // 현재 위치를 중심에
+        const curId = this.lm.currentLocationId;
+        const curLoc = locs.find(l => l.id === curId) || locs[0];
+        curLoc.x = 300; curLoc.y = 250;
+
+        // 거리 데이터 없는 노드는 원형 배치
+        let angle = 0;
+        const angleStep = (2 * Math.PI) / Math.max(locs.length - 1, 1);
+
+        for (const loc of locs) {
+            if (loc.id === curLoc.id) continue;
+            // 거리 데이터 확인
+            const dist = dists.find(d =>
+                (d.fromId === curLoc.id && d.toId === loc.id) ||
+                (d.toId === curLoc.id && d.fromId === loc.id)
+            );
+            const level = dist?.level || 3;
+            const px = levelToPx[level] || 160;
+
+            loc.x = Math.round(300 + px * Math.cos(angle));
+            loc.y = Math.round(250 + px * Math.sin(angle));
+            angle += angleStep;
+        }
+
+        // 스프링 시뮬레이션 (5회 반복)
+        for (let iter = 0; iter < 5; iter++) {
+            for (const d of dists) {
+                const a = locs.find(l => l.id === d.fromId);
+                const b = locs.find(l => l.id === d.toId);
+                if (!a || !b) continue;
+
+                const ideal = levelToPx[d.level || 3] || 160;
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const actual = Math.sqrt(dx * dx + dy * dy) || 1;
+                const force = (actual - ideal) * 0.15;
+                const fx = (dx / actual) * force, fy = (dy / actual) * force;
+
+                if (a.id !== curLoc.id) { a.x += Math.round(fx); a.y += Math.round(fy); }
+                if (b.id !== curLoc.id) { b.x -= Math.round(fx); b.y -= Math.round(fy); }
+            }
+
+            // 겹침 방지 (최소 60px)
+            for (let i = 0; i < locs.length; i++) {
+                for (let j = i + 1; j < locs.length; j++) {
+                    const dx = locs[j].x - locs[i].x, dy = locs[j].y - locs[i].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 60) {
+                        const push = (60 - dist) / 2;
+                        const nx = dx / (dist || 1), ny = dy / (dist || 1);
+                        if (locs[i].id !== curLoc.id) { locs[i].x -= Math.round(push * nx); locs[i].y -= Math.round(push * ny); }
+                        if (locs[j].id !== curLoc.id) { locs[j].x += Math.round(push * nx); locs[j].y += Math.round(push * ny); }
+                    }
+                }
+            }
+        }
+
+        // DB에 위치 저장
+        for (const loc of locs) {
+            this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
+        }
+        this._layoutDirty = false;
     }
 
     // ========== Touch Handling (롱프레스 이동) ==========
