@@ -138,8 +138,6 @@ export class UIManager {
                 </div>
                 <input type="file" id="wt-data-file" accept=".json" style="display:none"/>
             </div>
-                <button id="wt-panel-close" class="wt-btn-icon">✕</button>
-            </div>
             <div class="wt-panel-body" id="wt-panel-body">
                 <!-- 자동 등록 알림 (인라인!) -->
                 <div id="wt-auto-toast" class="wt-auto-toast" style="display:none">
