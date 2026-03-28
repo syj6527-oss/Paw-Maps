@@ -39,6 +39,14 @@ export class UIManager {
                 <div class="wt-s-row"><select id="wt-s-profile" class="text_pole wt-select wt-select-full"><option value="">없음 (regex만)</option></select></div>
                 <div class="wt-s-row"><button id="wt-s-profile-save" class="menu_button" style="font-size:12px;padding:4px 12px">💾 모델 저장</button><span id="wt-s-profile-status" style="font-size:11px;color:#9A8A7A;margin-left:6px"></span></div>
                 <div class="wt-divider"></div>
+                <div class="wt-s-row"><label>📦 전체 데이터 관리</label></div>
+                <div class="wt-s-row" style="display:flex;gap:4px">
+                    <button id="wt-s-export-all" class="menu_button" style="flex:1;font-size:11px;padding:6px">💾 전체 백업</button>
+                    <button id="wt-s-import-all" class="menu_button" style="flex:1;font-size:11px;padding:6px">📂 불러오기</button>
+                    <button id="wt-s-delete-all" class="menu_button" style="flex:1;font-size:11px;padding:6px;color:#e74c3c">🗑️ 전체 삭제</button>
+                </div>
+                <input type="file" id="wt-s-import-file" accept=".json" style="display:none"/>
+                <div class="wt-divider"></div>
                 <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🐶 World Tracker</button></div>
             </div></div></div>`;
         const containers = ['#extensions_settings2','#extensions_settings','.extensions_block'];
@@ -67,6 +75,12 @@ export class UIManager {
             setTimeout(() => $('#wt-s-profile-status').text(''), 3000);
         });
         $('#wt-open-panel').on('click', () => this.togglePanel());
+
+        // 전체 데이터 관리 (설정 패널)
+        $('#wt-s-export-all').on('click', () => this._exportAllData());
+        $('#wt-s-import-all').on('click', () => $('#wt-s-import-file').click());
+        $('#wt-s-import-file').on('change', (e) => this._importAllData(e));
+        $('#wt-s-delete-all').on('click', () => this._deleteAllData());
         // 🔧 비밀 디버그: 💭 5번 탭
         let _t=0, _tm=null;
         $(document).on('click','#wt-secret', e => { e.stopPropagation(); _t++; clearTimeout(_tm);
@@ -109,6 +123,21 @@ export class UIManager {
         <div id="wt-panel" class="wt-panel">
             <div class="wt-panel-header">
                 <div class="wt-panel-title"><span>🐶</span> World Tracker</div>
+                <div style="display:flex;gap:4px;align-items:center">
+                    <button id="wt-data-btn" class="wt-btn-icon" style="font-size:16px">⚙️</button>
+                    <button id="wt-close-btn" class="wt-btn-icon">✕</button>
+                </div>
+            </div>
+            <!-- 데이터 관리 드롭다운 -->
+            <div id="wt-data-menu" style="display:none;padding:10px;background:var(--wt-surface);border-bottom:1px solid var(--wt-border);font-size:13px">
+                <div style="font-weight:700;color:var(--wt-brown);margin-bottom:8px">📦 이 채팅 데이터</div>
+                <div style="display:flex;gap:6px;margin-bottom:10px">
+                    <button id="wt-data-export" class="wt-btn-primary" style="flex:1;padding:6px;font-size:12px">💾 백업</button>
+                    <button id="wt-data-import" class="wt-btn-ghost" style="flex:1;padding:6px;font-size:12px">📂 불러오기</button>
+                    <button id="wt-data-delete" class="wt-btn-danger" style="flex:1;padding:6px;font-size:12px">🗑️ 삭제</button>
+                </div>
+                <input type="file" id="wt-data-file" accept=".json" style="display:none"/>
+            </div>
                 <button id="wt-panel-close" class="wt-btn-icon">✕</button>
             </div>
             <div class="wt-panel-body" id="wt-panel-body">
@@ -227,7 +256,14 @@ export class UIManager {
     }
 
     _bind() {
-        $('#wt-panel-close').on('click', () => this.togglePanel(false));
+        $('#wt-close-btn').on('click', () => this.togglePanel(false));
+
+        // 데이터 관리 메뉴
+        $('#wt-data-btn').on('click', () => $('#wt-data-menu').toggle());
+        $('#wt-data-export').on('click', () => this._exportChatData());
+        $('#wt-data-import').on('click', () => $('#wt-data-file').click());
+        $('#wt-data-file').on('change', (e) => this._importChatData(e));
+        $('#wt-data-delete').on('click', () => this._deleteChatData());
         $('#wt-map-toggle').on('click', () => { $('#wt-map-section').slideToggle(200); const t=$('#wt-map-toggle').text(); $('#wt-map-toggle').text(t.includes('▾')?'🗺️ 지도 ▴':'🗺️ 지도 ▾'); });
         $('#wt-add-toggle').on('click', () => { $('#wt-add-form').slideToggle(200); const a=$('#wt-add-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-btn-add').on('click', () => this._addLoc());
@@ -757,6 +793,93 @@ export class UIManager {
                 });
                 resultsDiv.append(item);
             }
+    }
+
+    // ========== 데이터 관리 (채팅별) ==========
+    async _exportChatData() {
+        if (!this.lm.currentChatId) { toastWarn('채팅이 없어요!'); return; }
+        const data = await this.lm.db.exportChat(this.lm.currentChatId);
+        this._downloadJSON(data, `wt-chat-${this.lm.currentChatId.slice(0,12)}`);
+        toastSuccess(`💾 이 채팅 백업 완료!`);
+        $('#wt-data-menu').hide();
+    }
+
+    async _importChatData(e) {
+        const file = e.target.files?.[0]; if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!data.chatId && !data.locations) { toastWarn('잘못된 파일!'); return; }
+            // 단일 채팅 데이터
+            if (data.chatId) {
+                await this.lm.db.importChat(data);
+            } else {
+                toastWarn('채팅 데이터가 아닙니다!'); return;
+            }
+            await this.lm.loadChat();
+            this.refresh();
+            toastSuccess(`📂 데이터 불러오기 완료!`);
+        } catch(err) { toastWarn('파일 오류: ' + err.message); }
+        e.target.value = '';
+        $('#wt-data-menu').hide();
+    }
+
+    async _deleteChatData() {
+        if (!this.lm.currentChatId) return;
+        if (!confirm('이 채팅의 모든 장소/이동 데이터를 삭제할까요?')) return;
+        await this.lm.db.deleteChat(this.lm.currentChatId);
+        this.lm.locations = []; this.lm.movements = []; this.lm.distances = [];
+        this.lm.currentLocationId = null;
+        this.refresh();
+        toastSuccess('🗑️ 이 채팅 데이터 삭제 완료!');
+        $('#wt-data-menu').hide();
+    }
+
+    // ========== 데이터 관리 (전체) ==========
+    async _exportAllData() {
+        const data = await this.lm.db.exportAll();
+        this._downloadJSON(data, `wt-all-backup`);
+        toastSuccess(`💾 전체 백업 완료! (${data.locations?.length || 0}개 장소)`);
+    }
+
+    async _importAllData(e) {
+        const file = e.target.files?.[0]; if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (data.chatId) {
+                // 단일 채팅 데이터 → importChat
+                await this.lm.db.importChat(data);
+            } else if (data.locations) {
+                // 전체 백업 → importAll
+                await this.lm.db.importAll(data);
+            } else { toastWarn('잘못된 파일!'); return; }
+            await this.lm.loadChat();
+            this.refresh();
+            toastSuccess(`📂 데이터 불러오기 완료!`);
+        } catch(err) { toastWarn('파일 오류: ' + err.message); }
+        e.target.value = '';
+    }
+
+    async _deleteAllData() {
+        if (!confirm('⚠️ 모든 채팅의 World Tracker 데이터를 삭제할까요?\n이 작업은 되돌릴 수 없습니다!')) return;
+        if (!confirm('정말 삭제하시겠습니까?')) return;
+        await this.lm.db.deleteAll();
+        this.lm.locations = []; this.lm.movements = []; this.lm.distances = [];
+        this.lm.currentLocationId = null;
+        this.refresh();
+        toastSuccess('🗑️ 전체 데이터 삭제 완료!');
+    }
+
+    _downloadJSON(data, prefix) {
+        const str = JSON.stringify(data, null, 2);
+        const blob = new Blob([str], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+        a.href = url; a.download = `${prefix}-${date}.json`;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
     }
 
     async _addDist() {
