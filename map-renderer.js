@@ -6,7 +6,7 @@ export class MapRenderer {
         this.svg = null; this.dragState = null; this._wasDrag = false;
         this.onLocationClick = null;
         // ViewBox state for zoom/pan
-        this.vb = { x: -50, y: -30, w: 700, h: 560 };
+        this.vb = { x: 0, y: 0, w: 600, h: 500 };
         this._pinch = null; this._pan = null;
         this._init();
     }

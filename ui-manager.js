@@ -92,14 +92,21 @@ export class UIManager {
                 <div id="wt-map-wrap" class="wt-map-wrap">
                     <div id="wt-map-container" class="wt-map-container"></div>
                     <div class="wt-compass-overlay">
-                        <svg width="44" height="50" viewBox="-22 -28 44 56">
-                            <circle r="20" fill="#FFF9F0" stroke="#C4A882" stroke-width="1.5" opacity="0.8"/>
-                            <polygon points="0,-16 -4,-5 4,-5" fill="#F5A8A8" stroke="#D48080" stroke-width="0.5"/>
-                            <polygon points="0,16 -4,5 4,5" fill="#A8D8EA" stroke="#80B0C8" stroke-width="0.5"/>
-                            <polygon points="16,0 5,-3 5,3" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.5"/>
-                            <polygon points="-16,0 -5,-3 -5,3" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.5"/>
-                            <circle r="2.5" fill="#775537"/>
-                            <text y="-20" fill="#F5A8A8" font-size="8" font-weight="700" text-anchor="middle">N</text>
+                        <svg width="48" height="56" viewBox="-24 -32 48 64">
+                            <!-- 바깥 원 -->
+                            <circle r="22" fill="#FFF5E6" stroke="#C4A882" stroke-width="2.5" opacity="0.9"/>
+                            <!-- 상단 고리 -->
+                            <circle cy="-22" r="4" fill="none" stroke="#C4A882" stroke-width="2"/>
+                            <!-- N 화살표 (물방울/핑크) -->
+                            <path d="M0,-18 C-5,-10 -4,-6 0,-3 C4,-6 5,-10 0,-18Z" fill="#F5A8A8" stroke="#D48080" stroke-width="0.5"/>
+                            <!-- S 화살표 (물방울/블루) -->
+                            <path d="M0,18 C-5,10 -4,6 0,3 C4,6 5,10 0,18Z" fill="#A8D8EA" stroke="#80B0C8" stroke-width="0.5"/>
+                            <!-- E 화살표 (물방울/옐로우) -->
+                            <path d="M18,0 C10,-5 6,-4 3,0 C6,4 10,5 18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.5"/>
+                            <!-- W 화살표 (물방울/옐로우) -->
+                            <path d="M-18,0 C-10,-5 -6,-4 -3,0 C-6,4 -10,5 -18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.5"/>
+                            <!-- 중앙 점 -->
+                            <circle r="3" fill="#775537"/>
                         </svg>
                     </div>
                 </div>
