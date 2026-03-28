@@ -137,7 +137,7 @@ export class LocationDetector {
     // ========== 등록된 장소 감지 (case-insensitive!) ==========
     detect(text) {
         if (!text || this.lm.locations.length === 0) return null;
-        const clean = this._strip(text).toLowerCase(); // 소문자로!
+        const clean = this._strip(text).toLowerCase();
         const hasFut = this.futureKw.some(k => clean.includes(k));
         let best = null;
 
@@ -150,22 +150,25 @@ export class LocationDetector {
                     const after = clean.substring(idx + nameLo.length, idx + nameLo.length + 40);
                     const para = this._para(clean, idx);
 
+                    // 같은 confidence면 뒤쪽 위치 우선 (최종 목적지)
+                    const better = (c, i) => !best || c > best.confidence || (c === best.confidence && i > best.pos);
+
                     if (!inDlg && this.suffixPat.some(p => p.test(after)) && !hasFut) {
-                        const c = 0.95; if (!best || c > best.confidence) best = { location: loc, type: 'move', confidence: c }; continue;
+                        const c = 0.95; if (better(c, idx)) best = { location: loc, type: 'move', confidence: c, pos: idx }; continue;
                     }
                     if (!inDlg && this.presSuffix.some(p => p.test(after))) {
-                        const c = 0.7; if (!best || c > best.confidence) best = { location: loc, type: 'present', confidence: c }; continue;
+                        const c = 0.7; if (better(c, idx)) best = { location: loc, type: 'present', confidence: c, pos: idx }; continue;
                     }
                     if (this.moveKw.some(k => para.includes(k)) && !hasFut) {
-                        const c = inDlg ? 0.6 : 0.85; if (!best || c > best.confidence) best = { location: loc, type: 'move', confidence: c }; continue;
+                        const c = inDlg ? 0.6 : 0.85; if (better(c, idx)) best = { location: loc, type: 'move', confidence: c, pos: idx }; continue;
                     }
                     if (this.presKw.some(k => para.includes(k))) {
-                        const c = inDlg ? 0.4 : 0.6; if (!best || c > best.confidence) best = { location: loc, type: 'present', confidence: c }; continue;
+                        const c = inDlg ? 0.4 : 0.6; if (better(c, idx)) best = { location: loc, type: 'present', confidence: c, pos: idx }; continue;
                     }
                     if (inDlg) {
                         const dl = this._getDlg(clean, idx);
                         if (dl && dl.trim().length < nameLo.length + 15 && !hasFut) {
-                            const c = 0.55; if (!best || c > best.confidence) best = { location: loc, type: 'move', confidence: c };
+                            const c = 0.55; if (better(c, idx)) best = { location: loc, type: 'move', confidence: c, pos: idx };
                         }
                     }
                 }
@@ -175,13 +178,15 @@ export class LocationDetector {
     }
 
     // ========== 미등록 장소 발견 (mode: 'user'=높은감도, 'ai'=엄격) ==========
+    // 여러 장소 언급 시 마지막 장소 반환 (최종 목적지)
     detectNewPlace(text, mode = 'user') {
         if (!text) return null;
         const clean = this._strip(text);
         if (this.futureKw.some(k => clean.toLowerCase().includes(k))) return null;
         const nar = clean.replace(/"[^"]*"/g,' ').replace(/「[^」]*」/g,' ').replace(/"[^"]*"/g,' ');
+        let lastFound = null;
 
-        // 한국어 방법 1: 조사 패턴 — USER만 (AI에서는 오탐 원인!)
+        // 한국어 방법 1: 조사 패턴 — USER만
         if (mode === 'user') {
             const pPat = /([가-힣]{1,8}?)(?:으로|에서|에|의|로)\s/g;
             const moveRx = /걸어[가간갔]|돌아[가간왔옴]|들어[가간서섰]|나[서섰왔]|향[하해했]/;
@@ -191,24 +196,28 @@ export class LocationDetector {
                 pPat.lastIndex = 0; let m;
                 while ((m = pPat.exec(para)) !== null) {
                     let c = m[1].trim().replace(/으$/, '');
-                    if (this._validKo(c)) { console.log(`[${EXTENSION_NAME}] 🆕 (ko): "${c}"`); return c; }
+                    if (this._validKo(c)) { lastFound = c; }
                 }
             }
         }
 
-        // 한국어 방법 2: 직접 패턴 — USER/AI 모두 (장소+조사+동사 직결)
+        // 한국어 방법 2: 직접 패턴 — USER/AI 모두
         const dPat = [
             /([가-힣]{1,8}?)(?:으로|로)\s*(?:향하|가|갔|간다|걸어|이동|달려|돌아|출발)/g,
             /([가-힣]{1,8}?)에\s*(?:도착|당도|들어서|들어섰|왔다|갔다|간다)/g,
             /([가-힣]{1,8}?)(?:을|를)\s*(?:나서|나섰|떠나|떠났)/g,
         ];
         for (const p of dPat) {
-            p.lastIndex=0; const m=p.exec(nar);
-            if (m?.[1]) {
-                let c = m[1].trim().replace(/으$/, '');
-                if (this._validKo(c)) { console.log(`[${EXTENSION_NAME}] 🆕 (ko2): "${c}"`); return c; }
+            p.lastIndex=0; let m;
+            while ((m = p.exec(nar)) !== null) {
+                if (m[1]) {
+                    let c = m[1].trim().replace(/으$/, '');
+                    if (this._validKo(c)) { lastFound = c; }
+                }
             }
         }
+
+        if (lastFound) { console.log(`[${EXTENSION_NAME}] 🆕 (ko): "${lastFound}"`); return lastFound; }
 
         // 영어: "headed home" 특수 처리
         if (/\b(?:headed|went|got|came|arrived)\s+home\b/i.test(nar)) {
@@ -221,12 +230,12 @@ export class LocationDetector {
             const r = this._engDet(nar, true); if (r) return r;
         }
 
-        // 영어 방법 4: 존재/묘사 — USER만 (AI에서는 소파/의자 등 오탐)
+        // 영어 방법 4: 존재/묘사 — USER만
         if (mode === 'user') {
             const r2 = this._engDet(nar, false); if (r2) return r2;
         }
 
-        // #36: 도시명 감지 — USER/AI 모두
+        // 도시명 감지 — USER/AI 모두
         const cityResult = this._detectCity(nar);
         if (cityResult) return cityResult;
 

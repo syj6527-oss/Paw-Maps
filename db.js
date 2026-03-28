@@ -40,6 +40,7 @@ export class WorldTrackerDB {
     async deleteLocation(id) { return this._p(this._tx('locations', 'readwrite').delete(id), true); }
     async addMovement(m) { return this._p(this._tx('movements', 'readwrite').add(m), m); }
     async getMovementsByChatId(id) { return this._r(this._tx('movements').index('chatId').getAll(id)); }
+    async deleteMovement(id) { return this._p(this._tx('movements', 'readwrite').delete(id), true); }
     async getMapConfig(id) { return this._r(this._tx('mapConfig').get(id)); }
     async saveMapConfig(c) { return this._p(this._tx('mapConfig', 'readwrite').put(c), c); }
     async saveDistance(d) { return this._p(this._tx('distances', 'readwrite').put(d), d); }

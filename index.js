@@ -78,7 +78,7 @@ async function scanMessage(text, source = 'USER') {
             dbg(`✅ "${location.name}" (${type} c=${confidence})`);
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
-                if (s.showDetectToast) wtNotify(`🐶 👣 ${location.name}`, 'move');
+                if (s.showDetectToast) wtNotify(`🐶 🐾 ${location.name}`, 'move');
                 pi.inject(); if (ui.panelVisible) ui.refresh();
             }
             return true;

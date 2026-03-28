@@ -62,7 +62,7 @@ export class UIManager {
             s.selectedProfile = $('#wt-s-profile').val();
             saveSettingsDebounced();
             const name = $('#wt-s-profile option:selected').text() || '없음';
-            $('#wt-s-profile-status').text(`✅ "${name}" 저장됨`).css('color','#A8E6CF');
+            $('#wt-s-profile-status').text(`✅ "${name}" 저장됨`).css('color','#5E84E2');
             toastSuccess(`🧠 감지 모델: ${name}`);
             setTimeout(() => $('#wt-s-profile-status').text(''), 3000);
         });
@@ -173,10 +173,16 @@ export class UIManager {
                         <div id="wt-pop-dist-section" style="display:none">
                             <div style="font-size:12px;color:#9A8A7A;margin-bottom:4px">📏 주요 장소와의 거리</div>
                             <div id="wt-pop-dist-list" style="display:flex;flex-direction:column;gap:4px"></div>
-                            <div style="display:flex;gap:4px;margin-top:4px">
+                            <div style="display:flex;gap:4px;margin-top:4px;align-items:center">
                                 <select id="wt-pop-dist-target" class="wt-input wt-select-full" style="flex:1;font-size:12px;padding:6px 8px"></select>
-                                <input type="text" id="wt-pop-dist-value" class="wt-input" placeholder="예: 2.3km" style="width:80px;font-size:12px;padding:6px 8px"/>
+                                <input type="text" id="wt-pop-dist-value" class="wt-input" placeholder="도보 10분" style="width:80px;font-size:12px;padding:6px 8px"/>
                                 <button id="wt-pop-dist-add" class="wt-btn-accent wt-btn-s">+</button>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:#9A8A7A">
+                                <span>가까움</span>
+                                <input type="range" id="wt-pop-dist-level" min="1" max="5" value="3" style="flex:1;height:4px"/>
+                                <span>멀음</span>
+                                <span id="wt-pop-dist-lvl-val" style="font-weight:600;color:var(--wt-brown);min-width:16px">3</span>
                             </div>
                         </div>
                         <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
@@ -189,7 +195,7 @@ export class UIManager {
                 </div>
 
                 <div class="wt-scene-loc">
-                    <span class="wt-scene-icon">👣</span>
+                    <span class="wt-scene-icon">🐾</span>
                     <div class="wt-scene-info"><span class="wt-scene-label">현재 씬</span><span id="wt-scene-name" class="wt-scene-name">—</span></div>
                 </div>
 
@@ -223,6 +229,7 @@ export class UIManager {
         $('#wt-pop-del').on('click', () => this._popDel());
         $('#wt-pop-move').on('click', () => this._popMove());
         $('#wt-pop-dist-add').on('click', () => this._addDist());
+        $(document).on('input', '#wt-pop-dist-level', function() { $('#wt-pop-dist-lvl-val').text($(this).val()); });
         // 맵 모드 토글
         $('#wt-mode-node').on('click', () => this._setMapMode('node'));
         $('#wt-mode-leaflet').on('click', () => this._setMapMode('leaflet'));
@@ -336,7 +343,7 @@ export class UIManager {
             const cur = loc.id === this.lm.currentLocationId;
             const item = $(`<div class="wt-loc-item ${cur?'wt-loc-active':''}" data-id="${loc.id}">
                 <div class="wt-loc-dot" style="background:${loc.color}"></div>
-                <div class="wt-loc-info"><div class="wt-loc-name">${loc.name}${cur?' 👣':''}</div></div>
+                <div class="wt-loc-info"><div class="wt-loc-name">${loc.name}${cur?' 🐾':''}</div></div>
                 <div class="wt-loc-visits">${loc.visitCount||0}회</div></div>`);
             item.on('click', () => this.showPop(loc.id));
             list.append(item);
@@ -346,11 +353,29 @@ export class UIManager {
     _updMoveList() {
         const list=$('#wt-move-list').empty();
         if (!this.lm.movements.length) { list.html('<div class="wt-empty">아직 이동 기록이 없어요</div>'); return; }
+        const self = this;
         for (const m of [...this.lm.movements].sort((a,b)=>a.timestamp-b.timestamp).slice(-20)) {
             const f=this.lm.locations.find(l=>l.id===m.fromId), t=this.lm.locations.find(l=>l.id===m.toId);
             if (!f||!t) continue;
             const time=new Date(m.timestamp).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
-            list.append(`<div class="wt-mv-item"><span class="wt-mv-time">${time}</span><span class="wt-mv-from">${f.name}</span><span class="wt-mv-arrow">→</span><span class="wt-mv-to">${t.name}</span></div>`);
+            const item = $(`<div class="wt-mv-item" style="position:relative">
+                <span class="wt-mv-time">${time}</span>
+                <span class="wt-mv-from">${f.name}</span>
+                <span class="wt-mv-arrow">→</span>
+                <span class="wt-mv-to">${t.name}</span>
+                ${m.id ? `<button class="wt-btn-icon" style="font-size:10px;padding:2px 4px;color:var(--wt-pink);opacity:0.5" data-mid="${m.id}">✕</button>` : ''}
+            </div>`);
+            if (m.id) {
+                item.find('button').on('click', async function(e) {
+                    e.stopPropagation();
+                    const mid = parseInt($(this).attr('data-mid'));
+                    await self.lm.removeMovement(mid);
+                    self._updMoveList();
+                    self.pi?.inject();
+                    toastSuccess('🗑️ 이동 기록 삭제!');
+                });
+            }
+            list.append(item);
         }
     }
 
@@ -496,7 +521,7 @@ export class UIManager {
             if (!otherId) continue;
             const other = this.lm.locations.find(l => l.id === otherId);
             if (!other) continue;
-            const item = $(`<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A4030;background:#FFF5E6;padding:4px 8px;border-radius:6px">
+            const item = $(`<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A4030;background:#FAFAF5;padding:4px 8px;border-radius:6px">
                 <span style="flex:1">${other.name}</span><span style="color:#9A8A7A">${d.distanceText||'—'}</span>
                 <button class="wt-btn-icon" style="font-size:12px;padding:2px 4px;color:#F5A8A8" data-did="${d.id}">✕</button>
             </div>`);
@@ -524,10 +549,12 @@ export class UIManager {
         const locId = $('#wt-popover').attr('data-id');
         const targetId = $('#wt-pop-dist-target').val();
         const value = $('#wt-pop-dist-value').val().trim();
-        if (!locId || !targetId || !value) return;
+        const level = parseInt($('#wt-pop-dist-level').val()) || 3;
+        if (!locId || !targetId) return;
+        const text = value || `거리 ${level}`;
 
-        await this.lm.setDistance(locId, targetId, value);
-        $('#wt-pop-dist-value').val('');
+        await this.lm.setDistance(locId, targetId, text, null, level);
+        $('#wt-pop-dist-value').val(''); $('#wt-pop-dist-level').val(3); $('#wt-pop-dist-lvl-val').text('3');
         this._updDistSection(locId);
         this.pi?.inject();
         toastSuccess(`📏 거리 저장!`);
