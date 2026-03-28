@@ -414,33 +414,28 @@ export class UIManager {
                 this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
                 await this.leafletRenderer.init();
                 this.leafletRenderer.onLocationClick = id => this.showPop(id);
-                // #1: 롱프레스/우클릭 → 선택된 장소 좌표 이동
-                this.leafletRenderer.onLongPress = async (latlng, locId) => {
-                    if (!locId) return;
+                // #1: 마커 롱프레스 → 이동 모드 → 빈 곳 터치 → 이동
+                this.leafletRenderer.onMoveStart = (locId, name) => {
+                    wtNotify(`📍 "${name}" 이동 모드 — 원하는 곳을 터치하세요`, 'info', 3000);
+                };
+                this.leafletRenderer.onMoveComplete = async (latlng, locId) => {
                     const loc = this.lm.locations.find(l => l.id === locId);
                     if (!loc) return;
 
                     await this.lm.updateLocation(locId, { lat: latlng.lat, lng: latlng.lng });
-
-                    // 마커 직접 이동
                     const marker = this.leafletRenderer.markers[locId];
                     if (marker) marker.setLatLng(latlng);
 
-                    // 역지오코딩 → 주소 자동 등록
+                    // 역지오코딩
                     try {
-                        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&accept-language=ko`;
-                        const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.2' } });
+                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&accept-language=ko`, { headers: { 'User-Agent': 'RP-World-Tracker/0.2' } });
                         if (res.ok) {
                             const d = await res.json();
                             const addr = d.display_name?.split(',').slice(0, 3).join(', ') || '';
                             if (addr) await this.lm.updateLocation(locId, { address: addr });
-                            toastSuccess(`📍 "${loc.name}" → ${addr || '이동 완료!'}`);
-                        } else {
-                            toastSuccess(`📍 "${loc.name}" 위치 이동!`);
-                        }
-                    } catch(_) {
-                        toastSuccess(`📍 "${loc.name}" 위치 이동!`);
-                    }
+                            toastSuccess(`📍 "${loc.name}" → ${addr}`);
+                        } else { toastSuccess(`📍 "${loc.name}" 이동!`); }
+                    } catch(_) { toastSuccess(`📍 "${loc.name}" 이동!`); }
                 };
             }
             this.leafletRenderer.render();

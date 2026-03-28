@@ -41,23 +41,21 @@ export class LeafletRenderer {
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
 
         // 지도 클릭 → 좌표 배치
-        this.map.on('click', (e) => this._onMapClick(e));
+        // #1: 마커 롱프레스 → 이동 모드 → 빈 곳 터치 → 이동
+        this._movingLocId = null;
 
-        // #1: 롱프레스/우클릭 → 선택된 장소 이동
-        // 흐름: 마커 터치 → 선택 → 빈 곳 롱프레스 → 이동
-        this._selectedLocId = null;
-        this.map.on('contextmenu', async (e) => {
-            L.DomEvent.preventDefault(e);
-            if (!this._selectedLocId) {
-                // 선택된 장소 없으면 현재 위치 사용
-                this._selectedLocId = this.lm.currentLocationId;
-            }
-            if (this._selectedLocId && this.onLongPress) {
-                await this.onLongPress(e.latlng, this._selectedLocId);
-                if (navigator.vibrate) navigator.vibrate(50);
-                this._selectedLocId = null; // 이동 후 선택 해제
+        // 지도 클릭: 이동 모드면 해당 위치로 이동
+        this.map.on('click', (e) => {
+            if (this._movingLocId && this.onMoveComplete) {
+                this.onMoveComplete(e.latlng, this._movingLocId);
+                this._movingLocId = null;
+                this.map.getContainer().style.cursor = '';
+                return;
             }
         });
+
+        // 빈 곳 우클릭/롱프레스 → 이동 모드 아니면 무시
+        this.map.on('contextmenu', (e) => { L.DomEvent.preventDefault(e); });
 
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
         return true;
@@ -92,10 +90,17 @@ export class LeafletRenderer {
                 permanent: true, direction: 'bottom', offset: [0, 12],
                 className: 'wt-leaflet-label',
             });
-            marker.bindPopup(`<b>${loc.name}</b><br>방문 ${v}회<br><small>📍 롱프레스로 위치 이동</small>`);
-            marker.on('click', () => {
-                this._selectedLocId = loc.id;
-                if (this.onLocationClick) this.onLocationClick(loc.id);
+            marker.bindPopup(`<b>${loc.name}</b><br>방문 ${v}회`);
+            // 클릭 → 팝오버
+            marker.on('click', () => { if (this.onLocationClick) this.onLocationClick(loc.id); });
+            // 마커 롱프레스/우클릭 → 이동 모드 활성화
+            marker.on('contextmenu', (e) => {
+                L.DomEvent.stopPropagation(e);
+                L.DomEvent.preventDefault(e);
+                this._movingLocId = loc.id;
+                this.map.getContainer().style.cursor = 'crosshair';
+                if (navigator.vibrate) navigator.vibrate(50);
+                if (this.onMoveStart) this.onMoveStart(loc.id, loc.name);
             });
 
             marker.addTo(this.map);
