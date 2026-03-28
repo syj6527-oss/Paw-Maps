@@ -1,4 +1,4 @@
-// 🗺️ RP World Tracker — detector.js (All Fixes)
+// 🐶 월드맵 — detector.js (All Fixes + City Detection)
 
 import { EXTENSION_NAME } from './index.js';
 
@@ -41,8 +41,15 @@ export class LocationDetector {
             '이쪽','저쪽','그쪽','앞쪽','뒤쪽','양쪽','한쪽',
             '바닥','천장','벽면','구석','가장','순간','갑자','아까','지금','오늘','내일',
             '이중문','출입문','철문','나무문','유리문',
+            // #43: "제멋대로" 류 부사 오탐 방지 — "X대" + "로" 패턴
             '제멋대','마음대','맘대','억지','저절','함부','대충대',
+            '뜻대','예정대','계획대','순서대','원래대','그대',
+            '말대','생각대','소원대','자기대','자기멋대','눈대중',
+            '되는대','닥치는대','시키는대','하는대','아무대',
+            '엉뚱','느닷없','갑작스','황급','서둘',
         ];
+        // #43: "X대로" 부사 패턴 일반 차단 (대 앞 2글자 이상이면 부사 가능성 높음)
+        this.adverbSuffix = ['대로','대로의','투로','식으로','듯이','처럼','같이','만큼'];
         this.singleKo = ['집','방','숲','강','산','역','관','점','원','장'];
 
         // 영어 장소 단어 (경유지 제외, mart 추가!)
@@ -85,6 +92,29 @@ export class LocationDetector {
 
         // placeWord 뒤에 이게 오면 장소 아님 (bug 18: "apartment door lock")
         this.notPlaceSuffix = ['door','key','wall','window','floor','lock','roof','ceiling','gate','sign','number','building','complex'];
+
+        // #36: 도시명 감지 — 주요 도시/지역명 (한/영)
+        this.cityNames = [
+            // 한국
+            '서울','부산','대구','인천','광주','대전','울산','세종','수원','성남',
+            '고양','용인','창원','청주','전주','천안','안산','남양주','화성','평택',
+            '제주','포항','김해','파주','시흥','안양','군포','하남','양산','광명',
+            '밀양','거제','통영','고성','사천',
+            // 일본
+            '도쿄','오사카','교토','요코하마','나고야','삿포로','후쿠오카','고베','히로시마','센다이','나라',
+            // 중국
+            '베이징','상하이','광저우','선전','항저우','난징','충칭','청두','시안','우한',
+            // 영미
+            'Seoul','Busan','Tokyo','Osaka','Kyoto','Beijing','Shanghai',
+            'New York','Los Angeles','Chicago','London','Paris','Berlin','Rome',
+            'Madrid','Barcelona','Amsterdam','Vienna','Moscow','Sydney','Toronto',
+            'Vancouver','San Francisco','Seattle','Boston','Washington','Miami',
+            'Las Vegas','Houston','Dallas','Atlanta','Denver','Phoenix','Portland',
+            'Munich','Hamburg','Zurich','Geneva','Brussels','Prague','Warsaw',
+            'Budapest','Stockholm','Oslo','Helsinki','Copenhagen','Dublin','Edinburgh',
+            'Singapore','Bangkok','Manila','Jakarta','Hanoi','Taipei','Mumbai','Delhi',
+            'Cairo','Dubai','Istanbul','Athens','Lisbon','Rio','São Paulo',
+        ];
     }
 
     // ========== 등록된 장소 감지 (case-insensitive!) ==========
@@ -170,6 +200,11 @@ export class LocationDetector {
 
         // 영어 방법 4: 존재/묘사
         const r2 = this._engDet(nar, false); if (r2) return r2;
+
+        // #36: 도시명 감지 — 이동 맥락에서 도시명 발견
+        const cityResult = this._detectCity(nar);
+        if (cityResult) return cityResult;
+
         return null;
     }
 
@@ -210,6 +245,30 @@ export class LocationDetector {
         return null;
     }
 
+    // #36: 도시명 감지
+    _detectCity(text) {
+        const lo = text.toLowerCase();
+        // 이동 맥락 확인
+        const hasMove = this.moveKw.some(k => lo.includes(k)) ||
+            /비행기|기차|KTX|버스|택시|배|여객선|페리/i.test(text) ||
+            /\b(?:flight|train|bus|taxi|ferry)\b/i.test(text);
+        if (!hasMove) return null;
+
+        for (const city of this.cityNames) {
+            const cityLo = city.toLowerCase();
+            if (!lo.includes(cityLo)) continue;
+            // 이미 등록된 장소면 스킵
+            if (this.lm.findByName(city)) continue;
+            // 위치 확인: 인명 뒤에 오는지 체크 (예: "Park Seoul" — 사람이름 아님)
+            const idx = lo.indexOf(cityLo);
+            const before = text.substring(Math.max(0, idx - 20), idx).trim().toLowerCase();
+            if (this.namePrefix.some(np => before.endsWith(np) || before.endsWith(np + '.'))) continue;
+            console.log(`[${EXTENSION_NAME}] 🆕 (city): "${city}"`);
+            return city;
+        }
+        return null;
+    }
+
     _validKo(c) {
         if (!c) return false;
         if (c.length === 1) return this.singleKo.includes(c);
@@ -217,6 +276,10 @@ export class LocationDetector {
         if (this.lm.findByName(c)) return false;
         if (this.skipKo.includes(c)) return false;
         if (c.length === 2 && /[을를이가에]$/.test(c)) return false;
+        // #43: "X대" + "로" = 부사 패턴 차단 (부대/연대 등 군사용어는 허용)
+        if (c.endsWith('대') && c.length >= 3 && !['부대','연대','중대','소대','기지대','관측대','악대'].includes(c)) return false;
+        // #43: 기타 부사형 어미 차단
+        if (/[듯처럼같만큼]$/.test(c)) return false;
         return true;
     }
 

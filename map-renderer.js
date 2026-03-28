@@ -1,4 +1,4 @@
-// 🗺️ RP World Tracker — map-renderer.js (Zoom + Pan + Touch)
+// 🐶 월드맵 — map-renderer.js (Zoom + Pan + Touch)
 
 export class MapRenderer {
     constructor(container, lm) {
@@ -64,7 +64,7 @@ export class MapRenderer {
             this.svg.appendChild(g);
         }
 
-        if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🗺️'));
+        if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
     }
 
     // ========== Touch Handling ==========

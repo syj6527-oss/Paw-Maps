@@ -1,4 +1,4 @@
-// 🗺️ RP World Tracker — leaflet-renderer.js
+// 🐶 월드맵 — leaflet-renderer.js
 
 import { EXTENSION_NAME } from './index.js';
 
@@ -134,11 +134,29 @@ export class LeafletRenderer {
         });
     }
 
-    // 맵 리사이즈 (패널 열릴 때)
+    // 맵 리사이즈 (패널 열릴 때) — #46 회색 영역 방지
     invalidateSize() {
         if (!this.map) return;
-        [50, 200, 500, 1000].forEach(ms => {
-            setTimeout(() => { try { this.map.invalidateSize({animate:false}); } catch(_){} }, ms);
+        // 컨테이너 크기 강제 설정
+        const container = this.map.getContainer();
+        if (container) {
+            const parent = container.parentElement;
+            if (parent && parent.offsetWidth > 0) {
+                container.style.width = parent.offsetWidth + 'px';
+            }
+            container.style.height = '320px';
+        }
+        // 즉시 + 지연 invalidateSize
+        try { this.map.invalidateSize({animate:false}); } catch(_){}
+        [100, 300, 600, 1200].forEach(ms => {
+            setTimeout(() => {
+                try {
+                    if (container && container.parentElement) {
+                        container.style.width = container.parentElement.offsetWidth + 'px';
+                    }
+                    this.map.invalidateSize({animate:false});
+                } catch(_){}
+            }, ms);
         });
     }
 

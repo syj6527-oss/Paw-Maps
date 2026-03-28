@@ -1,4 +1,4 @@
-/* 🗺️ RP World Tracker v0.2.0-beta */
+/* 🐶 월드맵 v0.2.0-beta */
 :root{--wt-cream:#FEFEF2;--wt-yellow:#FCE7AE;--wt-yellow-d:#F2D965;--wt-pink:#F5A8A8;--wt-mint:#A8E6CF;--wt-brown:#775537;--wt-brown-l:#A08060;--wt-brown-f:#C4A882;--wt-bg:#FFF9F0;--wt-surface:#FFF5E6;--wt-border:#F0E0C8;--wt-text:#5A4030;--wt-text-dim:#9A8A7A;--wt-r:12px;--wt-rs:8px}
 
 .wt-panel{position:fixed;top:0;right:-100%;width:100%;height:100dvh;background:var(--wt-bg);z-index:99999;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1);font-family:-apple-system,'Noto Sans KR',sans-serif;overflow:hidden}

@@ -1,4 +1,4 @@
-// 🐱 월드맵 — ui-manager.js (Inline Toast + Popover)
+// 🐶 월드맵 — ui-manager.js (Inline Toast + Popover)
 
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -22,7 +22,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐱 월드맵 <span class="wt-version">v0.2.0</span></b>
+                <b>🐶 월드맵 <span class="wt-version">v0.2.0</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -37,8 +37,9 @@ export class UIManager {
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>🧠 감지 모델</label></div>
                 <div class="wt-s-row"><select id="wt-s-profile" class="text_pole wt-select wt-select-full"><option value="">없음 (regex만)</option></select></div>
+                <div class="wt-s-row"><button id="wt-s-profile-save" class="menu_button" style="font-size:12px;padding:4px 12px">💾 모델 저장</button><span id="wt-s-profile-status" style="font-size:11px;color:#9A8A7A;margin-left:6px"></span></div>
                 <div class="wt-divider"></div>
-                <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🗺️ 월드 맵</button></div>
+                <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🐶 월드맵</button></div>
             </div></div></div>`;
         const containers = ['#extensions_settings2','#extensions_settings','.extensions_block'];
         let target = null;
@@ -56,12 +57,20 @@ export class UIManager {
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change', () => { s.memoryMode=$('#wt-s-mem').val(); saveSettingsDebounced(); this.pi?.inject(); });
         // 🧠 감지 모델 프로필 로드
         this._loadProfiles();
-        $('#wt-s-profile').on('change', () => { s.selectedProfile=$('#wt-s-profile').val(); saveSettingsDebounced(); });
+        $('#wt-s-profile').on('change', () => { $('#wt-s-profile-status').text('⚠️ 미저장').css('color','#F5A8A8'); });
+        $('#wt-s-profile-save').on('click', () => {
+            s.selectedProfile = $('#wt-s-profile').val();
+            saveSettingsDebounced();
+            const name = $('#wt-s-profile option:selected').text() || '없음';
+            $('#wt-s-profile-status').text(`✅ "${name}" 저장됨`).css('color','#A8E6CF');
+            toastSuccess(`🧠 감지 모델: ${name}`);
+            setTimeout(() => $('#wt-s-profile-status').text(''), 3000);
+        });
         $('#wt-open-panel').on('click', () => this.togglePanel());
         // 🔧 비밀 디버그: 💭 5번 탭
         let _t=0, _tm=null;
         $(document).on('click','#wt-secret', e => { e.stopPropagation(); _t++; clearTimeout(_tm);
-            if(_t>=5){_t=0;s.debugMode=!s.debugMode;saveSettingsDebounced();toast(s.debugMode?'🔧 Debug ON':'🔧 Debug OFF','🗺️',{timeOut:2000});}
+            if(_t>=5){_t=0;s.debugMode=!s.debugMode;saveSettingsDebounced();toast(s.debugMode?'🔧 Debug ON':'🔧 Debug OFF','🐶',{timeOut:2000});}
             _tm=setTimeout(()=>{_t=0},2000);
         });
     }
@@ -70,7 +79,6 @@ export class UIManager {
         const sel = $('#wt-s-profile');
         const s = extension_settings[EXTENSION_NAME];
         try {
-            // Connection Manager 프로필 읽기
             const cmSelect = document.querySelector('#connection_profile');
             if (cmSelect) {
                 $(cmSelect).find('option').each(function() {
@@ -78,7 +86,6 @@ export class UIManager {
                     if (v) sel.append(`<option value="${v}">${t}</option>`);
                 });
             }
-            // 폴백: API 모델 셀렉트 읽기
             if (sel.find('option').length <= 1) {
                 ['#settings_preset_openai','#model_openai_select','#model_google_select','#model_claude_select'].forEach(ps => {
                     $(ps).find('option').each(function() {
@@ -88,12 +95,18 @@ export class UIManager {
                 });
             }
         } catch(e) { console.warn(`[${EXTENSION_NAME}] Profile load:`, e); }
-        if (s?.selectedProfile) sel.val(s.selectedProfile);
+        // #48: 저장된 프로필 복원 (옵션 없으면 1초 후 재시도)
+        if (s?.selectedProfile) {
+            sel.val(s.selectedProfile);
+            if (sel.val() !== s.selectedProfile) {
+                setTimeout(() => { this._loadProfiles(); }, 1500);
+            }
+        }
     }
 
     registerWandButton() {
         try { const b=document.createElement('div'); b.id='wt-wand-btn'; b.className='list-group-item flex-container flexGap5';
-            b.innerHTML='<span>🗺️</span> 🐱 월드맵'; b.addEventListener('click',()=>this.togglePanel());
+            b.innerHTML='<span>🐶</span> 월드맵'; b.addEventListener('click',()=>this.togglePanel());
             const m=document.getElementById('extensionsMenu'); if(m)m.appendChild(b); } catch(e){}
     }
 
@@ -101,13 +114,13 @@ export class UIManager {
         const html = `
         <div id="wt-panel" class="wt-panel">
             <div class="wt-panel-header">
-                <div class="wt-panel-title"><span>🗺️</span> 🐱 월드맵</div>
+                <div class="wt-panel-title"><span>🐶</span> 월드맵</div>
                 <button id="wt-panel-close" class="wt-btn-icon">✕</button>
             </div>
             <div class="wt-panel-body" id="wt-panel-body">
                 <!-- 자동 등록 알림 (인라인!) -->
                 <div id="wt-auto-toast" class="wt-auto-toast" style="display:none">
-                    <div class="wt-at-row"><span>🗺️</span><strong id="wt-at-name"></strong><span>등록됨!</span></div>
+                    <div class="wt-at-row"><span>🐶</span><strong id="wt-at-name"></strong><span>등록됨!</span></div>
                     <div id="wt-at-similar" style="display:none">
                         <div class="wt-at-sim-label">혹시 같은 장소?</div>
                         <div id="wt-at-sim-list"></div>
@@ -276,15 +289,23 @@ export class UIManager {
             if (!this.leafletRenderer) {
                 const ok = await loadLeaflet();
                 if (!ok) { toastWarn('Leaflet CDN 로드 실패!'); this._setMapMode('node'); return; }
+                // #46: 컨테이너가 레이아웃 완료될 때까지 대기
+                const container = document.querySelector('#wt-leaflet-container');
+                if (container) {
+                    container.style.width = '100%';
+                    container.style.height = '320px';
+                    container.style.minHeight = '320px';
+                }
+                // rAF 2번 → 브라우저 레이아웃 확정 후 init
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
                 this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
                 await this.leafletRenderer.init();
                 this.leafletRenderer.onLocationClick = id => this.showPop(id);
             }
             this.leafletRenderer.render();
-            // 모바일: 여러 번 invalidateSize (컨테이너 크기 안정화 대기)
-            [100, 300, 600, 1000].forEach(ms => {
-                setTimeout(() => this.leafletRenderer?.invalidateSize(), ms);
-            });
+            // #46: 모바일 invalidateSize — 레이아웃 안정화 후 여러 번
+            await new Promise(r => requestAnimationFrame(r));
+            this.leafletRenderer?.invalidateSize();
         }
     }
 

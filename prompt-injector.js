@@ -1,4 +1,4 @@
-// 🗺️ RP World Tracker — prompt-injector.js (Single Scene)
+// 🐶 월드맵 — prompt-injector.js (Single Scene)
 
 import { extension_settings } from '../../../extensions.js';
 import { EXTENSION_NAME, PROMPT_KEY } from './index.js';
@@ -24,7 +24,7 @@ export class PromptInjector {
         const cur = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
         if (!cur) return '';
 
-        const L = ['[🗺️ World Tracker]'];
+        const L = ['[🐶 World Tracker]'];
         L.push(`📍 Scene: ${cur.name}`);
         if (cur.status) L.push(`🌤️ ${cur.status}`);
         if (cur.visitCount > 0) L.push(`📊 ${cur.visitCount === 1 ? 'First visit' : `${cur.visitCount} visits`}`);

@@ -1,4 +1,4 @@
-// 🗺️ RP World Tracker v0.2.0-beta
+// 🐶 월드맵 v0.2.0-beta
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
@@ -66,7 +66,10 @@ async function scanMessage(text, label='') {
             dbg(`✅ "${location.name}" (${type})`);
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
-                if (s.showDetectToast) toast(`👣 ${location.name}`, '🗺️', {timeOut:2500, positionClass:'toast-bottom-right'});
+                if (s.showDetectToast) {
+                    try { toast(`👣 ${location.name}`, '🐶', {timeOut:3000, positionClass:'toast-top-center', preventDuplicates:true}); }
+                    catch(_) { console.log(`[${EXTENSION_NAME}] Toast: 👣 ${location.name}`); }
+                }
                 pi.inject(); if (ui.panelVisible) ui.refresh();
             }
             return true;
@@ -80,6 +83,10 @@ async function scanMessage(text, label='') {
                 const loc = await lm.addLocation(np);
                 if (loc) {
                     await lm.moveTo(loc.id);
+                    if (s.showDetectToast) {
+                        try { toast(`🆕 ${loc.name}`, '🐶', {timeOut:3500, positionClass:'toast-top-center', preventDuplicates:true}); }
+                        catch(_) { console.log(`[${EXTENSION_NAME}] Toast: 🆕 ${loc.name}`); }
+                    }
                     pi.inject(); if (ui.panelVisible) ui.refresh();
                     ui.showAutoToast(loc);
                 }
@@ -142,7 +149,7 @@ async function init() {
         if (extension_settings[EXTENSION_NAME]?.enabled && extension_settings[EXTENSION_NAME]?.aiInjection) pi.inject();
     });
 
-    console.log(`[${EXTENSION_NAME}] Ready! 🗺️`);
+    console.log(`[${EXTENSION_NAME}] Ready! 🐶`);
 }
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
