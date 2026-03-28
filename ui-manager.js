@@ -92,21 +92,14 @@ export class UIManager {
                 <div id="wt-map-wrap" class="wt-map-wrap">
                     <div id="wt-map-container" class="wt-map-container"></div>
                     <div class="wt-compass-overlay">
-                        <svg width="48" height="56" viewBox="-24 -32 48 64">
-                            <!-- 바깥 원 -->
-                            <circle r="22" fill="#FFF5E6" stroke="#C4A882" stroke-width="2.5" opacity="0.9"/>
-                            <!-- 상단 고리 -->
-                            <circle cy="-22" r="4" fill="none" stroke="#C4A882" stroke-width="2"/>
-                            <!-- N 화살표 (물방울/핑크) -->
-                            <path d="M0,-18 C-5,-10 -4,-6 0,-3 C4,-6 5,-10 0,-18Z" fill="#F5A8A8" stroke="#D48080" stroke-width="0.5"/>
-                            <!-- S 화살표 (물방울/블루) -->
-                            <path d="M0,18 C-5,10 -4,6 0,3 C4,6 5,10 0,18Z" fill="#A8D8EA" stroke="#80B0C8" stroke-width="0.5"/>
-                            <!-- E 화살표 (물방울/옐로우) -->
-                            <path d="M18,0 C10,-5 6,-4 3,0 C6,4 10,5 18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.5"/>
-                            <!-- W 화살표 (물방울/옐로우) -->
-                            <path d="M-18,0 C-10,-5 -6,-4 -3,0 C-6,4 -10,5 -18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.5"/>
-                            <!-- 중앙 점 -->
+                        <svg width="36" height="40" viewBox="-24 -28 48 56">
+                            <circle r="22" fill="#FFF5E6" stroke="#C4A882" stroke-width="2.5" opacity="0.85"/>
+                            <path d="M0,-18 C-7,-9 -6,-3 0,0 C6,-3 7,-9 0,-18Z" fill="#F5A8A8" stroke="#D4908F" stroke-width="0.8"/>
+                            <path d="M0,18 C-7,9 -6,3 0,0 C6,3 7,9 0,18Z" fill="#A8D8EA" stroke="#80B0C8" stroke-width="0.8"/>
+                            <path d="M18,0 C9,-7 3,-6 0,0 C3,6 9,7 18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.8"/>
+                            <path d="M-18,0 C-9,-7 -3,-6 0,0 C-3,6 -9,7 -18,0Z" fill="#FCE7AE" stroke="#D4C080" stroke-width="0.8"/>
                             <circle r="3" fill="#775537"/>
+                            <text y="-23" fill="#D4908F" font-size="7" font-weight="700" text-anchor="middle" font-family="serif">N</text>
                         </svg>
                     </div>
                 </div>
