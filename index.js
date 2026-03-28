@@ -25,7 +25,7 @@ export function toastSuccess(msg) {
 const defaults = {
     enabled:true, mapMode:'auto', autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
-    debugMode:false,
+    debugMode:false, autoRegister:true,
 };
 
 let db, lm, det, pi, ui;
@@ -58,7 +58,20 @@ async function scanMessage(text, label='') {
         }
 
         const np = det.detectNewPlace(text);
-        if (np) { dbg(`🆕 New: "${np}"`); ui.showNewPlaceToast(np); return true; }
+        if (np) {
+            dbg(`🆕 New: "${np}"`);
+            // 항상 자동 등록 + 이동
+            if (!lm.currentChatId) await lm.loadChat();
+            if (lm.currentChatId) {
+                const loc = await lm.addLocation(np);
+                if (loc) {
+                    await lm.moveTo(loc.id);
+                    pi.inject(); if (ui.panelVisible) ui.refresh();
+                    ui.showAutoToast(loc);
+                }
+            }
+            return true;
+        }
         dbg('❌ No location found');
         return false;
     } catch(e) { dbg(`💥 Error: ${e.message}`); return false; }

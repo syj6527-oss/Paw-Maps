@@ -29,6 +29,7 @@ export class UIManager {
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-detect"/> 🔍 자동 감지</label></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-toast"/> 📍 이동 알림</label></div>
+                    <div class="wt-s-row"><label><input type="checkbox" id="wt-s-autoreg"/> 🤖 새 장소 자동 등록</label></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
                 <div class="wt-s-row"><label>💭 기억</label><select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select></div>
@@ -45,7 +46,7 @@ export class UIManager {
         const s=extension_settings[EXTENSION_NAME];
         const bind=(sel,key,def)=>$(sel).prop('checked',s?.[key]??def).on('change',function(){s[key]=$(this).is(':checked');saveSettingsDebounced()});
         bind('#wt-s-enabled','enabled',true);bind('#wt-s-detect','autoDetect',true);bind('#wt-s-toast','showDetectToast',true);bind('#wt-s-inject','aiInjection',true);
-        bind('#wt-s-debug','debugMode',false);
+        bind('#wt-s-debug','debugMode',false);bind('#wt-s-autoreg','autoRegister',true);
         $('#wt-s-inject').on('change',()=>{s.aiInjection?this.pi?.inject():this.pi?.clear()});
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change',()=>{s.memoryMode=$('#wt-s-mem').val();saveSettingsDebounced();this.pi?.inject()});
         $('#wt-open-panel').on('click',()=>this.togglePanel());
@@ -118,14 +119,17 @@ export class UIManager {
             </div>
         </div>
 
-        <!-- 미등록 장소 토스트 (body에) -->
+        <!-- 자동 등록 토스트 -->
         <div id="wt-npt" class="wt-npt" style="display:none;">
-            <div class="wt-npt-text"><span>🗺️ 새 장소 발견!</span><strong id="wt-npt-name"></strong></div>
+            <div class="wt-npt-text"><span>🗺️</span> <strong id="wt-npt-name"></strong> <span>등록됨!</span></div>
             <div id="wt-npt-similar" class="wt-npt-similar" style="display:none;">
                 <span class="wt-npt-sim-label">혹시 같은 장소?</span>
                 <div id="wt-npt-sim-list" class="wt-npt-sim-list"></div>
             </div>
-            <div class="wt-npt-actions"><button id="wt-npt-add" class="wt-btn-primary">새로 등록</button><button id="wt-npt-dismiss" class="wt-btn-ghost">무시</button></div>
+            <div class="wt-npt-actions">
+                <button id="wt-npt-edit" class="wt-btn-primary">✏️ 수정</button>
+                <button id="wt-npt-undo" class="wt-btn-danger">↩️ 취소</button>
+            </div>
         </div>`;
 
         $('body').append(html);
@@ -151,7 +155,7 @@ export class UIManager {
         $('#wt-pop-save').on('click',()=>this._popSave());
         $('#wt-pop-del').on('click',()=>this._popDel());
         $('#wt-pop-move').on('click',()=>this._popMove());
-        $('#wt-npt-dismiss').on('click',()=>$('#wt-npt').fadeOut(200));
+        $('#wt-npt-undo').on('click', () => $('#wt-npt').fadeOut(200));
         // 투명도
         $('#wt-opacity').on('input',function(){const v=$(this).val();$('#wt-op-val').text(v+'%');$('#wt-panel').css('opacity',v/100);extension_settings[EXTENSION_NAME].panelOpacity=+v;saveSettingsDebounced()});
         const op=extension_settings[EXTENSION_NAME]?.panelOpacity??100;
@@ -232,27 +236,54 @@ export class UIManager {
     async _popDel(){const id=$('#wt-popover').attr('data-id');const l=this.lm.locations.find(x=>x.id===id);if(!confirm(`"${l?.name}" 삭제?`))return;await this.lm.deleteLocation(id);this.hidePop();toast('삭제됨');this.pi?.inject();this.refresh();}
     async _popMove(){const id=$('#wt-popover').attr('data-id');await this.lm.moveTo(id);this.hidePop();this.pi?.inject();this.refresh();}
 
-    showNewPlaceToast(name) {
-        $('#wt-npt-name').text(name);
-        const sim=this._findSim(name);const sl=$('#wt-npt-sim-list').empty();
-        if(sim.length){
-            for(const loc of sim){
-                const btn=$(`<button class="wt-btn-accent wt-npt-merge">📎 "${loc.name}"에 별칭</button>`);
-                btn.on('click',async()=>{
-                    await this.lm.updateLocation(loc.id,{aliases:[...(loc.aliases||[]),name]});
-                    await this.lm.moveTo(loc.id);
-                    toastSuccess(`"${name}"→"${loc.name}" 별칭! 🔗`);
-                    this.pi?.inject();if(this.panelVisible)this.refresh();$('#wt-npt').fadeOut(200);
-                });sl.append(btn);
-            }$('#wt-npt-similar').show();
-        }else{$('#wt-npt-similar').hide();}
-        $('#wt-npt-add').off('click').on('click',async()=>{
-            if(!this.lm.currentChatId)await this.lm.loadChat();
-            const loc=await this.lm.addLocation(name);
-            if(loc){await this.lm.moveTo(loc.id);toastSuccess(`"${name}" 등록! 🗺️`);this.pi?.inject();if(this.panelVisible)this.refresh();}
+    // ---- 자동 등록 토스트 (수정/취소) ----
+    showAutoToast(loc) {
+        $('#wt-npt-name').text(loc.name);
+
+        // 유사 장소 체크
+        const sim = this._findSim(loc.name);
+        const sl = $('#wt-npt-sim-list').empty();
+        if (sim.length) {
+            for (const s of sim) {
+                if (s.id === loc.id) continue; // 자기 자신 제외
+                const btn = $(`<button class="wt-btn-accent wt-npt-merge">📎 "${s.name}"에 병합</button>`);
+                btn.on('click', async () => {
+                    // 방금 등록한 거 삭제 + 기존 장소에 별칭 추가
+                    await this.lm.deleteLocation(loc.id);
+                    await this.lm.updateLocation(s.id, { aliases: [...(s.aliases || []), loc.name] });
+                    await this.lm.moveTo(s.id);
+                    toastSuccess(`"${loc.name}" → "${s.name}" 병합! 🔗`);
+                    this.pi?.inject(); if (this.panelVisible) this.refresh();
+                    $('#wt-npt').fadeOut(200);
+                });
+                sl.append(btn);
+            }
+            $('#wt-npt-similar').show();
+        } else { $('#wt-npt-similar').hide(); }
+
+        // 수정 버튼
+        $('#wt-npt-edit').off('click').on('click', () => {
+            $('#wt-npt').fadeOut(200);
+            // 장소 추가 폼 열고 이름 채우기
+            $('#wt-add-form').slideDown(200);
+            $('#wt-add-arrow').text('▴');
+            $('#wt-input-name').val(loc.name).focus();
+            // 기존 장소 삭제 (수정이니까)
+            this.lm.deleteLocation(loc.id).then(() => {
+                this.pi?.inject(); if (this.panelVisible) this.refresh();
+            });
+        });
+
+        // 취소 버튼
+        $('#wt-npt-undo').off('click').on('click', async () => {
+            await this.lm.deleteLocation(loc.id);
+            toast(`"${loc.name}" 취소됨`);
+            this.pi?.inject(); if (this.panelVisible) this.refresh();
             $('#wt-npt').fadeOut(200);
         });
-        $('#wt-npt').fadeIn(300);setTimeout(()=>$('#wt-npt').fadeOut(200),15000);
+
+        $('#wt-npt').fadeIn(300);
+        setTimeout(() => $('#wt-npt').fadeOut(200), 8000);
     }
 
     _findSim(name){
