@@ -268,14 +268,19 @@ export class UIManager {
 
         // 노드 그래프
         if (mode === 'node') {
-            if (!this.mapRenderer) {
-                this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm);
+            const container = document.querySelector('#wt-map-container');
+            // SVG가 DOM에서 분리됐으면 재생성
+            if (this.mapRenderer && (!this.mapRenderer.svg || !this.mapRenderer.svg.parentNode)) {
+                this.mapRenderer = null;
+            }
+            if (!this.mapRenderer && container) {
+                this.mapRenderer = new MapRenderer(container, this.lm);
                 this.mapRenderer.onLocationClick = id => this.showPop(id);
                 this.mapRenderer.onMoveRequest = (id, name) => {
                     wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
                 };
             }
-            this.mapRenderer.render();
+            if (this.mapRenderer) this.mapRenderer.render();
         }
 
         // Leaflet
@@ -302,11 +307,14 @@ export class UIManager {
             $('#wt-search-bar').hide();
             $('#wt-map-wrap').show();
             if (!this.mapRenderer) {
-                this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm);
-                this.mapRenderer.onLocationClick = id => this.showPop(id);
-                this.mapRenderer.onMoveRequest = (id, name) => {
-                    wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
-                };
+                const container = document.querySelector('#wt-map-container');
+                if (container) {
+                    this.mapRenderer = new MapRenderer(container, this.lm);
+                    this.mapRenderer.onLocationClick = id => this.showPop(id);
+                    this.mapRenderer.onMoveRequest = (id, name) => {
+                        wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
+                    };
+                }
             }
             this.mapRenderer.render();
         } else if (mode === 'leaflet') {
