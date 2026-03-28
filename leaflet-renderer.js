@@ -74,7 +74,7 @@ export class LeafletRenderer {
             });
 
             // 라벨
-            marker.bindTooltip(loc.name + (isCur ? ' 👣' : ''), {
+            marker.bindTooltip(loc.name + (isCur ? ' 🐾' : ''), {
                 permanent: true, direction: 'bottom', offset: [0, 8],
                 className: 'wt-leaflet-label',
             });
@@ -220,7 +220,7 @@ export class LeafletRenderer {
         this._removeNotice();
         const div = document.createElement('div');
         div.id = 'wt-leaflet-notice';
-        div.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:999;background:rgba(255,249,240,0.95);border:1.5px solid #F0E0C8;border-radius:8px;padding:10px 14px;font-size:12px;color:#775537;text-align:center;pointer-events:none;white-space:pre-line;';
+        div.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:999;background:rgba(255,249,240,0.95);border:1.5px solid #E8E4D8;border-radius:8px;padding:10px 14px;font-size:12px;color:#775537;text-align:center;pointer-events:none;white-space:pre-line;';
         div.textContent = msg;
         this.container.style.position = 'relative';
         this.container.appendChild(div);

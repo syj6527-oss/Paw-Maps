@@ -99,10 +99,15 @@ export class LocationManager {
         await this._saveCfg();
     }
 
-    async setDistance(a, b, text, walk = null) {
+    async removeMovement(movId) {
+        await this.db.deleteMovement(movId);
+        this.movements = this.movements.filter(m => m.id !== movId);
+    }
+
+    async setDistance(a, b, text, walk = null, level = 3) {
         if (!this.currentChatId) return null;
         const id = [a, b].sort().join('_');
-        const d = { id, chatId: this.currentChatId, fromId: a, toId: b, distanceText: text, walkTime: walk, updatedAt: Date.now() };
+        const d = { id, chatId: this.currentChatId, fromId: a, toId: b, distanceText: text, walkTime: walk, level: level, updatedAt: Date.now() };
         await this.db.saveDistance(d);
         const i = this.distances.findIndex(x => x.id === id);
         if (i >= 0) this.distances[i] = d; else this.distances.push(d);
