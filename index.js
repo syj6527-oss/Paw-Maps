@@ -11,6 +11,17 @@ import { UIManager } from './ui-manager.js';
 export const EXTENSION_NAME = 'rp-world-tracker';
 export const PROMPT_KEY = 'rp-world-tracker-prompt';
 
+// Safe toastr (모바일에서 없을 수 있음)
+export function toast(msg, title, opts) {
+    try { if (typeof toastr !== 'undefined') toastr.info(msg, title, opts); } catch(_) {}
+}
+export function toastWarn(msg) {
+    try { if (typeof toastr !== 'undefined') toastr.warning(msg); } catch(_) {}
+}
+export function toastSuccess(msg) {
+    try { if (typeof toastr !== 'undefined') toastr.success(msg); } catch(_) {}
+}
+
 const defaults = {
     enabled:true, mapMode:'auto', autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
@@ -21,7 +32,7 @@ let db, lm, det, pi, ui;
 
 function dbg(msg) {
     const s = extension_settings[EXTENSION_NAME];
-    if (s?.debugMode) toastr.info(msg, '🔧 Debug', {timeOut:4000, positionClass:'toast-top-right'});
+    if (s?.debugMode) toast(msg, '🔧 Debug', {timeOut:4000, positionClass:'toast-top-right'});
     console.log(`[${EXTENSION_NAME}] ${msg}`);
 }
 
@@ -40,7 +51,7 @@ async function scanMessage(text, label='') {
             dbg(`✅ Known: "${location.name}" (${type},${confidence})`);
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
-                if (s.showDetectToast) toastr.info(`👣 ${location.name} ${type==='move'?'이동':'위치'}`, '🗺️', {timeOut:3000,positionClass:'toast-bottom-right'});
+                if (s.showDetectToast) toast(`👣 ${location.name} ${type==='move'?'이동':'위치'}`, '🗺️', {timeOut:3000,positionClass:'toast-bottom-right'});
                 pi.inject(); if (ui.panelVisible) ui.refresh();
             } else { dbg('⏭️ Already here'); }
             return true;

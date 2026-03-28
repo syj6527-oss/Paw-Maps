@@ -2,7 +2,7 @@
 
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
-import { EXTENSION_NAME } from './index.js';
+import { EXTENSION_NAME, toast, toastWarn, toastSuccess } from './index.js';
 import { MapRenderer } from './map-renderer.js';
 
 const catGroups = [
@@ -36,7 +36,12 @@ export class UIManager {
                 <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🗺️ 월드 맵</button></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-debug"/> 🔧 디버그 모드</label></div>
             </div></div></div>`;
-        $('#extensions_settings2').append(html);
+        // 모바일+데스크탑 호환: 여러 컨테이너 시도
+        const containers = ['#extensions_settings2', '#extensions_settings', '.extensions_block'];
+        let target = null;
+        for (const sel of containers) { target = $(sel); if (target.length) break; }
+        if (!target?.length) { console.warn(`[${EXTENSION_NAME}] Settings container not found, retrying...`); setTimeout(() => this.createSettingsPanel(), 3000); return; }
+        target.append(html);
         const s=extension_settings[EXTENSION_NAME];
         const bind=(sel,key,def)=>$(sel).prop('checked',s?.[key]??def).on('change',function(){s[key]=$(this).is(':checked');saveSettingsDebounced()});
         bind('#wt-s-enabled','enabled',true);bind('#wt-s-detect','autoDetect',true);bind('#wt-s-toast','showDetectToast',true);bind('#wt-s-inject','aiInjection',true);
@@ -201,12 +206,12 @@ export class UIManager {
         const name=$('#wt-input-name').val().trim();
         if(!name){$('#wt-input-name').addClass('wt-input-error');setTimeout(()=>$('#wt-input-name').removeClass('wt-input-error'),600);return;}
         if(!this.lm.currentChatId)await this.lm.loadChat();
-        if(!this.lm.currentChatId){toastr.warning('채팅방 선택 필요');return;}
-        if(this.lm.findByName(name)){toastr.warning(`"${name}" 이미 존재`);return;}
+        if(!this.lm.currentChatId){toastWarn('채팅방 선택 필요');return;}
+        if(this.lm.findByName(name)){toastWarn(`"${name}" 이미 존재`);return;}
         const aliases=$('#wt-input-aliases').val().split(',').map(a=>a.trim()).filter(Boolean);
         const memo=$('#wt-input-memo').val().trim();
-        try{const loc=await this.lm.addLocation(name,memo,aliases);if(loc){toastr.success(`"${name}" 추가! 🗺️`);$('#wt-input-name,#wt-input-aliases,#wt-input-memo').val('');$('#wt-add-form').slideUp(200);$('#wt-add-arrow').text('▾');this.refresh();}}
-        catch(e){toastr.error('추가 오류');}
+        try{const loc=await this.lm.addLocation(name,memo,aliases);if(loc){toastSuccess(`"${name}" 추가! 🗺️`);$('#wt-input-name,#wt-input-aliases,#wt-input-memo').val('');$('#wt-add-form').slideUp(200);$('#wt-add-arrow').text('▾');this.refresh();}}
+        catch(e){toast('추가 오류');}
     }
 
     showPop(id) {
@@ -219,8 +224,8 @@ export class UIManager {
     }
     hidePop(){$('#wt-popover').fadeOut(100)}
 
-    async _popSave(){const id=$('#wt-popover').attr('data-id');await this.lm.updateLocation(id,{memo:$('#wt-pop-memo').val().trim(),status:$('#wt-pop-status').val().trim()});toastr.success('저장! 💾');this.pi?.inject();this.refresh();}
-    async _popDel(){const id=$('#wt-popover').attr('data-id');const l=this.lm.locations.find(x=>x.id===id);if(!confirm(`"${l?.name}" 삭제?`))return;await this.lm.deleteLocation(id);this.hidePop();toastr.info('삭제됨');this.pi?.inject();this.refresh();}
+    async _popSave(){const id=$('#wt-popover').attr('data-id');await this.lm.updateLocation(id,{memo:$('#wt-pop-memo').val().trim(),status:$('#wt-pop-status').val().trim()});toastSuccess('저장! 💾');this.pi?.inject();this.refresh();}
+    async _popDel(){const id=$('#wt-popover').attr('data-id');const l=this.lm.locations.find(x=>x.id===id);if(!confirm(`"${l?.name}" 삭제?`))return;await this.lm.deleteLocation(id);this.hidePop();toast('삭제됨');this.pi?.inject();this.refresh();}
     async _popMove(){const id=$('#wt-popover').attr('data-id');await this.lm.moveTo(id);this.hidePop();this.pi?.inject();this.refresh();}
 
     showNewPlaceToast(name) {
@@ -232,7 +237,7 @@ export class UIManager {
                 btn.on('click',async()=>{
                     await this.lm.updateLocation(loc.id,{aliases:[...(loc.aliases||[]),name]});
                     await this.lm.moveTo(loc.id);
-                    toastr.success(`"${name}"→"${loc.name}" 별칭! 🔗`);
+                    toastSuccess(`"${name}"→"${loc.name}" 별칭! 🔗`);
                     this.pi?.inject();if(this.panelVisible)this.refresh();$('#wt-npt').fadeOut(200);
                 });sl.append(btn);
             }$('#wt-npt-similar').show();
@@ -240,7 +245,7 @@ export class UIManager {
         $('#wt-npt-add').off('click').on('click',async()=>{
             if(!this.lm.currentChatId)await this.lm.loadChat();
             const loc=await this.lm.addLocation(name);
-            if(loc){await this.lm.moveTo(loc.id);toastr.success(`"${name}" 등록! 🗺️`);this.pi?.inject();if(this.panelVisible)this.refresh();}
+            if(loc){await this.lm.moveTo(loc.id);toastSuccess(`"${name}" 등록! 🗺️`);this.pi?.inject();if(this.panelVisible)this.refresh();}
             $('#wt-npt').fadeOut(200);
         });
         $('#wt-npt').fadeIn(300);setTimeout(()=>$('#wt-npt').fadeOut(200),15000);

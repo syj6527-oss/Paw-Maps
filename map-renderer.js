@@ -20,30 +20,25 @@ export class MapRenderer {
         this.svg.addEventListener('mousemove', e=>this._move(e));
         this.svg.addEventListener('mouseup', ()=>this._up());
         this.svg.addEventListener('mouseleave', ()=>this._up());
-        // Touch (mobile) — 노드 터치만 캡처, 나머지는 스크롤 통과
+        // Touch (mobile) — 거리 기반 히트 테스트 (elementFromPoint 안 씀!)
         this._touchStart = null;
         this.svg.addEventListener('touchstart', e=>{
             const touch = e.touches[0];
-            const el = document.elementFromPoint(touch.clientX, touch.clientY);
-            const node = el?.closest?.('.wt-location-node');
-            this._touchStart = {x:touch.clientX, y:touch.clientY, time:Date.now(), onNode:!!node};
-            if (node) this._down(touch);
+            const pt = this._pt(touch);
+            const hitId = this._hitTest(pt);
+            this._touchStart = {x:touch.clientX, y:touch.clientY, time:Date.now(), nodeId:hitId};
+            if (hitId) this._startDrag(hitId, pt);
         }, {passive:true});
         this.svg.addEventListener('touchmove', e=>{
-            // 노드 드래그 중일 때만 스크롤 막기
-            if(this.dragState && this._wasDrag && this._touchStart?.onNode) {
+            if(this.dragState && this._wasDrag && this._touchStart?.nodeId) {
                 e.preventDefault();
                 this._move(e.touches[0]);
             }
         }, {passive:false});
         this.svg.addEventListener('touchend', e=>{
-            if(this._touchStart && !this._wasDrag && this._touchStart.onNode) {
+            if(this._touchStart && !this._wasDrag && this._touchStart.nodeId) {
                 const dt = Date.now() - this._touchStart.time;
-                if(dt < 400) {
-                    const el = document.elementFromPoint(this._touchStart.x, this._touchStart.y);
-                    const node = el?.closest?.('.wt-location-node');
-                    if(node) this.onLocationClick?.(node.getAttribute('data-id'));
-                }
+                if(dt < 400) this.onLocationClick?.(this._touchStart.nodeId);
             }
             this._up(); this._touchStart = null;
         });
@@ -97,11 +92,23 @@ export class MapRenderer {
         const r=this.svg.getBoundingClientRect(),vb=this.svg.viewBox.baseVal;
         return {x:(e.clientX-r.left)/r.width*vb.width, y:(e.clientY-r.top)/r.height*vb.height};
     }
+    // 거리 기반 히트 테스트 — SVG 좌표에서 가장 가까운 노드 찾기
+    _hitTest(pt) {
+        for (const loc of this.lm.locations) {
+            const dx = pt.x - loc.x, dy = pt.y - loc.y;
+            if (Math.sqrt(dx*dx + dy*dy) < 30) return loc.id;
+        }
+        return null;
+    }
+    _startDrag(id, pt) {
+        const loc = this.lm.locations.find(l=>l.id===id); if(!loc) return;
+        this._wasDrag = false;
+        this.dragState = {id, sx:pt.x, sy:pt.y, ox:loc.x, oy:loc.y};
+    }
     _down(e) {
-        const node=e.target?.closest?.('.wt-location-node'); if(!node)return;
-        const id=node.getAttribute('data-id'), pt=this._pt(e);
-        const loc=this.lm.locations.find(l=>l.id===id); if(!loc)return;
-        this._wasDrag=false; this.dragState={id,sx:pt.x,sy:pt.y,ox:loc.x,oy:loc.y};
+        const pt = this._pt(e);
+        const id = this._hitTest(pt);
+        if (id) this._startDrag(id, pt);
     }
     _move(e) {
         if(!this.dragState)return; const pt=this._pt(e);
