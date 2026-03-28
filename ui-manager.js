@@ -191,6 +191,15 @@ export class UIManager {
                         <input type="text" id="wt-pop-aliases" class="wt-input" placeholder="예: 사격장, Shooting range" style="font-size:12px"/>
                         <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
                         <button id="wt-pop-move" class="wt-btn-ghost wt-btn-sm">📍 위치 수정</button>
+                        <button id="wt-pop-moveto" class="wt-btn-accent wt-btn-sm" style="opacity:1;font-size:12px">🐾 여기로 이동</button>
+                        <div id="wt-pop-geo-section" style="margin-top:6px">
+                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:4px">🔍 주소 검색 (Leaflet 핀)</div>
+                            <div style="display:flex;gap:4px">
+                                <input type="text" id="wt-pop-geo-input" class="wt-input" placeholder="주소 또는 랜드마크..." style="flex:1;font-size:12px;padding:6px 8px"/>
+                                <button id="wt-pop-geo-btn" class="wt-btn-accent wt-btn-s">🔍</button>
+                            </div>
+                            <div id="wt-pop-geo-results" style="display:none;margin-top:4px;max-height:100px;overflow-y:auto;font-size:11px"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -228,6 +237,17 @@ export class UIManager {
         $('#wt-pop-save').on('click', () => this._popSave());
         $('#wt-pop-del').on('click', () => this._popDel());
         $('#wt-pop-move').on('click', () => this._popMove());
+        $('#wt-pop-moveto').on('click', async () => {
+            const locId = $('#wt-popover').attr('data-id');
+            if (!locId) return;
+            await this.lm.moveTo(locId);
+            this.pi?.inject();
+            this.refresh();
+            this.hidePop();
+            toastSuccess('🐾 이동 완료!');
+        });
+        $('#wt-pop-geo-btn').on('click', () => this._geoSearch());
+        $('#wt-pop-geo-input').on('keydown', (e) => { if (e.key === 'Enter') this._geoSearch(); });
         $('#wt-pop-dist-add').on('click', () => this._addDist());
         $(document).on('input', '#wt-pop-dist-level', function() { $('#wt-pop-dist-lvl-val').text($(this).val()); });
         // 맵 모드 토글
@@ -566,6 +586,43 @@ export class UIManager {
             if (!existing) sel.append(`<option value="${o.id}">${o.name}</option>`);
         }
         if (!sel.find('option').length) sel.append('<option value="" disabled>모든 장소에 거리 설정됨</option>');
+    }
+
+    async _geoSearch() {
+        const locId = $('#wt-popover').attr('data-id');
+        const query = $('#wt-pop-geo-input').val().trim();
+        if (!locId || !query) return;
+
+        const resultsDiv = $('#wt-pop-geo-results').show().html('<div style="padding:4px;color:#9A8A7A">검색 중...</div>');
+
+        try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=ko`;
+            const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.2' } });
+            if (!res.ok) { resultsDiv.html('<div style="padding:4px;color:#F5A8A8">검색 실패</div>'); return; }
+            const data = await res.json();
+
+            if (!data.length) { resultsDiv.html('<div style="padding:4px;color:#9A8A7A">결과 없음</div>'); return; }
+
+            resultsDiv.empty();
+            const self = this;
+            for (const r of data.slice(0, 5)) {
+                const name = r.display_name.split(',').slice(0, 3).join(', ');
+                const item = $(`<div style="padding:6px 4px;cursor:pointer;border-bottom:1px solid #E8E4D8" data-lat="${r.lat}" data-lng="${r.lon}">📍 ${name}</div>`);
+                item.on('click', async function() {
+                    const lat = parseFloat($(this).attr('data-lat'));
+                    const lng = parseFloat($(this).attr('data-lng'));
+                    await self.lm.updateLocation(locId, { lat, lng });
+                    resultsDiv.hide();
+                    toastSuccess(`📍 좌표 저장! (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+                    // Leaflet 모드면 렌더
+                    if (self.leafletRenderer?.map) self.leafletRenderer.render();
+                });
+                resultsDiv.append(item);
+            }
+        } catch(e) {
+            resultsDiv.html('<div style="padding:4px;color:#F5A8A8">검색 오류</div>');
+            console.error(`[rp-world-tracker] Geo:`, e);
+        }
     }
 
     async _addDist() {
