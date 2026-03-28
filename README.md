@@ -1,66 +1,61 @@
 # 🗺️ RP World Tracker v0.2.0-beta
 
-SillyTavern extension that auto-detects locations from RP text and tracks scene movement on a map.
+SillyTavern RP 확장 프로그램 — AI 응답에서 장소를 자동 감지하고 지도에 표시합니다.
 
-## Features
+## 주요 기능
 
-### 🔍 Auto Detection
-- Korean + English location detection (4 methods)
-- Auto-registration with edit/cancel toast
-- Case-insensitive matching, name/adjective/transit filters
+### 🔍 자동 장소 감지
+- 한국어 + 영어 장소 감지 (4가지 방법)
+- 새 장소 자동 등록 (수정/취소 가능)
+- 대소문자 무시, 인명/형용사/경유지 필터
 
-### 🗺️ Dual Map Mode
-- **📊 Node Graph** — SVG map with drag, pinch zoom, pan
-- **🌍 Real Map** — Leaflet with CartoDB Voyager tiles
-- Toggle between modes in the panel
+### 🗺️ 듀얼 맵 모드
+- **📊 노드 그래프** — SVG 지도, 드래그/핀치줌/팬
+- **🌍 실제 지도** — Leaflet + CartoDB Voyager 타일
+- 패널에서 모드 전환 가능
 
-### 🔎 Nominatim Search (Leaflet mode)
-- Search for real places by name
-- Auto-match coordinates to registered locations
-- Click search results to place on map
+### 🔎 장소 검색 (실제 지도 모드)
+- Nominatim으로 실제 장소 검색
+- 검색 결과 선택 → 좌표 자동 배치
 
-### 🤖 AI Prompt Injection
-- Current scene location injected into AI context
-- Memory modes: Natural (fades) / Perfect (exact)
-- Visit stats, nearby locations, movement history
+### 🤖 AI 프롬프트 주입
+- 현재 씬 위치를 AI 컨텍스트에 주입
+- 기억 모드: 자연 (시간 경과로 흐려짐) / 완벽 (정확)
+- 방문 횟수, 인근 장소, 이동 히스토리
 
-### 📱 Mobile Compatible
-- Triple event system (RECEIVED + RENDERED + GENERATION_ENDED)
-- Safe toastr wrappers
-- Distance-based SVG hit testing
-- Inline popover & toast (no fixed positioning issues)
+### 📱 모바일 호환
+- 3중 이벤트 시스템 (데스크탑+모바일 동시 지원)
+- 인라인 팝오버 & 토스트 (모바일 안정)
+- 터치 최적화 SVG 히트 테스트
 
-### 🧭 Compass
-- Custom SVG compass rose (N/S/E/W petals)
-- Fixed position overlay on map
+### 🧭 나침반
+- 커스텀 SVG 나침반 (N/S/E/W 꽃잎 디자인)
+- 지도 좌하단 고정
 
-## File Structure (11 files)
+## 파일 구조 (11파일)
 ```
-manifest.json          — Extension metadata
-index.js              — Entry point, events, CDN loader
-db.js                 — IndexedDB wrapper
-location-manager.js   — CRUD + movement tracking
-detector.js           — Korean/English location detection
-prompt-injector.js    — AI prompt generation
-map-renderer.js       — SVG node graph (zoom/pan/drag)
-leaflet-renderer.js   — Leaflet real map + Nominatim
-ui-manager.js         — Panel UI, popover, toast, search
-style.css             — Mobile-first responsive styles
-README.md             — This file
+manifest.json          — 확장 메타데이터
+index.js              — 진입점, 이벤트, CDN 로더
+db.js                 — IndexedDB 래퍼
+location-manager.js   — 장소 CRUD + 이동 추적
+detector.js           — 한영 장소 감지 엔진
+prompt-injector.js    — AI 프롬프트 생성
+map-renderer.js       — SVG 노드 그래프 (줌/팬/드래그)
+leaflet-renderer.js   — Leaflet 실제 지도 + Nominatim
+ui-manager.js         — 패널 UI 전체
+style.css             — 모바일 퍼스트 스타일
+README.md             — 이 파일
 ```
 
-## Installation
-1. Copy to `SillyTavern/data/default-user/extensions/third-party/rp-world-tracker/`
-2. Enable in SillyTavern extensions menu
-3. Start an RP chat — locations auto-detected!
+## 설치 방법
+1. `SillyTavern/data/default-user/extensions/third-party/rp-world-tracker/` 에 복사
+2. SillyTavern 확장 메뉴에서 활성화
+3. RP 채팅 시작 → 장소 자동 감지!
 
-## Debug Mode
-Tap the 💭 emoji in settings 5 times to toggle debug mode.
-
-## Roadmap
-- [ ] Extension-specific AI model for detection
-- [ ] Location memory system (text → summary → decay)
-- [ ] Character card region auto-detect
-- [ ] Coordinate-based node auto-layout
-- [ ] Custom place words setting
-- [ ] Lorebook integration
+## 로드맵
+- [ ] 확장 전용 AI 모델 연동 (감지 정확도 향상)
+- [ ] 장소 메모리 시스템 (추억 저장 + 기억 변형)
+- [ ] 캐릭터 카드 지역 자동 감지
+- [ ] 좌표 기반 노드 자동 배치 (약도)
+- [ ] 커스텀 장소 단어 설정
+- [ ] 로어북 연동

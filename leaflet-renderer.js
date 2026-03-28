@@ -136,7 +136,10 @@ export class LeafletRenderer {
 
     // 맵 리사이즈 (패널 열릴 때)
     invalidateSize() {
-        if (this.map) setTimeout(() => this.map.invalidateSize(), 200);
+        if (!this.map) return;
+        [50, 200, 500, 1000].forEach(ms => {
+            setTimeout(() => { try { this.map.invalidateSize({animate:false}); } catch(_){} }, ms);
+        });
     }
 
     // ========== Nominatim 검색 ==========

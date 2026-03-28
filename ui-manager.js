@@ -35,6 +35,9 @@ export class UIManager {
                     <select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select>
                 </div>
                 <div class="wt-divider"></div>
+                <div class="wt-s-row"><label>🧠 감지 모델</label></div>
+                <div class="wt-s-row"><select id="wt-s-profile" class="text_pole wt-select wt-select-full"><option value="">없음 (regex만)</option></select></div>
+                <div class="wt-divider"></div>
                 <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🗺️ 월드 맵</button></div>
             </div></div></div>`;
         const containers = ['#extensions_settings2','#extensions_settings','.extensions_block'];
@@ -51,6 +54,9 @@ export class UIManager {
         bind('#wt-s-enabled','enabled',true); bind('#wt-s-detect','autoDetect',true); bind('#wt-s-toast','showDetectToast',true); bind('#wt-s-inject','aiInjection',true);
         $('#wt-s-inject').on('change', () => { s.aiInjection ? this.pi?.inject() : this.pi?.clear(); });
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change', () => { s.memoryMode=$('#wt-s-mem').val(); saveSettingsDebounced(); this.pi?.inject(); });
+        // 🧠 감지 모델 프로필 로드
+        this._loadProfiles();
+        $('#wt-s-profile').on('change', () => { s.selectedProfile=$('#wt-s-profile').val(); saveSettingsDebounced(); });
         $('#wt-open-panel').on('click', () => this.togglePanel());
         // 🔧 비밀 디버그: 💭 5번 탭
         let _t=0, _tm=null;
@@ -58,6 +64,31 @@ export class UIManager {
             if(_t>=5){_t=0;s.debugMode=!s.debugMode;saveSettingsDebounced();toast(s.debugMode?'🔧 Debug ON':'🔧 Debug OFF','🗺️',{timeOut:2000});}
             _tm=setTimeout(()=>{_t=0},2000);
         });
+    }
+
+    _loadProfiles() {
+        const sel = $('#wt-s-profile');
+        const s = extension_settings[EXTENSION_NAME];
+        try {
+            // Connection Manager 프로필 읽기
+            const cmSelect = document.querySelector('#connection_profile');
+            if (cmSelect) {
+                $(cmSelect).find('option').each(function() {
+                    const v = $(this).val(), t = $(this).text();
+                    if (v) sel.append(`<option value="${v}">${t}</option>`);
+                });
+            }
+            // 폴백: API 모델 셀렉트 읽기
+            if (sel.find('option').length <= 1) {
+                ['#settings_preset_openai','#model_openai_select','#model_google_select','#model_claude_select'].forEach(ps => {
+                    $(ps).find('option').each(function() {
+                        const v = $(this).val(), t = $(this).text();
+                        if (v && t && !sel.find(`option[value="${v}"]`).length) sel.append(`<option value="${v}">${t}</option>`);
+                    });
+                });
+            }
+        } catch(e) { console.warn(`[${EXTENSION_NAME}] Profile load:`, e); }
+        if (s?.selectedProfile) sel.val(s.selectedProfile);
     }
 
     registerWandButton() {
@@ -91,29 +122,33 @@ export class UIManager {
                 <div class="wt-opacity-row"><span>🔮</span><input type="range" id="wt-opacity" min="30" max="100" value="100"/><span id="wt-op-val">100%</span></div>
 
                 <div class="wt-map-toggle" id="wt-map-toggle">🗺️ 지도 ▾</div>
-                <div id="wt-map-wrap" class="wt-map-wrap">
+                <div id="wt-map-section" style="display:none">
                     <div class="wt-map-mode-bar">
                         <button id="wt-mode-node" class="wt-mode-btn wt-mode-active">📊 노드</button>
                         <button id="wt-mode-leaflet" class="wt-mode-btn">🌍 실제 지도</button>
                     </div>
-                    <div id="wt-map-container" class="wt-map-container"></div>
-                    <div id="wt-leaflet-container" class="wt-map-container" style="display:none"></div>
                     <div id="wt-search-bar" class="wt-search-bar" style="display:none">
-                        <input type="text" id="wt-search-input" class="wt-input" placeholder="🔍 장소 검색 (예: 해운대, Central Park)"/>
+                        <input type="search" id="wt-search-input" class="wt-input" placeholder="🔍 장소 검색..." autocomplete="off" inputmode="search"/>
                         <div id="wt-search-results" class="wt-search-results" style="display:none"></div>
                     </div>
-                    <div class="wt-compass-overlay">
-                        <svg width="40" height="40" viewBox="0 0 120 120">
-                            <circle cx="60" cy="65" r="40" stroke="#8D6E63" stroke-width="4" fill="none"/>
-                            <circle cx="60" cy="65" r="5" fill="#8D6E63"/>
-                            <g stroke="#D2B48C" stroke-width="1" stroke-opacity="0.5">
-                                <path d="M60 55 C65 60,75 45,60 25 C45 45,55 60,60 55Z" fill="#FFB3BA"/>
-                                <path d="M60 75 C65 70,75 90,60 105 C45 90,55 70,60 75Z" fill="#BAE1FF"/>
-                                <path d="M70 65 C75 60,90 50,105 65 C90 80,75 70,70 65Z" fill="#FFFFBA"/>
-                                <path d="M50 65 C45 60,30 50,15 65 C30 80,45 70,50 65Z" fill="#FFFFBA"/>
-                            </g>
-                            <text x="60" y="32" text-anchor="middle" font-weight="bold" font-size="14" fill="#FFB3BA">N</text>
-                        </svg>
+                    <div id="wt-map-wrap" class="wt-map-wrap">
+                        <div id="wt-map-container" class="wt-map-container"></div>
+                        <div class="wt-compass-overlay">
+                            <svg width="40" height="40" viewBox="0 0 120 120">
+                                <circle cx="60" cy="65" r="40" stroke="#8D6E63" stroke-width="4" fill="none"/>
+                                <circle cx="60" cy="65" r="5" fill="#8D6E63"/>
+                                <g stroke="#D2B48C" stroke-width="1" stroke-opacity="0.5">
+                                    <path d="M60 55 C65 60,75 45,60 25 C45 45,55 60,60 55Z" fill="#FFB3BA"/>
+                                    <path d="M60 75 C65 70,75 90,60 105 C45 90,55 70,60 75Z" fill="#BAE1FF"/>
+                                    <path d="M70 65 C75 60,90 50,105 65 C90 80,75 70,70 65Z" fill="#FFFFBA"/>
+                                    <path d="M50 65 C45 60,30 50,15 65 C30 80,45 70,50 65Z" fill="#FFFFBA"/>
+                                </g>
+                                <text x="60" y="32" text-anchor="middle" font-weight="bold" font-size="14" fill="#FFB3BA">N</text>
+                            </svg>
+                        </div>
+                    </div>
+                    <div id="wt-leaflet-wrap" class="wt-map-wrap" style="display:none">
+                        <div id="wt-leaflet-container" class="wt-map-container wt-leaflet-map"></div>
                     </div>
                 </div>
 
@@ -157,7 +192,7 @@ export class UIManager {
 
     _bind() {
         $('#wt-panel-close').on('click', () => this.togglePanel(false));
-        $('#wt-map-toggle').on('click', () => { $('#wt-map-wrap').slideToggle(200); const t=$('#wt-map-toggle').text(); $('#wt-map-toggle').text(t.includes('▾')?'🗺️ 지도 ▴':'🗺️ 지도 ▾'); });
+        $('#wt-map-toggle').on('click', () => { $('#wt-map-section').slideToggle(200); const t=$('#wt-map-toggle').text(); $('#wt-map-toggle').text(t.includes('▾')?'🗺️ 지도 ▴':'🗺️ 지도 ▾'); });
         $('#wt-add-toggle').on('click', () => { $('#wt-add-form').slideToggle(200); const a=$('#wt-add-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-btn-add').on('click', () => this._addLoc());
         $('#wt-input-name').on('keydown', e => { if(e.key==='Enter') this._addLoc(); });
@@ -177,6 +212,16 @@ export class UIManager {
             _searchTimer = setTimeout(() => this._doSearch(), 500);
         });
         $('#wt-search-input').on('keydown', e => { if(e.key==='Enter') { clearTimeout(_searchTimer); this._doSearch(); } });
+        // 모바일: 키보드 열릴 때 검색창 보이게
+        $('#wt-search-input').on('focus', () => {
+            setTimeout(() => {
+                const el = document.getElementById('wt-search-input');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        });
+        $('#wt-search-input').on('focus', () => {
+            setTimeout(() => { document.getElementById('wt-search-input')?.scrollIntoView({behavior:'smooth',block:'center'}); }, 300);
+        });
         $('#wt-opacity').on('input', function(){ const v=$(this).val(); $('#wt-op-val').text(v+'%'); $('#wt-panel').css('opacity',v/100); extension_settings[EXTENSION_NAME].panelOpacity=+v; saveSettingsDebounced(); });
         const op = extension_settings[EXTENSION_NAME]?.panelOpacity ?? 100;
         $('#wt-opacity').val(op); $('#wt-op-val').text(op+'%');
@@ -219,24 +264,27 @@ export class UIManager {
         $(`#wt-mode-${mode}`).addClass('wt-mode-active');
 
         if (mode === 'node') {
-            $('#wt-leaflet-container').hide();
+            $('#wt-leaflet-wrap').hide();
             $('#wt-search-bar').hide();
-            $('#wt-map-container').show();
+            $('#wt-map-wrap').show();
             if (!this.mapRenderer) { this.mapRenderer = new MapRenderer(document.querySelector('#wt-map-container'), this.lm); this.mapRenderer.onLocationClick = id => this.showPop(id); }
             this.mapRenderer.render();
         } else if (mode === 'leaflet') {
-            $('#wt-map-container').hide();
-            $('#wt-leaflet-container').show();
+            $('#wt-map-wrap').hide();
+            $('#wt-leaflet-wrap').show();
             $('#wt-search-bar').show();
             if (!this.leafletRenderer) {
                 const ok = await loadLeaflet();
-                if (!ok) { toastWarn('Leaflet CDN 로드 실패! 인터넷 연결 확인'); this._setMapMode('node'); return; }
+                if (!ok) { toastWarn('Leaflet CDN 로드 실패!'); this._setMapMode('node'); return; }
                 this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
                 await this.leafletRenderer.init();
                 this.leafletRenderer.onLocationClick = id => this.showPop(id);
             }
             this.leafletRenderer.render();
-            this.leafletRenderer.invalidateSize();
+            // 모바일: 여러 번 invalidateSize (컨테이너 크기 안정화 대기)
+            [100, 300, 600, 1000].forEach(ms => {
+                setTimeout(() => this.leafletRenderer?.invalidateSize(), ms);
+            });
         }
     }
 
@@ -260,7 +308,7 @@ export class UIManager {
         for (const m of [...this.lm.movements].sort((a,b)=>a.timestamp-b.timestamp).slice(-20)) {
             const f=this.lm.locations.find(l=>l.id===m.fromId), t=this.lm.locations.find(l=>l.id===m.toId);
             if (!f||!t) continue;
-            const time=new Date(m.timestamp).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+            const time=new Date(m.timestamp).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
             list.append(`<div class="wt-mv-item"><span class="wt-mv-time">${time}</span><span class="wt-mv-from">${f.name}</span><span class="wt-mv-arrow">→</span><span class="wt-mv-to">${t.name}</span></div>`);
         }
     }
@@ -284,8 +332,8 @@ export class UIManager {
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
         // 맵 열려있으면 접기 (닫혀있으면 그냥 냅둠)
-        if ($('#wt-map-wrap').is(':visible')) {
-            $('#wt-map-wrap').hide();
+        if ($('#wt-map-section').is(':visible')) {
+            $('#wt-map-section').hide();
             $('#wt-map-toggle').text('🗺️ 지도 ▾');
         }
         $('#wt-popover').show();

@@ -35,7 +35,7 @@
 .wt-mode-active{background:var(--wt-yellow)!important;color:var(--wt-brown)!important;border-color:var(--wt-yellow-d)!important}
 
 /* Search */
-.wt-search-bar{padding:0 4px}
+.wt-search-bar{padding:4px 0;position:relative;z-index:2}
 .wt-search-results{max-height:150px;overflow-y:auto;background:#fff;border:1.5px solid var(--wt-border);border-radius:var(--wt-rs);margin-top:4px}
 .wt-search-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--wt-border);-webkit-tap-highlight-color:transparent}
 .wt-search-item:last-child{border-bottom:none}
@@ -44,8 +44,12 @@
 .wt-search-empty{padding:12px;text-align:center;font-size:12px;color:var(--wt-text-dim)}
 
 /* Leaflet overrides */
+.wt-leaflet-map{height:320px!important;width:100%!important;border-radius:var(--wt-r);overflow:hidden;border:2px solid var(--wt-border);z-index:1!important}
+.wt-leaflet-map .leaflet-pane{z-index:1!important}
 .wt-leaflet-label{background:var(--wt-surface)!important;border:1px solid var(--wt-border)!important;border-radius:4px!important;padding:2px 6px!important;font-size:11px!important;color:var(--wt-brown)!important;font-weight:600!important;box-shadow:none!important}
 .wt-leaflet-label::before{border:none!important}
+#wt-leaflet-map{width:100%!important;height:100%!important;z-index:1!important}
+#wt-leaflet-map .leaflet-control-zoom{z-index:2!important}
 #wt-leaflet-map .leaflet-control-zoom a{background:var(--wt-surface)!important;color:var(--wt-brown)!important;border-color:var(--wt-border)!important}
 .wt-map-container{width:100%;min-height:320px;aspect-ratio:4/3;border-radius:var(--wt-r);overflow:hidden;border:2px solid var(--wt-border);background:radial-gradient(ellipse at 30% 20%,#FFFBF0,transparent 60%),radial-gradient(ellipse at 70% 80%,#FFF5E0,transparent 50%),linear-gradient(135deg,var(--wt-cream),#FFF0D6,#FFE8C2);touch-action:none}
 .wt-map-svg{cursor:grab;touch-action:none}
@@ -111,5 +115,5 @@
 .wt-s-row label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px}
 .wt-version{font-size:10px;color:#aaa;font-weight:400;margin-left:4px}
 .wt-divider{height:1px;background:var(--wt-border);margin:4px 0}
-.wt-select{max-width:160px;font-size:12px}.wt-open-btn{width:100%}
+.wt-select{max-width:160px;font-size:12px}.wt-select-full{max-width:100%!important;width:100%}.wt-open-btn{width:100%}
 #wt-wand-btn{cursor:pointer}#wt-wand-btn:hover{background:rgba(0,0,0,.05)}
