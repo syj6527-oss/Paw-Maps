@@ -43,12 +43,20 @@ export class LeafletRenderer {
         // 지도 클릭 → 좌표 배치
         this.map.on('click', (e) => this._onMapClick(e));
 
-        // #1: 롱프레스/우클릭 → 장소 이동 (contextmenu = PC 우클릭 + 모바일 롱프레스)
+        // #1: 롱프레스/우클릭 → 선택된 장소 이동
+        // 흐름: 마커 터치 → 선택 → 빈 곳 롱프레스 → 이동
+        this._selectedLocId = null;
         this.map.on('contextmenu', async (e) => {
             L.DomEvent.preventDefault(e);
-            if (!this.onLongPress) return;
-            await this.onLongPress(e.latlng);
-            if (navigator.vibrate) navigator.vibrate(50);
+            if (!this._selectedLocId) {
+                // 선택된 장소 없으면 현재 위치 사용
+                this._selectedLocId = this.lm.currentLocationId;
+            }
+            if (this._selectedLocId && this.onLongPress) {
+                await this.onLongPress(e.latlng, this._selectedLocId);
+                if (navigator.vibrate) navigator.vibrate(50);
+                this._selectedLocId = null; // 이동 후 선택 해제
+            }
         });
 
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
@@ -84,8 +92,11 @@ export class LeafletRenderer {
                 permanent: true, direction: 'bottom', offset: [0, 12],
                 className: 'wt-leaflet-label',
             });
-            marker.bindPopup(`<b>${loc.name}</b><br>방문 ${v}회`);
-            marker.on('click', () => { if (this.onLocationClick) this.onLocationClick(loc.id); });
+            marker.bindPopup(`<b>${loc.name}</b><br>방문 ${v}회<br><small>📍 롱프레스로 위치 이동</small>`);
+            marker.on('click', () => {
+                this._selectedLocId = loc.id;
+                if (this.onLocationClick) this.onLocationClick(loc.id);
+            });
 
             marker.addTo(this.map);
             this.markers[loc.id] = marker;
