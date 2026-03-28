@@ -29,13 +29,11 @@ export class UIManager {
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-detect"/> 🔍 자동 감지</label></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-toast"/> 📍 이동 알림</label></div>
-                    <div class="wt-s-row"><label><input type="checkbox" id="wt-s-autoreg"/> 🤖 새 장소 자동 등록</label></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
                 <div class="wt-s-row"><label>💭 기억</label><select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🗺️ 월드 맵</button></div>
-                <div class="wt-s-row"><label><input type="checkbox" id="wt-s-debug"/> 🔧 디버그 모드</label></div>
             </div></div></div>`;
         // 모바일+데스크탑 호환: 여러 컨테이너 시도
         const containers = ['#extensions_settings2', '#extensions_settings', '.extensions_block'];
@@ -46,7 +44,18 @@ export class UIManager {
         const s=extension_settings[EXTENSION_NAME];
         const bind=(sel,key,def)=>$(sel).prop('checked',s?.[key]??def).on('change',function(){s[key]=$(this).is(':checked');saveSettingsDebounced()});
         bind('#wt-s-enabled','enabled',true);bind('#wt-s-detect','autoDetect',true);bind('#wt-s-toast','showDetectToast',true);bind('#wt-s-inject','aiInjection',true);
-        bind('#wt-s-debug','debugMode',false);bind('#wt-s-autoreg','autoRegister',true);
+        // 🔧 비밀 디버그: 버전 5번 탭 → 언락
+        let _dbgTaps = 0, _dbgTimer = null;
+        $(document).on('click', '.wt-version', () => {
+            _dbgTaps++;
+            clearTimeout(_dbgTimer);
+            if (_dbgTaps >= 5) {
+                _dbgTaps = 0;
+                s.debugMode = !s.debugMode; saveSettingsDebounced();
+                toast(s.debugMode ? '🔧 디버그 모드 ON!' : '🔧 디버그 모드 OFF', '🗺️', {timeOut:2000});
+            }
+            _dbgTimer = setTimeout(() => { _dbgTaps = 0; }, 2000);
+        });
         $('#wt-s-inject').on('change',()=>{s.aiInjection?this.pi?.inject():this.pi?.clear()});
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change',()=>{s.memoryMode=$('#wt-s-mem').val();saveSettingsDebounced();this.pi?.inject()});
         $('#wt-open-panel').on('click',()=>this.togglePanel());
