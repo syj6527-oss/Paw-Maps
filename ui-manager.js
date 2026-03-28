@@ -31,7 +31,7 @@ export class UIManager {
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-toast"/> 📍 이동 알림</label></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
-                <div class="wt-s-row"><label>💭 기억</label><select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select></div>
+                <div class="wt-s-row"><label><span id="wt-secret" style="cursor:default">💭</span> 기억</label><select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🗺️ 월드 맵</button></div>
             </div></div></div>`;
@@ -44,9 +44,10 @@ export class UIManager {
         const s=extension_settings[EXTENSION_NAME];
         const bind=(sel,key,def)=>$(sel).prop('checked',s?.[key]??def).on('change',function(){s[key]=$(this).is(':checked');saveSettingsDebounced()});
         bind('#wt-s-enabled','enabled',true);bind('#wt-s-detect','autoDetect',true);bind('#wt-s-toast','showDetectToast',true);bind('#wt-s-inject','aiInjection',true);
-        // 🔧 비밀 디버그: 버전 5번 탭 → 언락
+        // 🔧 비밀 디버그: 💭 5번 탭 → 언락
         let _dbgTaps = 0, _dbgTimer = null;
-        $(document).on('click', '.wt-version', () => {
+        $(document).on('click', '#wt-secret', (e) => {
+            e.stopPropagation();
             _dbgTaps++;
             clearTimeout(_dbgTimer);
             if (_dbgTaps >= 5) {
