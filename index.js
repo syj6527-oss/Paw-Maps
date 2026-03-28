@@ -77,74 +77,55 @@ async function init() {
     ui.createSettingsPanel(); ui.createSidePanel(); ui.registerWandButton();
 
     // ============================================================
-    // Event Registration (Primary: eventSource, Fallback: MutationObserver)
+    // Event Hooks — 3중 이벤트 (데스크탑+모바일 호환)
     // ============================================================
-    let eventsWorking = false;
-    let lastProcessedCount = 0;
+    let lastHandledId = null;
+
+    async function handleMessage(idx) {
+        try {
+            const ctx = getContext(); if (!ctx?.chat?.length) return;
+            const msg = typeof idx === 'number' ? ctx.chat[idx] : ctx.chat[ctx.chat.length - 1];
+            if (!msg || msg.is_user) return;
+
+            // 중복 실행 방지
+            const msgId = `${ctx.chat.length}_${(msg.mes||'').length}`;
+            if (msgId === lastHandledId) return;
+            lastHandledId = msgId;
+
+            // 직전 유저 메시지 찾기
+            const aiIdx = typeof idx === 'number' ? idx : ctx.chat.length - 1;
+            let userMsg = null;
+            for (let i = aiIdx - 1; i >= Math.max(0, aiIdx - 3); i--) {
+                if (ctx.chat[i]?.is_user) { userMsg = ctx.chat[i]; break; }
+            }
+
+            dbg(`📨 RECV — AI:${(msg.mes||'').length}c User:${(userMsg?.mes||'').length}c`);
+
+            if (userMsg?.mes?.trim()) await scanMessage(userMsg.mes, 'USER');
+            if (msg.mes?.trim()) await scanMessage(msg.mes, 'AI');
+        } catch(e) { console.error(`[${EXTENSION_NAME}] Handle error:`, e); }
+    }
+
+    // 3개 이벤트 모두 등록 — 데스크탑/모바일 어디서든 최소 하나는 발동
+    eventSource.on(event_types.MESSAGE_RECEIVED, handleMessage);
+
+    // MESSAGE_RENDERED — 모바일에서 안정적
+    if (event_types.MESSAGE_RENDERED) {
+        eventSource.on(event_types.MESSAGE_RENDERED, handleMessage);
+        dbg('✅ MESSAGE_RENDERED registered');
+    }
+
+    // GENERATION_ENDED — 안전장치
+    if (event_types.GENERATION_ENDED) {
+        eventSource.on(event_types.GENERATION_ENDED, handleMessage);
+        dbg('✅ GENERATION_ENDED registered');
+    }
 
     eventSource.on(event_types.CHAT_CHANGED, async () => {
-        pi.clear(); if(ui.panelVisible) await ui.refresh(); await lm.loadChat(); pi.inject();
-        lastProcessedCount = getContext()?.chat?.length || 0;
+        pi.clear(); lastHandledId = null;
+        if(ui.panelVisible) await ui.refresh();
+        await lm.loadChat(); pi.inject();
     });
-
-    // Primary: eventSource
-    eventSource.on(event_types.MESSAGE_RECEIVED, async (idx) => {
-        eventsWorking = true;
-        const ctx = getContext(); if (!ctx?.chat?.length) return;
-        let aiMsg = typeof idx==='number' ? ctx.chat[idx] : ctx.chat[ctx.chat.length-1];
-        if (!aiMsg || aiMsg.is_user) return;
-
-        const aiIdx = typeof idx==='number' ? idx : ctx.chat.length-1;
-        let userMsg = null;
-        for (let i=aiIdx-1; i>=Math.max(0,aiIdx-3); i--) {
-            if (ctx.chat[i]?.is_user) { userMsg = ctx.chat[i]; break; }
-        }
-
-        dbg(`📨 RECV — AI:${(aiMsg.mes||'').length}c User:${(userMsg?.mes||'').length}c`);
-
-        if (userMsg?.mes?.trim()) await scanMessage(userMsg.mes, 'USER');
-        if (aiMsg.mes?.trim()) await scanMessage(aiMsg.mes, 'AI');
-        lastProcessedCount = ctx.chat.length;
-    });
-
-    // Fallback: MutationObserver (모바일에서 eventSource 안 될 때)
-    function setupFallbackObserver() {
-        const chatEl = document.querySelector('#chat');
-        if (!chatEl) { setTimeout(setupFallbackObserver, 3000); return; }
-
-        let checkTimer = null;
-        const observer = new MutationObserver(() => {
-            if (eventsWorking) return; // eventSource 작동 중이면 스킵
-            clearTimeout(checkTimer);
-            checkTimer = setTimeout(async () => {
-                try {
-                    const ctx = getContext();
-                    if (!ctx?.chat?.length) return;
-                    if (ctx.chat.length <= lastProcessedCount) return;
-
-                    const s = extension_settings[EXTENSION_NAME];
-                    if (!s?.enabled || !s?.autoDetect) return;
-
-                    dbg(`🔄 Fallback scan (${ctx.chat.length} msgs, last:${lastProcessedCount})`);
-
-                    // 마지막 AI 메시지 찾기
-                    let aiMsg = null, userMsg = null;
-                    for (let i = ctx.chat.length - 1; i >= Math.max(0, ctx.chat.length - 3); i--) {
-                        if (!ctx.chat[i].is_user && !aiMsg) aiMsg = ctx.chat[i];
-                        if (ctx.chat[i].is_user && !userMsg) userMsg = ctx.chat[i];
-                        if (aiMsg && userMsg) break;
-                    }
-
-                    if (userMsg?.mes?.trim()) await scanMessage(userMsg.mes, 'USER(fb)');
-                    if (aiMsg?.mes?.trim()) await scanMessage(aiMsg.mes, 'AI(fb)');
-                    lastProcessedCount = ctx.chat.length;
-                } catch(e) { console.error(`[${EXTENSION_NAME}] Fallback error:`, e); }
-            }, 2000); // 2초 딜레이 (AI 응답 완료 대기)
-        });
-        observer.observe(chatEl, { childList: true, subtree: true });
-        dbg('👀 Fallback observer active');
-    }
-    setTimeout(setupFallbackObserver, 2000);
 
     eventSource.on(event_types.MESSAGE_SENDING, () => {
         const s=extension_settings[EXTENSION_NAME];

@@ -99,24 +99,26 @@ export class UIManager {
                 <div id="wt-loc-list" class="wt-loc-list"></div>
                 <div class="wt-section-title"><span>🚶 이동 히스토리</span></div>
                 <div id="wt-move-list" class="wt-move-list"></div>
-            </div>
-        </div>
 
-        <div id="wt-popover" class="wt-popover" style="display:none;">
-            <div class="wt-pop-header"><span id="wt-pop-title"></span><button id="wt-pop-close" class="wt-btn-icon">✕</button></div>
-            <div class="wt-pop-body">
-                <div class="wt-pop-stats">
-                    <div><span class="wt-stat-l">방문</span> <span id="wt-pop-visits">0</span>회</div>
-                    <div><span class="wt-stat-l">첫</span> <span id="wt-pop-first">—</span></div>
-                    <div><span class="wt-stat-l">최근</span> <span id="wt-pop-last">—</span></div>
+                <!-- 팝오버 (패널 안에!) -->
+                <div id="wt-popover" class="wt-popover" style="display:none;">
+                    <div class="wt-pop-header"><span id="wt-pop-title"></span><button id="wt-pop-close" class="wt-btn-icon">✕</button></div>
+                    <div class="wt-pop-body">
+                        <div class="wt-pop-stats">
+                            <div><span class="wt-stat-l">방문</span> <span id="wt-pop-visits">0</span>회</div>
+                            <div><span class="wt-stat-l">첫</span> <span id="wt-pop-first">—</span></div>
+                            <div><span class="wt-stat-l">최근</span> <span id="wt-pop-last">—</span></div>
+                        </div>
+                        <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
+                        <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
+                        <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
+                        <button id="wt-pop-move" class="wt-btn-ghost wt-btn-sm">📍 위치 수정</button>
+                    </div>
                 </div>
-                <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
-                <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
-                <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
-                <button id="wt-pop-move" class="wt-btn-ghost wt-btn-sm">📍 위치 수정</button>
             </div>
         </div>
 
+        <!-- 미등록 장소 토스트 (body에) -->
         <div id="wt-npt" class="wt-npt" style="display:none;">
             <div class="wt-npt-text"><span>🗺️ 새 장소 발견!</span><strong id="wt-npt-name"></strong></div>
             <div id="wt-npt-similar" class="wt-npt-similar" style="display:none;">
@@ -221,6 +223,8 @@ export class UIManager {
         $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
         $('#wt-pop-memo').val(l.memo||'');$('#wt-pop-status').val(l.status||'');
         $('#wt-popover').fadeIn(150);
+        // 모바일: 팝오버까지 스크롤
+        setTimeout(()=>{const el=document.getElementById('wt-popover');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},200);
     }
     hidePop(){$('#wt-popover').fadeOut(100)}
 
