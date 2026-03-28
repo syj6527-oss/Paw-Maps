@@ -49,11 +49,12 @@ export class LocationDetector {
             'park','garden','forest','beach','lake',
             'plaza','square','palace','manor','mansion','apartment','building',
             'kitchen','bedroom','bathroom','basement','attic','garage','living room',
-            'gym','arena','stadium','court','field','ground',
+            'gym','arena','stadium','court','field','ground','range',
             'base','camp','bunker','barracks','armory','quarters','dormitory','dorm',
             'lab','laboratory','workshop','warehouse','prison','dungeon','cave',
             'dock','port','harbor','airport','terminal',
             'lounge','lobby','chamber','cafeteria','canteen',
+            'club','center','centre','studio','nursery','clinic','salon','theater','theatre',
         ];
 
         this.engMoveVerbs = [
