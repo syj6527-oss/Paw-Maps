@@ -612,13 +612,26 @@ export class UIManager {
                     const lat = parseFloat($(this).attr('data-lat'));
                     const lng = parseFloat($(this).attr('data-lng'));
                     await self.lm.updateLocation(locId, { lat, lng });
-                    resultsDiv.hide();
-                    toastSuccess(`📍 좌표 저장! 실제 지도로 전환...`);
 
-                    // Leaflet 모드로 자동 전환 + 핀 표시
+                    // 앵커 포인트 기반 원형 분포 — 좌표 없는 다른 장소들도 배치
+                    const others = self.lm.locations.filter(l => l.id !== locId && !l.lat && !l.lng);
+                    if (others.length > 0) {
+                        const angleStep = (2 * Math.PI) / others.length;
+                        for (let i = 0; i < others.length; i++) {
+                            const dist = 30 + Math.random() * 120; // 30~150m
+                            const angle = angleStep * i + (Math.random() * 0.3); // 약간 불규칙
+                            const oLat = lat + (dist / 111320) * Math.cos(angle);
+                            const oLng = lng + (dist / (111320 * Math.cos(lat * Math.PI / 180))) * Math.sin(angle);
+                            await self.lm.updateLocation(others[i].id, { lat: oLat, lng: oLng });
+                        }
+                        toastSuccess(`📍 ${others.length + 1}개 장소 배치 완료!`);
+                    } else {
+                        toastSuccess(`📍 좌표 저장!`);
+                    }
+
+                    resultsDiv.hide();
                     self.hidePop();
                     self._setMapMode('leaflet');
-                    // Leaflet 초기화 대기 후 렌더
                     setTimeout(() => {
                         if (self.leafletRenderer?.map) {
                             self.leafletRenderer.render();
