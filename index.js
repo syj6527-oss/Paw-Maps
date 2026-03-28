@@ -176,6 +176,18 @@ async function scanContext() {
         try { const meta = ctx.chat_metadata; if (meta?.note_prompt) sources.push(meta.note_prompt); if (meta?.depth_prompt?.prompt) sources.push(meta.depth_prompt.prompt); } catch(_){}
         if (!sources.length || (lm.locations.length > 0 && lm.currentLocationId)) return;
 
+        // 1차: 설명문 전용 스캔 (이동 동사 없이 장소 추출)
+        for (const text of sources) {
+            const desc = det.detectFromDescription(text);
+            if (desc) {
+                dbg(`📋 Desc: "${desc}"`);
+                const loc = await lm.addLocation(desc);
+                if (loc) { await lm.moveTo(loc.id); pi.inject(); if (ui.panelVisible) ui.refresh(); }
+                return;
+            }
+        }
+
+        // 2차: 일반 감지 폴백
         for (const text of sources) {
             const result = det.detect(text);
             if (result) { dbg(`📋 Context: "${result.location.name}"`); if (!lm.currentLocationId) { await lm.moveTo(result.location.id); pi.inject(); if (ui.panelVisible) ui.refresh(); } return; }

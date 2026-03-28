@@ -102,6 +102,13 @@ export class LocationDetector {
             'metal','wooden','stone','steel','stainless','plastic','heavy',
             'entered','reached','left','to','at','into','from','of','in','on',
             'toward','towards','inside','through','open',
+            // 시간/동작 수식어 (After returning home 오탐 방지)
+            'after','before','while','during','upon','until','since',
+            'returning','coming','going','leaving','heading','walking','running',
+            'passing','following','approaching','entering','exiting',
+            'back','just','then','still','already','finally','eventually',
+            'nearby','near','around','along','across','over','under','behind',
+            'quickly','slowly','suddenly','further','closer',
         ];
 
         // 인명 호칭 (bug 21)
@@ -220,7 +227,7 @@ export class LocationDetector {
         if (lastFound) { console.log(`[${EXTENSION_NAME}] 🆕 (ko): "${lastFound}"`); return lastFound; }
 
         // 영어: "headed home" 특수 처리
-        if (/\b(?:headed|went|got|came|arrived)\s+home\b/i.test(nar)) {
+        if (/\b(?:headed|went|got|came|arrived|returned|returning)\s+home\b/i.test(nar)) {
             if (!this.lm.findByName('Home')) { console.log(`[${EXTENSION_NAME}] 🆕 (home)`); return 'Home'; }
         }
 
@@ -280,6 +287,49 @@ export class LocationDetector {
     }
 
     // #36: 도시명 감지
+    // ========== 설명문에서 장소 추출 (이동 동사 없이) ==========
+    detectFromDescription(text) {
+        if (!text) return null;
+        const clean = this._strip(text);
+        const lo = clean.toLowerCase();
+
+        // 1) 도시명 매칭
+        for (const city of this.cityNames) {
+            if (lo.includes(city.toLowerCase()) && !this.lm.findByName(city)) {
+                console.log(`[${EXTENSION_NAME}] 📋 desc city: "${city}"`);
+                return city;
+            }
+        }
+
+        // 2) 영어 placeWord 매칭 ("SAS base", "royal palace")
+        for (const pw of this.placeWords) {
+            if (this.transitEn.includes(pw)) continue;
+            const rx = new RegExp('\\b(\\w+\\s+)?' + pw + '(?:s)?\\b', 'i');
+            const m = clean.match(rx);
+            if (!m) continue;
+            let name = m[0].trim();
+            const words = name.split(/\s+/);
+            if (words.length > 1 && this.skipMods.includes(words[0].toLowerCase())) name = words.slice(1).join(' ');
+            name = name.charAt(0).toUpperCase() + name.slice(1);
+            if (name.length >= 3 && name.length <= 30 && !this.lm.findByName(name)) {
+                console.log(`[${EXTENSION_NAME}] 📋 desc place: "${name}"`);
+                return name;
+            }
+        }
+
+        // 3) 한국어 장소 키워드
+        const koPlaces = /([가-힣]{2,6}(?:기지|부대|학교|마을|도시|왕국|성|궁|사원|신전|숲|섬|산|강|호수|바다))/g;
+        let km;
+        while ((km = koPlaces.exec(clean)) !== null) {
+            const c = km[1];
+            if (!this.skipKo.includes(c) && !this.lm.findByName(c)) {
+                console.log(`[${EXTENSION_NAME}] 📋 desc ko: "${c}"`);
+                return c;
+            }
+        }
+        return null;
+    }
+
     _detectCity(text) {
         const lo = text.toLowerCase();
         // 이동 맥락 확인
