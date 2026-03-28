@@ -3,8 +3,8 @@
 export class MapRenderer {
     constructor(container, lm) {
         this.container = container; this.lm = lm;
-        this.svg = null; this.dragState = null; this._wasDrag = false;
-        this.onLocationClick = null;
+        this.svg = null; this._wasDrag = false; this._movingNodeId = null;
+        this.onLocationClick = null; this.onMoveRequest = null;
         // ViewBox state for zoom/pan
         this.vb = { x: 0, y: 0, w: 600, h: 500 };
         this._pinch = null; this._pan = null;
