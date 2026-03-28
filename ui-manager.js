@@ -1,4 +1,4 @@
-// 🗺️ RP World Tracker — ui-manager.js (Inline Toast + Popover)
+// 🐱 월드맵 — ui-manager.js (Inline Toast + Popover)
 
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -22,7 +22,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🗺️ RP World Tracker <span class="wt-version">v0.2.0</span></b>
+                <b>🐱 월드맵 <span class="wt-version">v0.2.0</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -93,7 +93,7 @@ export class UIManager {
 
     registerWandButton() {
         try { const b=document.createElement('div'); b.id='wt-wand-btn'; b.className='list-group-item flex-container flexGap5';
-            b.innerHTML='<span>🗺️</span> World Tracker'; b.addEventListener('click',()=>this.togglePanel());
+            b.innerHTML='<span>🗺️</span> 🐱 월드맵'; b.addEventListener('click',()=>this.togglePanel());
             const m=document.getElementById('extensionsMenu'); if(m)m.appendChild(b); } catch(e){}
     }
 
@@ -101,7 +101,7 @@ export class UIManager {
         const html = `
         <div id="wt-panel" class="wt-panel">
             <div class="wt-panel-header">
-                <div class="wt-panel-title"><span>🗺️</span> World Tracker</div>
+                <div class="wt-panel-title"><span>🗺️</span> 🐱 월드맵</div>
                 <button id="wt-panel-close" class="wt-btn-icon">✕</button>
             </div>
             <div class="wt-panel-body" id="wt-panel-body">
