@@ -1,4 +1,4 @@
-// 🐶 월드맵 v0.2.1-beta
+// 🐶 월드맵 v0.2.0-beta
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
@@ -11,39 +11,30 @@ import { UIManager } from './ui-manager.js';
 export const EXTENSION_NAME = 'rp-world-tracker';
 export const PROMPT_KEY = 'rp-world-tracker-prompt';
 
-// ========== 커스텀 알림 (번역기 스타일) ==========
-let _notiEl = null, _notiTimer = null;
-export function wtNotify(msg, type = 'move', duration = 3000) {
-    if (!_notiEl) {
-        _notiEl = document.createElement('div');
-        _notiEl.className = 'wt-notification';
-        document.body.appendChild(_notiEl);
-    }
-    clearTimeout(_notiTimer);
-    _notiEl.className = `wt-notification wt-noti-${type}`;
-    _notiEl.textContent = msg;
-    _notiEl.style.top = '12px';
-    _notiTimer = setTimeout(() => { _notiEl.style.top = '-60px'; }, duration);
-}
-export function toastWarn(msg) { wtNotify(msg, 'warn', 3000); }
-export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
+export function toast(msg, title, opts) { try { if (typeof toastr !== 'undefined') toastr.info(msg, title, opts); } catch(_) {} }
+export function toastWarn(msg) { try { if (typeof toastr !== 'undefined') toastr.warning(msg); } catch(_) {} }
+export function toastSuccess(msg) { try { if (typeof toastr !== 'undefined') toastr.success(msg); } catch(_) {} }
 
 const defaults = {
     enabled:true, autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
-    debugMode:false, mapMode:'node',
+    debugMode:false, mapMode:'node', // 'node' or 'leaflet'
 };
 
 let db, lm, det, pi, ui;
 
+// Leaflet CDN 동적 로드
 export async function loadLeaflet() {
     if (window.L) return true;
     try {
+        // CSS
         if (!document.querySelector('link[href*="leaflet"]')) {
-            const link = document.createElement('link'); link.rel = 'stylesheet';
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
             link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
             document.head.appendChild(link);
         }
+        // JS
         return new Promise((resolve) => {
             const script = document.createElement('script');
             script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
@@ -56,44 +47,46 @@ export async function loadLeaflet() {
 
 function dbg(msg) {
     const s = extension_settings[EXTENSION_NAME];
-    if (s?.debugMode) wtNotify(`🔧 ${msg}`, 'info', 3000);
+    if (s?.debugMode) toast(msg, '🔧', {timeOut:3000, positionClass:'toast-top-right'});
     console.log(`[${EXTENSION_NAME}] ${msg}`);
 }
 
-// ========== 메시지 스캔 (USER/AI 감도 분리) ==========
-async function scanMessage(text, source = 'USER') {
+async function scanMessage(text, label='') {
     try {
         const s = extension_settings[EXTENSION_NAME];
         if (!s?.enabled || !s?.autoDetect || !text?.trim()) return false;
         if (!lm.currentChatId) await lm.loadChat();
         if (!lm.currentChatId) return false;
 
-        const mode = source === 'AI' ? 'ai' : 'user';
-        dbg(`🔍 ${source} (${text.length}c) mode=${mode}`);
+        dbg(`🔍 ${label} (${text.length}c)`);
 
-        // 이미 등록된 장소 감지 (USER/AI 동일)
         const result = det.detect(text);
         if (result) {
             const { location, type, confidence } = result;
-            dbg(`✅ "${location.name}" (${type} c=${confidence})`);
+            dbg(`✅ "${location.name}" (${type})`);
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
-                if (s.showDetectToast) wtNotify(`🐶 🐾 ${location.name}`, 'move');
+                if (s.showDetectToast) {
+                    try { toast(`👣 ${location.name}`, '🐶', {timeOut:3000, positionClass:'toast-top-full-width', toastClass:'toast wt-toast', preventDuplicates:true}); }
+                    catch(_) { console.log(`[${EXTENSION_NAME}] Toast: 👣 ${location.name}`); }
+                }
                 pi.inject(); if (ui.panelVisible) ui.refresh();
             }
             return true;
         }
 
-        // 새 장소 발견 (mode 전달 → AI는 엄격)
-        const np = det.detectNewPlace(text, mode);
+        const np = det.detectNewPlace(text);
         if (np) {
-            dbg(`🆕 "${np}" (${source})`);
+            dbg(`🆕 "${np}"`);
             if (!lm.currentChatId) await lm.loadChat();
             if (lm.currentChatId) {
                 const loc = await lm.addLocation(np);
                 if (loc) {
                     await lm.moveTo(loc.id);
-                    if (s.showDetectToast) wtNotify(`🐶 🆕 ${loc.name}`, 'new', 3500);
+                    if (s.showDetectToast) {
+                        try { toast(`🆕 ${loc.name}`, '🐶', {timeOut:3500, positionClass:'toast-top-full-width', toastClass:'toast wt-toast wt-toast-new', preventDuplicates:true}); }
+                        catch(_) { console.log(`[${EXTENSION_NAME}] Toast: 🆕 ${loc.name}`); }
+                    }
                     pi.inject(); if (ui.panelVisible) ui.refresh();
                     ui.showAutoToast(loc);
                 }
@@ -105,11 +98,12 @@ async function scanMessage(text, source = 'USER') {
 }
 
 async function init() {
+    // 설정 초기화 (debugMode는 항상 false로 시작!)
     if (!extension_settings[EXTENSION_NAME]) extension_settings[EXTENSION_NAME] = { ...defaults };
     for (const [k,v] of Object.entries(defaults)) {
         if (extension_settings[EXTENSION_NAME][k] === undefined) extension_settings[EXTENSION_NAME][k] = v;
     }
-    extension_settings[EXTENSION_NAME].debugMode = false;
+    extension_settings[EXTENSION_NAME].debugMode = false; // 항상 OFF로 시작
     saveSettingsDebounced();
 
     db = new WorldTrackerDB(); await db.open();
@@ -119,6 +113,7 @@ async function init() {
     ui = new UIManager(lm, pi);
     ui.createSettingsPanel(); ui.createSidePanel(); ui.registerWandButton();
 
+    // 3중 이벤트 + dedup
     let lastId = null;
     async function handle(idx) {
         try {
@@ -148,55 +143,13 @@ async function init() {
         pi.clear(); lastId = null;
         if (ui.panelVisible) await ui.refresh();
         await lm.loadChat(); pi.inject();
-        await scanContext();
     });
 
-    if (event_types.MESSAGE_SENDING) {
-        eventSource.on(event_types.MESSAGE_SENDING, () => {
-            if (extension_settings[EXTENSION_NAME]?.enabled && extension_settings[EXTENSION_NAME]?.aiInjection) pi.inject();
-        });
-    }
+    eventSource.on(event_types.MESSAGE_SENDING, () => {
+        if (extension_settings[EXTENSION_NAME]?.enabled && extension_settings[EXTENSION_NAME]?.aiInjection) pi.inject();
+    });
 
     console.log(`[${EXTENSION_NAME}] Ready! 🐶`);
-}
-
-async function scanContext() {
-    try {
-        const s = extension_settings[EXTENSION_NAME];
-        if (!s?.enabled || !s?.autoDetect || !lm.currentChatId) return;
-        const ctx = getContext();
-        if (!ctx?.characterId) return;
-        const char = ctx.characters?.[ctx.characterId];
-        if (!char) return;
-
-        const sources = [];
-        if (char.description) sources.push(char.description);
-        if (char.scenario) sources.push(char.scenario);
-        if (char.first_mes) sources.push(char.first_mes);
-        if (char.personality) sources.push(char.personality);
-        try { const dp = document.querySelector('#depth_prompt_prompt'); if (dp?.value?.trim()) sources.push(dp.value); } catch(_){}
-        try { const meta = ctx.chat_metadata; if (meta?.note_prompt) sources.push(meta.note_prompt); if (meta?.depth_prompt?.prompt) sources.push(meta.depth_prompt.prompt); } catch(_){}
-        if (!sources.length || (lm.locations.length > 0 && lm.currentLocationId)) return;
-
-        // 1차: 설명문 전용 스캔 (이동 동사 없이 장소 추출)
-        for (const text of sources) {
-            const desc = det.detectFromDescription(text);
-            if (desc) {
-                dbg(`📋 Desc: "${desc}"`);
-                const loc = await lm.addLocation(desc);
-                if (loc) { await lm.moveTo(loc.id); pi.inject(); if (ui.panelVisible) ui.refresh(); }
-                return;
-            }
-        }
-
-        // 2차: 일반 감지 폴백
-        for (const text of sources) {
-            const result = det.detect(text);
-            if (result) { dbg(`📋 Context: "${result.location.name}"`); if (!lm.currentLocationId) { await lm.moveTo(result.location.id); pi.inject(); if (ui.panelVisible) ui.refresh(); } return; }
-            const np = det.detectNewPlace(text, 'user');
-            if (np) { dbg(`📋 Context new: "${np}"`); const loc = await lm.addLocation(np); if (loc) { await lm.moveTo(loc.id); pi.inject(); if (ui.panelVisible) ui.refresh(); } return; }
-        }
-    } catch(e) { console.error(`[${EXTENSION_NAME}] Context scan:`, e); }
 }
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
