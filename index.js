@@ -158,6 +158,10 @@ async function init() {
     }
 
     console.log(`[${EXTENSION_NAME}] Ready! 🐶`);
+
+    // 초기 데이터 로드 + 렌더링
+    await lm.loadChat();
+    ui.refresh();
 }
 
 async function scanContext() {

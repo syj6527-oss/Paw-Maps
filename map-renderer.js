@@ -42,6 +42,8 @@ export class MapRenderer {
     // ========== Render ==========
     render() {
         if (!this.svg) return;
+        // 디버그 텍스트 제거
+        document.getElementById('wt-map-debug')?.remove();
         // 모바일 높이 재확인
         if (this.container) {
             const h = this.container.offsetHeight || this.container.clientHeight || 320;
