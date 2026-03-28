@@ -44,7 +44,7 @@
 .wt-empty-text{fill:var(--wt-text-dim);font-size:13px;text-anchor:middle}
 
 /* Popover (인라인) */
-.wt-popover-inline{background:#fff;border:2px solid var(--wt-yellow-d);border-radius:var(--wt-r);overflow:hidden}
+.wt-popover-inline{background:#fff;border:2px solid var(--wt-yellow-d);border-radius:var(--wt-r)}
 .wt-pop-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--wt-yellow);border-bottom:1px solid var(--wt-border)}
 #wt-pop-title{font-size:14px;font-weight:700;color:var(--wt-brown)}
 .wt-pop-body{padding:10px 14px;display:flex;flex-direction:column;gap:8px}
