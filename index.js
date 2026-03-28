@@ -146,8 +146,9 @@ async function init() {
 
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         pi.clear(); lastId = null;
-        if (ui.panelVisible) await ui.refresh();
-        await lm.loadChat(); pi.inject();
+        await lm.loadChat();
+        pi.inject();
+        if (ui.panelVisible) ui.refresh();
         await scanContext();
     });
 

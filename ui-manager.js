@@ -78,23 +78,53 @@ export class UIManager {
     _loadProfiles() {
         const sel = $('#wt-s-profile');
         const s = extension_settings[EXTENSION_NAME];
-        // 기존 옵션 초기화 (기본값 제외)
         sel.find('option:not(:first)').remove();
+
         try {
-            // Connection Manager 프로필만 읽기 (모든 모델/프리셋 X)
+            // 1차: Connection Manager 프로필
             const cmSelect = document.querySelector('#connection_profile');
-            if (cmSelect) {
-                $(cmSelect).find('option').each(function() {
-                    const v = $(this).val(), t = $(this).text();
-                    if (v && !sel.find(`option[value="${v}"]`).length) sel.append(`<option value="${v}">${t}</option>`);
+            if (cmSelect && cmSelect.options.length > 1) {
+                for (const opt of cmSelect.options) {
+                    if (opt.value && !sel.find(`option[value="${opt.value}"]`).length) {
+                        sel.append(`<option value="${opt.value}">${opt.text}</option>`);
+                    }
+                }
+            }
+
+            // 2차: 현재 API + 모델 조합 생성
+            if (sel.find('option').length <= 1) {
+                const api = $('#main_api').val() || '';
+                const modelSelectors = ['#model_openai_select','#model_google_select','#model_claude_select','#model_cohere_select'];
+                for (const ms of modelSelectors) {
+                    const model = $(ms).val();
+                    if (model) {
+                        const presetSel = $('#settings_preset_openai');
+                        const preset = presetSel.length ? presetSel.find('option:selected').text() : '';
+                        const label = preset ? `${api} ${model} - ${preset}` : `${api} ${model}`;
+                        if (!sel.find(`option[value="${model}"]`).length) {
+                            sel.append(`<option value="${model}">${label}</option>`);
+                        }
+                    }
+                }
+            }
+
+            // 3차: 프리셋만이라도
+            if (sel.find('option').length <= 1) {
+                ['#settings_preset_openai','#settings_preset'].forEach(ps => {
+                    $(ps).find('option').each(function() {
+                        const v = $(this).val(), t = $(this).text();
+                        if (v && t && !sel.find(`option[value="${v}"]`).length) sel.append(`<option value="${v}">${t}</option>`);
+                    });
                 });
             }
         } catch(e) { console.warn(`[${EXTENSION_NAME}] Profile load:`, e); }
-        // 저장된 프로필 복원 (옵션 없으면 1.5초 후 재시도)
+
         if (s?.selectedProfile) {
             sel.val(s.selectedProfile);
-            if (sel.val() !== s.selectedProfile) {
-                setTimeout(() => { this._loadProfiles(); }, 1500);
+            // 옵션 없으면 재시도 (비동기 로드 대기)
+            if (sel.val() !== s.selectedProfile && !this._profileRetried) {
+                this._profileRetried = true;
+                setTimeout(() => { this._profileRetried = false; this._loadProfiles(); }, 3000);
             }
         }
     }
