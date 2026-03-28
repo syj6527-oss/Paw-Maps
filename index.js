@@ -1,4 +1,4 @@
-// 🐶 월드맵 v0.2.1-beta
+// 🐶 World Tracker v0.2.1-beta
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
@@ -215,42 +215,35 @@ async function scanContext() {
     } catch(e) { console.error(`[${EXTENSION_NAME}] Context scan:`, e); }
 }
 
-// ========== 최근 메시지 스캔 (기존 채팅에 확장 설치 시 — 최근 4개만) ==========
+// ========== 최근 메시지 스캔 (승인 플로우) ==========
 async function scanChatHistory(ctx) {
     if (!ctx?.chat?.length) return false;
     const recent = ctx.chat.slice(-4); // 최근 4개
     dbg(`📜 최근 ${recent.length}개 메시지 스캔`);
 
-    let foundAny = false;
+    const candidates = [];
     for (const msg of recent) {
         if (!msg?.mes?.trim()) continue;
         const text = msg.mes;
 
-        // 등록된 장소 감지
         const result = det.detect(text);
-        if (result) {
-            if (lm.currentLocationId !== result.location.id) {
-                await lm.moveTo(result.location.id);
-                foundAny = true;
-            }
+        if (result && !candidates.some(c => c.name === result.location.name)) {
+            candidates.push({ name: result.location.name, existing: true, locId: result.location.id, checked: true });
             continue;
         }
 
-        // 새 장소 발견 — 엄격 모드
         const np = det.detectNewPlace(text, 'ai');
-        if (np && !lm.findByName(np)) {
-            const loc = await lm.addLocation(np);
-            if (loc) { await lm.moveTo(loc.id); foundAny = true; }
+        if (np && !lm.findByName(np) && !candidates.some(c => c.name === np)) {
+            candidates.push({ name: np, existing: false, checked: true });
         }
     }
 
-    if (foundAny) {
-        dbg(`📜 스캔 완료: ${lm.locations.length}개 장소`);
-        pi.inject();
-        if (ui.panelVisible) ui.refresh();
-        wtNotify(`🐶 현재 위치 감지 완료!`, 'move', 2000);
-    }
-    return foundAny;
+    if (!candidates.length) return false;
+
+    // 승인 UI 표시
+    dbg(`📜 ${candidates.length}개 장소 감지 → 승인 대기`);
+    ui.showScanApproval(candidates);
+    return true;
 }
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });

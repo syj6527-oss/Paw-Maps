@@ -1,4 +1,4 @@
-// 🐶 월드맵 — ui-manager.js (Inline Toast + Popover)
+// 🐶 World Tracker — ui-manager.js (Inline Toast + Popover)
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -22,7 +22,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 월드맵 <span class="wt-version">v0.2.1</span></b>
+                <b>🐶 World Tracker <span class="wt-version">v0.2.1</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -39,7 +39,7 @@ export class UIManager {
                 <div class="wt-s-row"><select id="wt-s-profile" class="text_pole wt-select wt-select-full"><option value="">없음 (regex만)</option></select></div>
                 <div class="wt-s-row"><button id="wt-s-profile-save" class="menu_button" style="font-size:12px;padding:4px 12px">💾 모델 저장</button><span id="wt-s-profile-status" style="font-size:11px;color:#9A8A7A;margin-left:6px"></span></div>
                 <div class="wt-divider"></div>
-                <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🐶 월드맵</button></div>
+                <div class="wt-s-row"><button id="wt-open-panel" class="menu_button wt-open-btn">🐶 World Tracker</button></div>
             </div></div></div>`;
         const containers = ['#extensions_settings2','#extensions_settings','.extensions_block'];
         let target = null;
@@ -100,7 +100,7 @@ export class UIManager {
 
     registerWandButton() {
         try { const b=document.createElement('div'); b.id='wt-wand-btn'; b.className='list-group-item flex-container flexGap5';
-            b.innerHTML='<span>🐶</span> 월드맵'; b.addEventListener('click',()=>this.togglePanel());
+            b.innerHTML='<span>🐶</span> World Tracker'; b.addEventListener('click',()=>this.togglePanel());
             const m=document.getElementById('extensionsMenu'); if(m)m.appendChild(b); } catch(e){}
     }
 
@@ -108,7 +108,7 @@ export class UIManager {
         const html = `
         <div id="wt-panel" class="wt-panel">
             <div class="wt-panel-header">
-                <div class="wt-panel-title"><span>🐶</span> 월드맵</div>
+                <div class="wt-panel-title"><span>🐶</span> World Tracker</div>
                 <button id="wt-panel-close" class="wt-btn-icon">✕</button>
             </div>
             <div class="wt-panel-body" id="wt-panel-body">
@@ -182,8 +182,9 @@ export class UIManager {
                                 <span>가까움</span>
                                 <input type="range" id="wt-pop-dist-level" min="1" max="10" value="5" style="flex:1;height:4px"/>
                                 <span>멀음</span>
-                                <span id="wt-pop-dist-lvl-val" style="font-weight:600;color:var(--wt-brown);min-width:16px">3</span>
+                                <span id="wt-pop-dist-lvl-val" style="font-weight:600;color:var(--wt-brown);min-width:16px">5</span>
                             </div>
+                            <div id="wt-pop-dist-hint" style="font-size:10px;color:#9A8A7A;text-align:center;margin-top:2px">도보권</div>
                         </div>
                         <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
                         <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
@@ -249,7 +250,12 @@ export class UIManager {
         $('#wt-pop-geo-btn').on('click', () => this._geoSearch());
         $('#wt-pop-geo-input').on('keydown', (e) => { if (e.key === 'Enter') this._geoSearch(); });
         $('#wt-pop-dist-add').on('click', () => this._addDist());
-        $(document).on('input', '#wt-pop-dist-level', function() { $('#wt-pop-dist-lvl-val').text($(this).val()); });
+        $(document).on('input', '#wt-pop-dist-level', function() {
+            const v = parseInt($(this).val());
+            $('#wt-pop-dist-lvl-val').text(v);
+            const hints = {1:'바로 옆',2:'매우 가까움',3:'가까움',4:'도보 5분',5:'도보권',6:'도보 15분+',7:'대중교통',8:'차량 필요',9:'먼 거리',10:'다른 지역'};
+            $('#wt-pop-dist-hint').text(hints[v] || '');
+        });
         // 맵 모드 토글
         $('#wt-mode-node').on('click', () => this._setMapMode('node'));
         $('#wt-mode-leaflet').on('click', () => this._setMapMode('leaflet'));
@@ -371,6 +377,24 @@ export class UIManager {
                 this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
                 await this.leafletRenderer.init();
                 this.leafletRenderer.onLocationClick = id => this.showPop(id);
+                // #1: 롱프레스 → 장소 이동 메뉴
+                this.leafletRenderer.onLongPress = async (latlng) => {
+                    const locs = this.lm.locations.filter(l => l.name);
+                    if (!locs.length) return;
+                    // 간단한 선택: 현재 위치를 이동
+                    const curLoc = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
+                    if (curLoc) {
+                        await this.lm.updateLocation(curLoc.id, { lat: latlng.lat, lng: latlng.lng });
+                        // 역지오코딩
+                        try {
+                            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&accept-language=ko`;
+                            const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.2' } });
+                            if (res.ok) { const d = await res.json(); if (d.display_name) console.log(`[rp-world-tracker] Reverse: ${d.display_name}`); }
+                        } catch(_) {}
+                        this.leafletRenderer.render();
+                        toastSuccess(`📍 "${curLoc.name}" 위치 이동!`);
+                    }
+                };
             }
             this.leafletRenderer.render();
             // #46: 모바일 invalidateSize — 레이아웃 안정화 후 여러 번
@@ -588,12 +612,95 @@ export class UIManager {
         if (!sel.find('option').length) sel.append('<option value="" disabled>모든 장소에 거리 설정됨</option>');
     }
 
+    // ========== #5 스캔 승인 플로우 ==========
+    showScanApproval(candidates) {
+        if (!candidates.length) return;
+        // 기존 승인 팝업 제거
+        $('#wt-scan-approval').remove();
+
+        let html = `<div id="wt-scan-approval" style="background:#fff;border:2px solid var(--wt-yellow-d);border-radius:var(--wt-r);padding:12px;margin-bottom:10px">
+            <div style="font-size:14px;font-weight:700;color:var(--wt-brown);margin-bottom:8px">🐶 장소 감지됨!</div>
+            <div style="font-size:12px;color:var(--wt-text-dim);margin-bottom:8px">체크된 장소만 등록됩니다</div>
+            <div id="wt-scan-list" style="display:flex;flex-direction:column;gap:4px">`;
+
+        candidates.forEach((c, i) => {
+            html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--wt-surface);border-radius:6px">
+                <input type="checkbox" data-idx="${i}" ${c.checked ? 'checked' : ''} style="width:18px;height:18px"/>
+                <input type="text" value="${c.name}" data-idx="${i}" class="wt-scan-name" style="flex:1;border:1px solid var(--wt-border);border-radius:4px;padding:4px 8px;font-size:13px;font-family:inherit"/>
+                ${c.existing ? '<span style="font-size:10px;color:var(--wt-text-dim)">기존</span>' : '<span style="font-size:10px;color:var(--wt-yellow-d)">새 장소</span>'}
+            </div>`;
+        });
+
+        html += `</div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+                <button id="wt-scan-ok" class="wt-btn-primary" style="flex:1;padding:8px">✅ 등록</button>
+                <button id="wt-scan-cancel" class="wt-btn-ghost" style="flex:1;padding:8px">❌ 취소</button>
+            </div>
+        </div>`;
+
+        // 씬 표시 아래에 삽입
+        $('#wt-scene-loc').after(html);
+
+        // 승인/취소 바인딩
+        const self = this;
+        $('#wt-scan-ok').on('click', async () => {
+            const items = [];
+            $('#wt-scan-list input[type=checkbox]').each(function() {
+                const idx = parseInt($(this).attr('data-idx'));
+                const checked = $(this).prop('checked');
+                const name = $(`#wt-scan-list .wt-scan-name[data-idx="${idx}"]`).val().trim();
+                if (checked && name) items.push({ ...candidates[idx], name });
+            });
+            await self._processScanApproval(items);
+            $('#wt-scan-approval').remove();
+        });
+        $('#wt-scan-cancel').on('click', () => { $('#wt-scan-approval').remove(); });
+
+        // 패널 열기
+        if (!this.panelVisible) this.togglePanel(true);
+    }
+
+    async _processScanApproval(items) {
+        let lastLocId = null;
+        for (const item of items) {
+            if (item.existing && item.locId) {
+                await this.lm.moveTo(item.locId);
+                lastLocId = item.locId;
+            } else {
+                const existing = this.lm.findByName(item.name);
+                if (existing) {
+                    await this.lm.moveTo(existing.id);
+                    lastLocId = existing.id;
+                } else {
+                    const loc = await this.lm.addLocation(item.name);
+                    if (loc) { await this.lm.moveTo(loc.id); lastLocId = loc.id; }
+                }
+            }
+        }
+        if (lastLocId) {
+            this.pi?.inject();
+            this.refresh();
+            wtNotify(`🐶 ${items.length}개 장소 등록!`, 'move', 2000);
+        }
+    }
+
+    // #3: 지오코딩 캐시
+    _geoCache = {};
+
     async _geoSearch() {
         const locId = $('#wt-popover').attr('data-id');
         const query = $('#wt-pop-geo-input').val().trim();
         if (!locId || !query) return;
 
-        const resultsDiv = $('#wt-pop-geo-results').show().html('<div style="padding:4px;color:#9A8A7A">검색 중...</div>');
+        const resultsDiv = $('#wt-pop-geo-results').show();
+
+        // 캐시 확인
+        if (this._geoCache[query]) {
+            this._showGeoResults(resultsDiv, this._geoCache[query], locId);
+            return;
+        }
+
+        resultsDiv.html('<div style="padding:4px;color:#9A8A7A">검색 중...</div>');
 
         try {
             const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=ko`;
@@ -603,12 +710,21 @@ export class UIManager {
 
             if (!data.length) { resultsDiv.html('<div style="padding:4px;color:#9A8A7A">결과 없음</div>'); return; }
 
-            resultsDiv.empty();
-            const self = this;
-            for (const r of data.slice(0, 5)) {
-                const name = r.display_name.split(',').slice(0, 3).join(', ');
-                const item = $(`<div style="padding:6px 4px;cursor:pointer;border-bottom:1px solid #E8E4D8" data-lat="${r.lat}" data-lng="${r.lon}">📍 ${name}</div>`);
-                item.on('click', async function() {
+            // 캐시 저장
+            this._geoCache[query] = data;
+            this._showGeoResults(resultsDiv, data, locId);
+        } catch(e) {
+            resultsDiv.html('<div style="padding:4px;color:#F5A8A8">네트워크 오류</div>');
+        }
+    }
+
+    _showGeoResults(resultsDiv, data, locId) {
+        resultsDiv.empty();
+        const self = this;
+        for (const r of data.slice(0, 5)) {
+            const name = r.display_name.split(',').slice(0, 3).join(', ');
+            const item = $(`<div style="padding:6px 4px;cursor:pointer;border-bottom:1px solid #E8E4D8" data-lat="${r.lat}" data-lng="${r.lon}">📍 ${name}</div>`);
+            item.on('click', async function() {
                     const lat = parseFloat($(this).attr('data-lat'));
                     const lng = parseFloat($(this).attr('data-lng'));
                     await self.lm.updateLocation(locId, { lat, lng });
@@ -641,10 +757,6 @@ export class UIManager {
                 });
                 resultsDiv.append(item);
             }
-        } catch(e) {
-            resultsDiv.html('<div style="padding:4px;color:#F5A8A8">네트워크 오류 — Nominatim 접속 불가</div>');
-            console.error(`[rp-world-tracker] Geo:`, e);
-        }
     }
 
     async _addDist() {

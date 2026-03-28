@@ -1,4 +1,4 @@
-// 🐶 월드맵 — location-manager.js (Single Scene)
+// 🐶 World Tracker — location-manager.js (Single Scene)
 
 import { getContext } from '../../../extensions.js';
 import { EXTENSION_NAME } from './index.js';

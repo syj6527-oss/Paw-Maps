@@ -1,4 +1,4 @@
-// 🐶 월드맵 — map-renderer.js (Zoom + Pan + Touch)
+// 🐶 World Tracker — map-renderer.js (Zoom + Pan + Touch)
 
 export class MapRenderer {
     constructor(container, lm) {

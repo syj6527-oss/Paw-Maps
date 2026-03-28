@@ -1,4 +1,4 @@
-// 🐶 월드맵 — db.js
+// 🐶 World Tracker — db.js
 
 const DB_NAME = 'RPWorldTracker';
 const DB_VERSION = 2;

@@ -1,4 +1,4 @@
-// 🐶 월드맵 — detector.js (All Fixes + City Detection)
+// 🐶 World Tracker — detector.js (All Fixes + City Detection)
 
 import { EXTENSION_NAME } from './index.js';
 

@@ -1,4 +1,4 @@
-// 🐶 월드맵 — leaflet-renderer.js
+// 🐶 World Tracker — leaflet-renderer.js
 
 import { EXTENSION_NAME } from './index.js';
 
@@ -43,6 +43,19 @@ export class LeafletRenderer {
         // 지도 클릭 → 좌표 배치
         this.map.on('click', (e) => this._onMapClick(e));
 
+        // #1: 롱프레스 → 장소 이동 (500ms)
+        let _lpTimer = null, _lpLatLng = null;
+        this.map.on('mousedown touchstart', (e) => {
+            _lpLatLng = e.latlng;
+            _lpTimer = setTimeout(() => {
+                if (_lpLatLng && this.onLongPress) this.onLongPress(_lpLatLng);
+                _lpTimer = null;
+            }, 600);
+        });
+        this.map.on('mousemove touchmove mouseup touchend drag', () => {
+            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+        });
+
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
         return true;
     }
@@ -59,30 +72,24 @@ export class LeafletRenderer {
         const { locations, movements, currentLocationId } = this.lm;
         const latlngs = []; // 좌표 있는 장소들 (fitBounds용)
 
-        // 마커 표시
+        // 마커 표시 (#4 균일 크기 divIcon + 색상 코딩)
         for (const loc of locations) {
             if (!loc.lat || !loc.lng) continue;
 
             const isCur = loc.id === currentLocationId;
-            const marker = L.circleMarker([loc.lat, loc.lng], {
-                radius: isCur ? 14 : 10,
-                fillColor: loc.color || '#FCE7AE',
-                color: isCur ? '#775537' : '#9e8e7e',
-                weight: isCur ? 3 : 1.5,
-                fillOpacity: isCur ? 0.9 : 0.7,
-                className: isCur ? 'wt-leaflet-current' : '',
-            });
+            const v = loc.visitCount || 0;
+            const color = isCur ? '#8B6EC7' : v >= 5 ? '#5E84E2' : v >= 2 ? '#F6A93A' : '#F7EC8D';
+            const textColor = (color === '#F7EC8D') ? '#5A4030' : '#fff';
 
-            // 라벨
+            const iconHtml = `<div style="width:32px;height:32px;border-radius:50%;background:${color};border:${isCur?'3px solid #775537':'2px solid #9e8e7e'};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${textColor};box-shadow:${isCur?'0 0 8px rgba(139,110,199,0.5)':'none'}">${v||''}</div>`;
+            const icon = L.divIcon({ html: iconHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] });
+            const marker = L.marker([loc.lat, loc.lng], { icon });
+
             marker.bindTooltip(loc.name + (isCur ? ' 🐾' : ''), {
-                permanent: true, direction: 'bottom', offset: [0, 8],
+                permanent: true, direction: 'bottom', offset: [0, 12],
                 className: 'wt-leaflet-label',
             });
-
-            // 방문횟수 팝업
-            marker.bindPopup(`<b>${loc.name}</b><br>방문 ${loc.visitCount || 0}회`);
-
-            // 클릭 → 팝오버
+            marker.bindPopup(`<b>${loc.name}</b><br>방문 ${v}회`);
             marker.on('click', () => { if (this.onLocationClick) this.onLocationClick(loc.id); });
 
             marker.addTo(this.map);

@@ -1,4 +1,4 @@
-/* 🐶 월드맵 커스텀 알림 (번역기 스타일) */
+/* 🐶 World Tracker 커스텀 알림 (번역기 스타일) */
 .wt-notification{position:fixed;top:-60px;left:50%;transform:translateX(-50%);padding:10px 22px;border-radius:30px;font-weight:bold;font-size:13px;z-index:2147483647!important;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:top .4s cubic-bezier(.175,.885,.32,1.275);pointer-events:none;white-space:nowrap;max-width:85vw;overflow:hidden;text-overflow:ellipsis;text-align:center;font-family:var(--mainFontFamily,'Noto Sans KR',sans-serif);backdrop-filter:blur(8px)}
 .wt-noti-move{background:rgba(120,210,170,.95);color:#1A4030}
 .wt-noti-new{background:rgba(252,222,120,.95);color:#5A4030}
@@ -6,7 +6,7 @@
 .wt-noti-info{background:rgba(168,216,234,.95);color:#0C447C}
 @media(max-width:768px){.wt-notification{font-size:12px;padding:8px 16px;max-width:90vw}}
 
-/* 🐶 월드맵 v0.2.0-beta */
+/* 🐶 World Tracker v0.2.0-beta */
 :root{--wt-cream:#F5F4ED;--wt-yellow:#F7EC8D;--wt-yellow-d:#F6A93A;--wt-pink:#8B6EC7;--wt-mint:#5E84E2;--wt-brown:#775537;--wt-brown-l:#A08060;--wt-brown-f:#C4A882;--wt-bg:#F5F4ED;--wt-surface:#FAFAF5;--wt-border:#E8E4D8;--wt-text:#5A4030;--wt-text-dim:#9A8A7A;--wt-r:12px;--wt-rs:8px}
 
 .wt-panel{position:fixed;top:0;right:-100%;width:100%;height:100dvh;background:var(--wt-bg);z-index:99999;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1);font-family:-apple-system,'Noto Sans KR',sans-serif;overflow:hidden}
