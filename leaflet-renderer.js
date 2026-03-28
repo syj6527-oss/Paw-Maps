@@ -43,19 +43,28 @@ export class LeafletRenderer {
         // 지도 클릭 → 좌표 배치
         // #1: 마커 롱프레스 → 이동 모드 → 빈 곳 터치 → 이동
         this._movingLocId = null;
+        this._moveReady = false;
 
-        // 지도 클릭: 이동 모드면 해당 위치로 이동
+        // 지도 클릭: 이동 모드 + 준비 완료면 해당 위치로 이동
         this.map.on('click', (e) => {
-            if (this._movingLocId && this.onMoveComplete) {
+            if (this._movingLocId && this._moveReady && this.onMoveComplete) {
                 this.onMoveComplete(e.latlng, this._movingLocId);
                 this._movingLocId = null;
+                this._moveReady = false;
                 this.map.getContainer().style.cursor = '';
-                return;
             }
         });
 
-        // 빈 곳 우클릭/롱프레스 → 이동 모드 아니면 무시
-        this.map.on('contextmenu', (e) => { L.DomEvent.preventDefault(e); });
+        // 빈 곳 우클릭/롱프레스 → 이동 모드 취소
+        this.map.on('contextmenu', (e) => {
+            L.DomEvent.preventDefault(e);
+            if (this._movingLocId) {
+                this._movingLocId = null;
+                this._moveReady = false;
+                this.map.getContainer().style.cursor = '';
+                if (this.onMoveStart) this.onMoveStart(null, '취소됨');
+            }
+        });
 
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
         return true;
@@ -98,9 +107,12 @@ export class LeafletRenderer {
                 L.DomEvent.stopPropagation(e);
                 L.DomEvent.preventDefault(e);
                 this._movingLocId = loc.id;
+                this._moveReady = false;
                 this.map.getContainer().style.cursor = 'crosshair';
                 if (navigator.vibrate) navigator.vibrate(50);
                 if (this.onMoveStart) this.onMoveStart(loc.id, loc.name);
+                // 300ms 후 클릭 수신 시작 (오터치 방지)
+                setTimeout(() => { this._moveReady = true; }, 300);
             });
 
             marker.addTo(this.map);
