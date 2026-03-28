@@ -2,7 +2,7 @@
 
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
-import { EXTENSION_NAME, toast, toastWarn, toastSuccess, loadLeaflet } from './index.js';
+import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet } from './index.js';
 import { MapRenderer } from './map-renderer.js';
 import { LeafletRenderer } from './leaflet-renderer.js';
 
@@ -70,7 +70,7 @@ export class UIManager {
         // 🔧 비밀 디버그: 💭 5번 탭
         let _t=0, _tm=null;
         $(document).on('click','#wt-secret', e => { e.stopPropagation(); _t++; clearTimeout(_tm);
-            if(_t>=5){_t=0;s.debugMode=!s.debugMode;saveSettingsDebounced();toast(s.debugMode?'🔧 Debug ON':'🔧 Debug OFF','🐶',{timeOut:2000});}
+            if(_t>=5){_t=0;s.debugMode=!s.debugMode;saveSettingsDebounced();wtNotify(s.debugMode?'🔧 Debug ON':'🔧 Debug OFF','info',2000);}
             _tm=setTimeout(()=>{_t=0},2000);
         });
     }

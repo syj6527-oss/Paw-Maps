@@ -58,6 +58,14 @@ export class LocationDetector {
             '마음','기분','느낌','감정','표정','눈빛','시선','한숨','말투','목소리',
             '생각','기억','추억','습관','버릇','성격','태도','분위기','인상','냄새',
             '모습','모양','형태','크기','색깔','소리','맛','온기','냉기','향기',
+            // 가구/가전/생활용품
+            '소파','의자','테이블','책상','침대','탁자','선반','서랍','거울','커튼',
+            '카펫','러그','쿠션','이불','베개','장롱','옷장','냉장고','세탁기','건조기',
+            '전자레인지','오븐','에어컨','히터','선풍기','청소기','다리미','식기','접시','컵',
+            '수건','비누','칫솔','샴푸','화장품','휴지','쓰레기통','우산','열쇠','리모컨',
+            // 음식/음료
+            '커피','맥주','술','와인','주스','우유','빵','밥','국','찌개',
+            '라면','피자','치킨','햄버거','케이크','과자','사탕','초콜릿','아이스크림',
         ];
         this.singleKo = ['집','방','숲','강','산','역','관','점','원','장'];
 
@@ -166,27 +174,29 @@ export class LocationDetector {
         return (best && (best.type === 'move' || best.type === 'present')) ? best : null;
     }
 
-    // ========== 미등록 장소 발견 ==========
-    detectNewPlace(text) {
+    // ========== 미등록 장소 발견 (mode: 'user'=높은감도, 'ai'=엄격) ==========
+    detectNewPlace(text, mode = 'user') {
         if (!text) return null;
         const clean = this._strip(text);
         if (this.futureKw.some(k => clean.toLowerCase().includes(k))) return null;
         const nar = clean.replace(/"[^"]*"/g,' ').replace(/「[^」]*」/g,' ').replace(/"[^"]*"/g,' ');
 
-        // 한국어 방법 1: 조사 패턴 (lazy 매칭으로 "부산" + "으로" 정확 분리)
-        const pPat = /([가-힣]{1,8}?)(?:으로|에서|에|의|로)\s/g;
-        const moveRx = /걸어[가간갔]|돌아[가간왔옴]|들어[가간서섰]|나[서섰왔]|향[하해했]/;
-        for (const para of nar.split(/\n+/)) {
-            const hasM = this.moveKw.some(k => para.includes(k)) || moveRx.test(para);
-            if (!hasM) continue;
-            pPat.lastIndex = 0; let m;
-            while ((m = pPat.exec(para)) !== null) {
-                let c = m[1].trim().replace(/으$/, '');
-                if (this._validKo(c)) { console.log(`[${EXTENSION_NAME}] 🆕 (ko): "${c}"`); return c; }
+        // 한국어 방법 1: 조사 패턴 — USER만 (AI에서는 오탐 원인!)
+        if (mode === 'user') {
+            const pPat = /([가-힣]{1,8}?)(?:으로|에서|에|의|로)\s/g;
+            const moveRx = /걸어[가간갔]|돌아[가간왔옴]|들어[가간서섰]|나[서섰왔]|향[하해했]/;
+            for (const para of nar.split(/\n+/)) {
+                const hasM = this.moveKw.some(k => para.includes(k)) || moveRx.test(para);
+                if (!hasM) continue;
+                pPat.lastIndex = 0; let m;
+                while ((m = pPat.exec(para)) !== null) {
+                    let c = m[1].trim().replace(/으$/, '');
+                    if (this._validKo(c)) { console.log(`[${EXTENSION_NAME}] 🆕 (ko): "${c}"`); return c; }
+                }
             }
         }
 
-        // 한국어 방법 2: 직접 패턴 (lazy + 으 제거)
+        // 한국어 방법 2: 직접 패턴 — USER/AI 모두 (장소+조사+동사 직결)
         const dPat = [
             /([가-힣]{1,8}?)(?:으로|로)\s*(?:향하|가|갔|간다|걸어|이동|달려|돌아|출발)/g,
             /([가-힣]{1,8}?)에\s*(?:도착|당도|들어서|들어섰|왔다|갔다|간다)/g,
@@ -211,10 +221,12 @@ export class LocationDetector {
             const r = this._engDet(nar, true); if (r) return r;
         }
 
-        // 영어 방법 4: 존재/묘사
-        const r2 = this._engDet(nar, false); if (r2) return r2;
+        // 영어 방법 4: 존재/묘사 — USER만 (AI에서는 소파/의자 등 오탐)
+        if (mode === 'user') {
+            const r2 = this._engDet(nar, false); if (r2) return r2;
+        }
 
-        // #36: 도시명 감지 — 이동 맥락에서 도시명 발견
+        // #36: 도시명 감지 — USER/AI 모두
         const cityResult = this._detectCity(nar);
         if (cityResult) return cityResult;
 

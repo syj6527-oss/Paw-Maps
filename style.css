@@ -1,10 +1,10 @@
-/* 🐶 월드맵 토스트 (번역기 스타일 통일) */
-.wt-toast{background:#A8E6CF!important;background-image:none!important;color:#2D5F42!important;border:none!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important;padding:10px 16px!important;font-size:13px!important;font-weight:600!important;font-family:-apple-system,'Noto Sans KR',sans-serif!important;opacity:1!important}
-.wt-toast .toast-title{color:#1A4030!important;font-weight:700!important;margin-right:6px!important}
-.wt-toast .toast-message{color:#2D5F42!important}
-.wt-toast-new{background:#FCE7AE!important;background-image:none!important;color:#5A4030!important}
-.wt-toast-new .toast-title{color:#775537!important}
-.wt-toast-new .toast-message{color:#5A4030!important}
+/* 🐶 월드맵 커스텀 알림 (번역기 스타일) */
+.wt-notification{position:fixed;top:-60px;left:50%;transform:translateX(-50%);padding:10px 22px;border-radius:30px;font-weight:bold;font-size:13px;z-index:2147483647!important;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:top .4s cubic-bezier(.175,.885,.32,1.275);pointer-events:none;white-space:nowrap;max-width:85vw;overflow:hidden;text-overflow:ellipsis;text-align:center;font-family:var(--mainFontFamily,'Noto Sans KR',sans-serif);backdrop-filter:blur(8px)}
+.wt-noti-move{background:rgba(120,210,170,.95);color:#1A4030}
+.wt-noti-new{background:rgba(252,222,120,.95);color:#5A4030}
+.wt-noti-warn{background:rgba(245,168,168,.95);color:#501313}
+.wt-noti-info{background:rgba(168,216,234,.95);color:#0C447C}
+@media(max-width:768px){.wt-notification{font-size:12px;padding:8px 16px;max-width:90vw}}
 
 /* 🐶 월드맵 v0.2.0-beta */
 :root{--wt-cream:#FEFEF2;--wt-yellow:#FCE7AE;--wt-yellow-d:#F2D965;--wt-pink:#F5A8A8;--wt-mint:#A8E6CF;--wt-brown:#775537;--wt-brown-l:#A08060;--wt-brown-f:#C4A882;--wt-bg:#FFF9F0;--wt-surface:#FFF5E6;--wt-border:#F0E0C8;--wt-text:#5A4030;--wt-text-dim:#9A8A7A;--wt-r:12px;--wt-rs:8px}
