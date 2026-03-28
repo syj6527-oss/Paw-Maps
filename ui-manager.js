@@ -439,9 +439,10 @@ export class UIManager {
                 };
             }
             this.leafletRenderer.render();
-            // #46: 모바일 invalidateSize — 레이아웃 안정화 후 여러 번
-            await new Promise(r => requestAnimationFrame(r));
-            this.leafletRenderer?.invalidateSize();
+            // #46: 모바일 invalidateSize — 여러 타이밍에 반복
+            [100, 300, 600, 1000].forEach(ms => {
+                setTimeout(() => this.leafletRenderer?.invalidateSize(), ms);
+            });
         }
     }
 
@@ -792,6 +793,7 @@ export class UIManager {
                     }
 
                     resultsDiv.hide();
+                    $('#wt-pop-geo-input').val('');
                     self.hidePop();
                     self._setMapMode('leaflet');
                     setTimeout(() => {
