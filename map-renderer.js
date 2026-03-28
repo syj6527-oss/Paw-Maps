@@ -3,8 +3,8 @@
 export class MapRenderer {
     constructor(container, lm) {
         this.container = container; this.lm = lm;
-        this.svg = null; this._wasDrag = false; this._movingNodeId = null;
-        this.onLocationClick = null; this.onMoveRequest = null;
+        this.svg = null; this.dragState = null; this._wasDrag = false;
+        this.onLocationClick = null;
         // ViewBox state for zoom/pan
         this.vb = { x: 0, y: 0, w: 600, h: 500 };
         this._pinch = null; this._pan = null;
@@ -12,14 +12,10 @@ export class MapRenderer {
     }
 
     _init() {
-        if (!this.container) { console.error('[MAP] Container is null!'); return; }
         this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         this.svg.setAttribute('class', 'wt-map-svg');
         this.svg.setAttribute('width', '100%');
-        // 모바일: height 100% → 0px 버그 방지, 명시적 높이
-        const h = this.container.offsetHeight || this.container.clientHeight || 320;
-        this.svg.setAttribute('height', Math.max(h, 320) + 'px');
-        this.svg.style.minHeight = '320px';
+        this.svg.setAttribute('height', '100%');
         this._applyVB();
         this.container.appendChild(this.svg);
 
@@ -42,21 +38,8 @@ export class MapRenderer {
     // ========== Render ==========
     render() {
         if (!this.svg) return;
-        // 모바일 높이 재확인
-        if (this.container) {
-            const h = this.container.offsetHeight || this.container.clientHeight || 320;
-            this.svg.setAttribute('height', Math.max(h, 320) + 'px');
-        }
-        // ViewBox 강제 리셋
-        this.vb = { x: 0, y: 0, w: 600, h: 500 };
-        this._applyVB();
         this.svg.innerHTML = '<defs><filter id="wt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
         const { locations, movements, currentLocationId } = this.lm;
-
-        console.log(`[MAP] render: ${locations.length} locs, positions:`, locations.map(l => `${l.name}(${l.x},${l.y})`).join(', '));
-
-        // 디버그: 항상 보이는 텍스트
-        this.svg.appendChild(this._el('text', { x: 300, y: 30, class: 'wt-location-label', 'font-size': '14' }, `🐶 ${locations.length}개 장소`));
 
         const drawn = new Set();
         for (const m of movements) {
