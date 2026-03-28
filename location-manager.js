@@ -1,5 +1,4 @@
 // 🗺️ RP World Tracker — location-manager.js
-// Location CRUD + Distance + Movement
 
 import { getContext } from '../../../extensions.js';
 import { EXTENSION_NAME } from './index.js';
@@ -9,105 +8,87 @@ export class LocationManager {
         this.db = db;
         this.currentChatId = null;
         this.currentLocationId = null;
+        this.userLocationId = null;
+        this.charLocationId = null;
         this.locations = [];
         this.movements = [];
         this.distances = [];
     }
 
     getChatId() {
-        const context = getContext();
-        if (!context?.chatId) return null;
-        return String(context.chatId);
+        const ctx = getContext();
+        return ctx?.chatId ? String(ctx.chatId) : null;
     }
 
-    generateId() {
-        return `loc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    }
+    generateId() { return `loc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`; }
 
     async loadChat() {
         this.currentChatId = this.getChatId();
         if (!this.currentChatId) {
-            this.locations = [];
-            this.movements = [];
-            this.distances = [];
-            this.currentLocationId = null;
+            this.locations = []; this.movements = []; this.distances = [];
+            this.currentLocationId = this.userLocationId = this.charLocationId = null;
             return;
         }
-
         this.locations = await this.db.getLocationsByChatId(this.currentChatId) || [];
         this.movements = await this.db.getMovementsByChatId(this.currentChatId) || [];
         this.distances = await this.db.getDistancesByChatId(this.currentChatId) || [];
-
-        const config = await this.db.getMapConfig(this.currentChatId);
-        if (config) {
-            this.currentLocationId = config.currentLocationId || null;
+        const cfg = await this.db.getMapConfig(this.currentChatId);
+        if (cfg) {
+            this.currentLocationId = cfg.currentLocationId || null;
+            this.userLocationId = cfg.userLocationId || cfg.currentLocationId || null;
+            this.charLocationId = cfg.charLocationId || cfg.currentLocationId || null;
         }
-
         console.log(`[${EXTENSION_NAME}] Loaded: ${this.locations.length} locs, ${this.movements.length} moves`);
     }
 
-    // ---- Location CRUD ----
-
+    // ---- CRUD ----
     async addLocation(name, memo = '', aliases = []) {
         if (!this.currentChatId) return null;
-
-        const location = {
-            id: this.generateId(),
-            chatId: this.currentChatId,
-            name: name.trim(),
-            aliases: aliases.map(a => a.trim()).filter(Boolean),
-            x: 0, y: 0,
-            visitCount: 0,
-            firstVisited: null,
-            lastVisited: null,
-            memo: memo.trim(),
-            status: '',
-            discovered: true,
-            color: this._randomColor(),
-            createdAt: Date.now(),
+        const loc = {
+            id: this.generateId(), chatId: this.currentChatId,
+            name: name.trim(), aliases: aliases.map(a => a.trim()).filter(Boolean),
+            x: 0, y: 0, visitCount: 0, firstVisited: null, lastVisited: null,
+            memo: memo.trim(), status: '', discovered: true,
+            color: this._rndColor(), createdAt: Date.now(),
         };
-
-        const pos = this._autoPosition();
-        location.x = pos.x;
-        location.y = pos.y;
-
-        await this.db.putLocation(location);
-        this.locations.push(location);
-        return location;
+        const p = this._autoPos(); loc.x = p.x; loc.y = p.y;
+        await this.db.putLocation(loc);
+        this.locations.push(loc);
+        return loc;
     }
 
-    async updateLocation(id, updates) {
-        const loc = this.locations.find(l => l.id === id);
-        if (!loc) return null;
-        Object.assign(loc, updates);
-        await this.db.putLocation(loc);
-        return loc;
+    async updateLocation(id, u) {
+        const l = this.locations.find(x => x.id === id);
+        if (!l) return null;
+        Object.assign(l, u);
+        await this.db.putLocation(l);
+        return l;
     }
 
     async deleteLocation(id) {
         await this.db.deleteLocation(id);
         this.locations = this.locations.filter(l => l.id !== id);
-        if (this.currentLocationId === id) {
-            this.currentLocationId = null;
-            await this._saveCurrentLocation();
-        }
+        if (this.currentLocationId === id) this.currentLocationId = null;
+        if (this.userLocationId === id) this.userLocationId = null;
+        if (this.charLocationId === id) this.charLocationId = null;
+        await this._saveCfg();
     }
 
     findByName(name) {
-        const lower = name.toLowerCase();
+        const lo = name.toLowerCase();
         return this.locations.find(l =>
-            l.name.toLowerCase() === lower ||
-            (l.aliases || []).some(a => a.toLowerCase() === lower)
+            l.name.toLowerCase() === lo || (l.aliases || []).some(a => a.toLowerCase() === lo)
         );
     }
 
     // ---- Movement ----
-
-    async moveTo(locationId) {
+    async moveTo(locationId, source = 'scene') {
         const loc = this.locations.find(l => l.id === locationId);
         if (!loc) return;
-
-        const prevId = this.currentLocationId;
+        let prevId;
+        if (source === 'user') prevId = this.userLocationId;
+        else if (source === 'char') prevId = this.charLocationId;
+        else prevId = this.currentLocationId;
 
         loc.visitCount = (loc.visitCount || 0) + 1;
         loc.lastVisited = Date.now();
@@ -115,61 +96,56 @@ export class LocationManager {
         await this.db.putLocation(loc);
 
         if (prevId && prevId !== locationId) {
-            const dist = this.getDistanceBetween(prevId, locationId);
-            const movement = {
-                chatId: this.currentChatId,
-                fromId: prevId,
-                toId: locationId,
-                timestamp: Date.now(),
-                distance: dist?.distanceText || null,
-                walkTime: dist?.walkTime || null,
+            const d = this.getDistanceBetween(prevId, locationId);
+            const mov = {
+                chatId: this.currentChatId, fromId: prevId, toId: locationId,
+                timestamp: Date.now(), distance: d?.distanceText || null,
+                walkTime: d?.walkTime || null, source,
             };
-            await this.db.addMovement(movement);
-            this.movements.push(movement);
+            await this.db.addMovement(mov);
+            this.movements.push(mov);
         }
-
+        if (source === 'user') this.userLocationId = locationId;
+        else if (source === 'char') this.charLocationId = locationId;
         this.currentLocationId = locationId;
-        await this._saveCurrentLocation();
+        await this._saveCfg();
     }
 
     // ---- Distance ----
-
-    async setDistance(fromId, toId, distanceText, walkTime = null) {
+    async setDistance(a, b, text, walk = null) {
         if (!this.currentChatId) return null;
-        const id = [fromId, toId].sort().join('_');
-        const data = { id, chatId: this.currentChatId, fromId, toId, distanceText, walkTime, updatedAt: Date.now() };
-        await this.db.saveDistance(data);
-        const idx = this.distances.findIndex(d => d.id === id);
-        if (idx >= 0) this.distances[idx] = data;
-        else this.distances.push(data);
-        return data;
+        const id = [a, b].sort().join('_');
+        const d = { id, chatId: this.currentChatId, fromId: a, toId: b, distanceText: text, walkTime: walk, updatedAt: Date.now() };
+        await this.db.saveDistance(d);
+        const i = this.distances.findIndex(x => x.id === id);
+        if (i >= 0) this.distances[i] = d; else this.distances.push(d);
+        return d;
     }
 
-    getDistanceBetween(fromId, toId) {
-        const id = [fromId, toId].sort().join('_');
-        return this.distances.find(d => d.id === id) || null;
+    getDistanceBetween(a, b) {
+        return this.distances.find(d => d.id === [a, b].sort().join('_')) || null;
     }
 
     // ---- Internal ----
-
-    async _saveCurrentLocation() {
+    async _saveCfg() {
         if (!this.currentChatId) return;
-        await this.db.saveMapConfig({ chatId: this.currentChatId, currentLocationId: this.currentLocationId });
+        await this.db.saveMapConfig({
+            chatId: this.currentChatId,
+            currentLocationId: this.currentLocationId,
+            userLocationId: this.userLocationId,
+            charLocationId: this.charLocationId,
+        });
     }
 
-    _autoPosition() {
-        const count = this.locations.length;
-        if (count === 0) return { x: 300, y: 250 };
-        const angle = count * 0.8;
-        const radius = 80 + count * 25;
-        return {
-            x: Math.round(300 + radius * Math.cos(angle)),
-            y: Math.round(250 + radius * Math.sin(angle)),
-        };
+    _autoPos() {
+        const n = this.locations.length;
+        if (n === 0) return { x: 300, y: 250 };
+        const a = n * 0.8, r = 80 + n * 25;
+        return { x: Math.round(300 + r * Math.cos(a)), y: Math.round(250 + r * Math.sin(a)) };
     }
 
-    _randomColor() {
-        const colors = ['#F5A8A8', '#FCE7AE', '#A8E6CF', '#A8D8EA', '#C3B1E1', '#F5C6AA', '#B5EAD7', '#FFD3B6'];
-        return colors[Math.floor(Math.random() * colors.length)];
+    _rndColor() {
+        const c = ['#F5A8A8', '#FCE7AE', '#A8E6CF', '#A8D8EA', '#C3B1E1', '#F5C6AA', '#B5EAD7', '#FFD3B6'];
+        return c[Math.floor(Math.random() * c.length)];
     }
 }

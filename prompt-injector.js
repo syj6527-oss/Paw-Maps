@@ -1,130 +1,91 @@
 // 🗺️ RP World Tracker — prompt-injector.js
-// AI 프롬프트에 현재 위치 데이터 주입 (Selective Injection)
 
 import { extension_settings } from '../../../extensions.js';
 import { EXTENSION_NAME, PROMPT_KEY } from './index.js';
 
-// SillyTavern 버전에 따라 setExtensionPrompt 위치가 다름
-function getSetExtensionPrompt() {
+function getSetExtPrompt() {
     try {
         if (typeof window.setExtensionPrompt === 'function') return window.setExtensionPrompt;
         if (typeof globalThis.setExtensionPrompt === 'function') return globalThis.setExtensionPrompt;
-    } catch (_) { /* silent */ }
+    } catch (_) {}
     return null;
 }
 
 export class PromptInjector {
-    constructor(locationManager) {
-        this.lm = locationManager;
-    }
+    constructor(lm) { this.lm = lm; this._lastPrompt = ''; }
 
-    /**
-     * 프롬프트 텍스트 생성 + 주입
-     */
     inject() {
         const text = this.generate();
-        const fn = getSetExtensionPrompt();
+        const fn = getSetExtPrompt();
         try {
-            if (fn) {
-                fn(PROMPT_KEY, text || '', 1, 0);
-                if (text) console.log(`[${EXTENSION_NAME}] Prompt injected (${text.length} chars)`);
-            } else {
-                console.warn(`[${EXTENSION_NAME}] setExtensionPrompt not available — prompt stored but not injected`);
-                this._lastPrompt = text;
-            }
-        } catch (e) {
-            console.warn(`[${EXTENSION_NAME}] Prompt injection error:`, e.message);
-        }
+            if (fn) { fn(PROMPT_KEY, text || '', 1, 0); if (text) console.log(`[${EXTENSION_NAME}] Prompt injected (${text.length}c)`); }
+            else { this._lastPrompt = text; }
+        } catch (e) { console.warn(`[${EXTENSION_NAME}] Prompt error:`, e.message); }
     }
 
-    clear() {
-        const fn = getSetExtensionPrompt();
-        try { if (fn) fn(PROMPT_KEY, '', 1, 0); } catch (_) { /* silent */ }
-        this._lastPrompt = '';
-    }
+    clear() { const fn = getSetExtPrompt(); try { if (fn) fn(PROMPT_KEY, '', 1, 0); } catch (_) {} this._lastPrompt = ''; }
 
-    /**
-     * 현재 위치 기반 프롬프트 생성
-     */
     generate() {
         const s = extension_settings[EXTENSION_NAME];
-        if (!s?.aiInjection) return '';
-        if (!this.lm.currentLocationId || this.lm.locations.length === 0) return '';
+        if (!s?.aiInjection || this.lm.locations.length === 0) return '';
 
-        const cur = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
-        if (!cur) return '';
+        const uLoc = this.lm.locations.find(l => l.id === this.lm.userLocationId);
+        const cLoc = this.lm.locations.find(l => l.id === this.lm.charLocationId);
+        const main = cLoc || uLoc || this.lm.locations.find(l => l.id === this.lm.currentLocationId);
+        if (!main) return '';
 
-        const lines = ['[🗺️ World Tracker — Location Context]'];
+        const L = ['[🗺️ World Tracker — Location Context]'];
 
-        // 현재 위치
-        lines.push(`📍 Current: ${cur.name}`);
-
-        // 상태
-        if (cur.status) lines.push(`🌤️ Status: ${cur.status}`);
-
-        // 방문 횟수
-        if (cur.visitCount > 0) {
-            const suffix = cur.visitCount === 1 ? 'first visit' : `visited ${cur.visitCount} times`;
-            lines.push(`📊 ${suffix}`);
+        // 위치
+        if (uLoc && cLoc && uLoc.id !== cLoc.id) {
+            L.push(`👤 User: ${uLoc.name}`);
+            L.push(`🎭 Character: ${cLoc.name}`);
+        } else {
+            L.push(`📍 Current: ${main.name}`);
         }
 
-        // 메모 (기억 모드 적용)
-        if (cur.memo) {
-            lines.push(`💭 Memory: ${this._processMemory(cur)}`);
-        }
+        if (main.status) L.push(`🌤️ Status: ${main.status}`);
+        if (main.visitCount > 0) L.push(`📊 ${main.visitCount === 1 ? 'First visit' : `Visited ${main.visitCount} times`}`);
+        if (main.memo) L.push(`💭 Memory: ${this._mem(main)}`);
 
-        // 마지막 이동
-        const lastMove = this._lastMove();
-        if (lastMove) lines.push(`🚶 Moved from: ${lastMove}`);
+        const last = this._lastMove();
+        if (last) L.push(`🚶 Last: ${last}`);
+        const near = this._near(main);
+        if (near) L.push(`📌 Nearby: ${near}`);
 
-        // 근처 장소
-        const nearby = this._nearby(cur);
-        if (nearby) lines.push(`📌 Nearby: ${nearby}`);
-
-        lines.push('[/World Tracker]');
-        return lines.join('\n');
+        L.push('[/World Tracker]');
+        return L.join('\n');
     }
 
-    _processMemory(loc) {
+    _mem(loc) {
         const s = extension_settings[EXTENSION_NAME];
-        const memo = loc.memo || '';
-
-        if (s.memoryMode === 'perfect') return memo;
-
-        // 자연스러운 기억: 오래된 건 요약
-        if (!loc.lastVisited) return memo;
+        const m = loc.memo || '';
+        if (s.memoryMode === 'perfect') return m;
+        if (!loc.lastVisited) return m;
         const days = (Date.now() - loc.lastVisited) / 86400000;
-        const threshold = s.memorySummaryDays || 7;
-
-        if (days <= threshold) return memo;
-
-        // 오래된 메모 축약
-        if (memo.length > 50) return memo.substring(0, 50) + '... (faded memory)';
-        return memo + ' (faded memory)';
+        if (days <= (s.memorySummaryDays || 7)) return m;
+        return m.length > 50 ? m.substring(0, 50) + '... (faded)' : m + ' (faded)';
     }
 
     _lastMove() {
-        if (this.lm.movements.length === 0) return null;
+        if (!this.lm.movements.length) return null;
         const last = [...this.lm.movements].sort((a, b) => b.timestamp - a.timestamp)[0];
-        const from = this.lm.locations.find(l => l.id === last.fromId);
-        const to = this.lm.locations.find(l => l.id === last.toId);
-        if (!from || !to) return null;
-        let info = `${from.name} → ${to.name}`;
-        if (last.distance) info += ` (${last.distance})`;
-        if (last.walkTime) info += ` ${last.walkTime}`;
-        return info;
+        const f = this.lm.locations.find(l => l.id === last.fromId);
+        const t = this.lm.locations.find(l => l.id === last.toId);
+        if (!f || !t) return null;
+        let r = `${f.name} → ${t.name}`;
+        if (last.distance) r += ` (${last.distance})`;
+        return r;
     }
 
-    _nearby(cur) {
-        const near = [];
-        for (const d of (this.lm.distances || [])) {
-            let otherId = null;
-            if (d.fromId === cur.id) otherId = d.toId;
-            else if (d.toId === cur.id) otherId = d.fromId;
-            else continue;
-            const other = this.lm.locations.find(l => l.id === otherId);
-            if (other) near.push(`${other.name}(${d.distanceText})`);
+    _near(cur) {
+        const n = [];
+        for (const d of this.lm.distances || []) {
+            let oid = d.fromId === cur.id ? d.toId : d.toId === cur.id ? d.fromId : null;
+            if (!oid) continue;
+            const o = this.lm.locations.find(l => l.id === oid);
+            if (o) n.push(`${o.name}(${d.distanceText})`);
         }
-        return near.length > 0 ? near.slice(0, 3).join(', ') : null;
+        return n.length ? n.slice(0, 3).join(', ') : null;
     }
 }
