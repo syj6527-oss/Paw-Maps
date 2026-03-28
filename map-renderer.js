@@ -6,7 +6,7 @@ export class MapRenderer {
         this.svg = null; this.dragState = null; this._wasDrag = false;
         this.onLocationClick = null;
         // ViewBox state for zoom/pan
-        this.vb = { x: 0, y: 0, w: 600, h: 500 };
+        this.vb = { x: -50, y: -30, w: 700, h: 560 };
         this._pinch = null; this._pan = null;
         this._init();
     }
@@ -65,24 +65,6 @@ export class MapRenderer {
         }
 
         if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🗺️'));
-
-        // 🧭 나침반 (왼쪽 하단)
-        const cx = this.vb.x + 45, cy = this.vb.y + this.vb.h - 45;
-        const compass = this._el('g', { transform: `translate(${cx},${cy})`, class: 'wt-compass', opacity: '0.6' });
-        // 바깥 원
-        compass.appendChild(this._el('circle', { r: 22, fill: '#FFF9F0', stroke: '#C4A882', 'stroke-width': 1.5 }));
-        // N 표시 (빨간 삼각형)
-        compass.appendChild(this._el('polygon', { points: '0,-18 -5,-6 5,-6', fill: '#F5A8A8', stroke: '#D48080', 'stroke-width': 0.5 }));
-        // S 표시 (파란 삼각형)
-        compass.appendChild(this._el('polygon', { points: '0,18 -5,6 5,6', fill: '#A8D8EA', stroke: '#80B0C8', 'stroke-width': 0.5 }));
-        // E/W 작은 삼각형
-        compass.appendChild(this._el('polygon', { points: '18,0 6,-4 6,4', fill: '#FCE7AE', stroke: '#D4C080', 'stroke-width': 0.5 }));
-        compass.appendChild(this._el('polygon', { points: '-18,0 -6,-4 -6,4', fill: '#FCE7AE', stroke: '#D4C080', 'stroke-width': 0.5 }));
-        // 중앙 점
-        compass.appendChild(this._el('circle', { r: 3, fill: '#775537' }));
-        // N 글자
-        compass.appendChild(this._el('text', { y: -24, fill: '#F5A8A8', 'font-size': '9', 'font-weight': '700', 'text-anchor': 'middle' }, 'N'));
-        this.svg.appendChild(compass);
     }
 
     // ========== Touch Handling ==========

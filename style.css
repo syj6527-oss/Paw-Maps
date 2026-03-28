@@ -28,6 +28,8 @@
 /* Map */
 .wt-map-toggle,.wt-add-toggle{padding:8px 14px;background:var(--wt-surface);border-radius:var(--wt-rs);border:1px solid var(--wt-border);text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--wt-brown-l);-webkit-tap-highlight-color:transparent}
 .wt-map-toggle:active,.wt-add-toggle:active{background:var(--wt-yellow)}
+.wt-map-wrap{position:relative;overflow:hidden}
+.wt-compass-overlay{position:absolute;bottom:8px;left:8px;pointer-events:none;opacity:0.7;z-index:1}
 .wt-map-container{width:100%;min-height:250px;aspect-ratio:6/5;border-radius:var(--wt-r);overflow:hidden;border:2px solid var(--wt-border);background:radial-gradient(ellipse at 30% 20%,#FFFBF0,transparent 60%),radial-gradient(ellipse at 70% 80%,#FFF5E0,transparent 50%),linear-gradient(135deg,var(--wt-cream),#FFF0D6,#FFE8C2);touch-action:none}
 .wt-map-svg{cursor:grab;touch-action:none}
 .wt-map-svg:active{cursor:grabbing}
