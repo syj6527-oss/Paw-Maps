@@ -12,6 +12,7 @@ export class MapRenderer {
     }
 
     _init() {
+        if (!this.container) { console.error('[MAP] Container is null!'); return; }
         this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         this.svg.setAttribute('class', 'wt-map-svg');
         this.svg.setAttribute('width', '100%');
@@ -40,6 +41,8 @@ export class MapRenderer {
         if (!this.svg) return;
         this.svg.innerHTML = '<defs><filter id="wt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
         const { locations, movements, currentLocationId } = this.lm;
+
+        console.log(`[MAP] render: ${locations.length} locs, positions:`, locations.map(l => `${l.name}(${l.x},${l.y})`).join(', '));
 
         const drawn = new Set();
         for (const m of movements) {
