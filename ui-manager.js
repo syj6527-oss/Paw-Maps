@@ -78,24 +78,19 @@ export class UIManager {
     _loadProfiles() {
         const sel = $('#wt-s-profile');
         const s = extension_settings[EXTENSION_NAME];
+        // 기존 옵션 초기화 (기본값 제외)
+        sel.find('option:not(:first)').remove();
         try {
+            // Connection Manager 프로필만 읽기 (모든 모델/프리셋 X)
             const cmSelect = document.querySelector('#connection_profile');
             if (cmSelect) {
                 $(cmSelect).find('option').each(function() {
                     const v = $(this).val(), t = $(this).text();
-                    if (v) sel.append(`<option value="${v}">${t}</option>`);
-                });
-            }
-            if (sel.find('option').length <= 1) {
-                ['#settings_preset_openai','#model_openai_select','#model_google_select','#model_claude_select'].forEach(ps => {
-                    $(ps).find('option').each(function() {
-                        const v = $(this).val(), t = $(this).text();
-                        if (v && t && !sel.find(`option[value="${v}"]`).length) sel.append(`<option value="${v}">${t}</option>`);
-                    });
+                    if (v && !sel.find(`option[value="${v}"]`).length) sel.append(`<option value="${v}">${t}</option>`);
                 });
             }
         } catch(e) { console.warn(`[${EXTENSION_NAME}] Profile load:`, e); }
-        // #48: 저장된 프로필 복원 (옵션 없으면 1초 후 재시도)
+        // 저장된 프로필 복원 (옵션 없으면 1.5초 후 재시도)
         if (s?.selectedProfile) {
             sel.val(s.selectedProfile);
             if (sel.val() !== s.selectedProfile) {

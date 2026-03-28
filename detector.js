@@ -276,10 +276,6 @@ export class LocationDetector {
         if (this.lm.findByName(c)) return false;
         if (this.skipKo.includes(c)) return false;
         if (c.length === 2 && /[을를이가에]$/.test(c)) return false;
-        // #43: "X대" + "로" = 부사 패턴 차단 (부대/연대 등 군사용어는 허용)
-        if (c.endsWith('대') && c.length >= 3 && !['부대','연대','중대','소대','기지대','관측대','악대'].includes(c)) return false;
-        // #43: 기타 부사형 어미 차단
-        if (/[듯처럼같만큼]$/.test(c)) return false;
         return true;
     }
 

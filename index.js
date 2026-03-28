@@ -67,7 +67,7 @@ async function scanMessage(text, label='') {
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
                 if (s.showDetectToast) {
-                    try { toast(`👣 ${location.name}`, '🐶', {timeOut:3000, positionClass:'toast-top-center', preventDuplicates:true}); }
+                    try { toast(`👣 ${location.name}`, '🐶', {timeOut:3000, positionClass:'toast-top-full-width', toastClass:'toast wt-toast', preventDuplicates:true}); }
                     catch(_) { console.log(`[${EXTENSION_NAME}] Toast: 👣 ${location.name}`); }
                 }
                 pi.inject(); if (ui.panelVisible) ui.refresh();
@@ -84,7 +84,7 @@ async function scanMessage(text, label='') {
                 if (loc) {
                     await lm.moveTo(loc.id);
                     if (s.showDetectToast) {
-                        try { toast(`🆕 ${loc.name}`, '🐶', {timeOut:3500, positionClass:'toast-top-center', preventDuplicates:true}); }
+                        try { toast(`🆕 ${loc.name}`, '🐶', {timeOut:3500, positionClass:'toast-top-full-width', toastClass:'toast wt-toast wt-toast-new', preventDuplicates:true}); }
                         catch(_) { console.log(`[${EXTENSION_NAME}] Toast: 🆕 ${loc.name}`); }
                     }
                     pi.inject(); if (ui.panelVisible) ui.refresh();

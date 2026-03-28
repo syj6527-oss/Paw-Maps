@@ -106,10 +106,20 @@ export class LeafletRenderer {
         }
 
         // 좌표 있는 장소들이 보이도록 맵 조정
-        if (latlngs.length > 1) {
+        // 현재 위치 우선 → 전체 fitBounds 폴백
+        const curLoc = locations.find(l => l.id === currentLocationId);
+        if (curLoc?.lat && curLoc?.lng) {
+            this.map.setView([curLoc.lat, curLoc.lng], 14);
+        } else if (latlngs.length > 1) {
             this.map.fitBounds(latlngs, { padding: [30, 30], maxZoom: 15 });
         } else if (latlngs.length === 1) {
             this.map.setView(latlngs[0], 14);
+        }
+
+        // 현재 위치 좌표 없으면 안내 오버레이
+        this._removeNotice();
+        if (curLoc && !curLoc.lat && !curLoc.lng) {
+            this._showNotice(`📍 "${curLoc.name}"에 좌표가 없어요\n🔍 검색으로 좌표를 배치해보세요`);
         }
     }
 
@@ -203,6 +213,21 @@ export class LeafletRenderer {
 
     clearSearchMarker() {
         if (this._searchMarker) { this.map.removeLayer(this._searchMarker); this._searchMarker = null; }
+    }
+
+    // 좌표 없음 안내 오버레이
+    _showNotice(msg) {
+        this._removeNotice();
+        const div = document.createElement('div');
+        div.id = 'wt-leaflet-notice';
+        div.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:999;background:rgba(255,249,240,0.95);border:1.5px solid #F0E0C8;border-radius:8px;padding:10px 14px;font-size:12px;color:#775537;text-align:center;pointer-events:none;white-space:pre-line;';
+        div.textContent = msg;
+        this.container.style.position = 'relative';
+        this.container.appendChild(div);
+    }
+    _removeNotice() {
+        const el = document.getElementById('wt-leaflet-notice');
+        if (el) el.remove();
     }
 
     destroy() {
