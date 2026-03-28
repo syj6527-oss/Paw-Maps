@@ -1,6 +1,6 @@
 // 🐶 월드맵 — ui-manager.js (Inline Toast + Popover)
 
-import { extension_settings } from '../../../extensions.js';
+import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
 import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet } from './index.js';
 import { MapRenderer } from './map-renderer.js';
@@ -81,52 +81,21 @@ export class UIManager {
         sel.find('option:not(:first)').remove();
 
         try {
-            // 1차: Connection Manager 프로필
-            const cmSelect = document.querySelector('#connection_profile');
-            if (cmSelect && cmSelect.options.length > 1) {
-                for (const opt of cmSelect.options) {
-                    if (opt.value && !sel.find(`option[value="${opt.value}"]`).length) {
-                        sel.append(`<option value="${opt.value}">${opt.text}</option>`);
-                    }
-                }
+            // SillyTavern Connection Manager 프로필 (번역기와 동일 방식)
+            const ctx = getContext();
+            const profiles = ctx?.extensionSettings?.connectionManager?.profiles || [];
+            for (const p of profiles) {
+                if (p.id && p.name) sel.append(`<option value="${p.id}">${p.name}</option>`);
             }
 
-            // 2차: 현재 API + 모델 조합 생성
-            if (sel.find('option').length <= 1) {
-                const api = $('#main_api').val() || '';
-                const modelSelectors = ['#model_openai_select','#model_google_select','#model_claude_select','#model_cohere_select'];
-                for (const ms of modelSelectors) {
-                    const model = $(ms).val();
-                    if (model) {
-                        const presetSel = $('#settings_preset_openai');
-                        const preset = presetSel.length ? presetSel.find('option:selected').text() : '';
-                        const label = preset ? `${api} ${model} - ${preset}` : `${api} ${model}`;
-                        if (!sel.find(`option[value="${model}"]`).length) {
-                            sel.append(`<option value="${model}">${label}</option>`);
-                        }
-                    }
-                }
-            }
-
-            // 3차: 프리셋만이라도
-            if (sel.find('option').length <= 1) {
-                ['#settings_preset_openai','#settings_preset'].forEach(ps => {
-                    $(ps).find('option').each(function() {
-                        const v = $(this).val(), t = $(this).text();
-                        if (v && t && !sel.find(`option[value="${v}"]`).length) sel.append(`<option value="${v}">${t}</option>`);
-                    });
-                });
-            }
-        } catch(e) { console.warn(`[${EXTENSION_NAME}] Profile load:`, e); }
-
-        if (s?.selectedProfile) {
-            sel.val(s.selectedProfile);
-            // 옵션 없으면 재시도 (비동기 로드 대기)
-            if (sel.val() !== s.selectedProfile && !this._profileRetried) {
+            // 프로필 없으면 3초 후 재시도 (비동기 로드 대기)
+            if (!profiles.length && !this._profileRetried) {
                 this._profileRetried = true;
                 setTimeout(() => { this._profileRetried = false; this._loadProfiles(); }, 3000);
             }
-        }
+        } catch(e) { console.warn(`[${EXTENSION_NAME}] Profile load:`, e); }
+
+        if (s?.selectedProfile) sel.val(s.selectedProfile);
     }
 
     registerWandButton() {
