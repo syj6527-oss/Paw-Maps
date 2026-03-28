@@ -43,27 +43,48 @@ export class LeafletRenderer {
         // 지도 클릭 → 좌표 배치
         this.map.on('click', (e) => this._onMapClick(e));
 
-        // #1: 롱프레스 → 장소 이동 (native touch on container)
-        let _lpTimer = null;
-        const mapEl = this.map.getContainer();
-        mapEl.addEventListener('touchstart', (e) => {
-            if (e.touches.length !== 1) return;
-            const touch = e.touches[0];
-            const cx = touch.clientX - mapEl.getBoundingClientRect().left;
-            const cy = touch.clientY - mapEl.getBoundingClientRect().top;
-            console.log(`[WT-LP] touchstart at (${cx.toFixed(0)}, ${cy.toFixed(0)})`);
+        // #1: 롱프레스 → 장소 이동 (마우스 + 터치 모두 지원)
+        let _lpTimer = null, _lpMoved = false;
+        this.map.on('mousedown', (e) => {
+            if (e.originalEvent.button !== 0) return; // 좌클릭만
+            _lpMoved = false;
             _lpTimer = setTimeout(() => {
-                try {
-                    const pt = this.map.containerPointToLatLng(L.point(cx, cy));
-                    console.log(`[WT-LP] longpress! lat=${pt.lat.toFixed(4)} lng=${pt.lng.toFixed(4)}, handler=${!!this.onLongPress}`);
-                    if (this.onLongPress) this.onLongPress(pt);
-                    if (navigator.vibrate) navigator.vibrate(50);
-                } catch(err) { console.error('[WT-LP] error:', err); }
+                if (!_lpMoved && this.onLongPress) {
+                    console.log(`[WT-LP] mouse longpress at ${e.latlng.lat.toFixed(4)},${e.latlng.lng.toFixed(4)}`);
+                    this.onLongPress(e.latlng);
+                }
                 _lpTimer = null;
             }, 600);
+        });
+        this.map.on('mousemove', () => { _lpMoved = true; if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
+        this.map.on('mouseup', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
+
+        // 모바일 터치
+        const mapEl = this.map.getContainer();
+        let _tpTimer = null, _tpCx = 0, _tpCy = 0;
+        mapEl.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            const t = e.touches[0];
+            _tpCx = t.clientX; _tpCy = t.clientY;
+            _tpTimer = setTimeout(() => {
+                try {
+                    const rect = mapEl.getBoundingClientRect();
+                    const pt = this.map.containerPointToLatLng(L.point(_tpCx - rect.left, _tpCy - rect.top));
+                    console.log(`[WT-LP] touch longpress at ${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}, handler=${!!this.onLongPress}`);
+                    if (this.onLongPress) this.onLongPress(pt);
+                    if (navigator.vibrate) navigator.vibrate(50);
+                } catch(err) { console.error('[WT-LP]', err); }
+                _tpTimer = null;
+            }, 600);
         }, { passive: false });
-        mapEl.addEventListener('touchmove', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }, { passive: true });
-        mapEl.addEventListener('touchend', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }, { passive: true });
+        mapEl.addEventListener('touchmove', (e) => {
+            if (_tpTimer && e.touches[0]) {
+                const dx = Math.abs(e.touches[0].clientX - _tpCx);
+                const dy = Math.abs(e.touches[0].clientY - _tpCy);
+                if (dx > 10 || dy > 10) { clearTimeout(_tpTimer); _tpTimer = null; }
+            }
+        }, { passive: true });
+        mapEl.addEventListener('touchend', () => { if (_tpTimer) { clearTimeout(_tpTimer); _tpTimer = null; } }, { passive: true });
 
         console.log(`[${EXTENSION_NAME}] Leaflet initialized`);
         return true;
