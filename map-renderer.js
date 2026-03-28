@@ -20,10 +20,33 @@ export class MapRenderer {
         this.svg.addEventListener('mousemove', e=>this._move(e));
         this.svg.addEventListener('mouseup', ()=>this._up());
         this.svg.addEventListener('mouseleave', ()=>this._up());
-        // Touch (mobile)
-        this.svg.addEventListener('touchstart', e=>{e.preventDefault();this._down(e.touches[0])}, {passive:false});
-        this.svg.addEventListener('touchmove', e=>{e.preventDefault();this._move(e.touches[0])}, {passive:false});
-        this.svg.addEventListener('touchend', e=>this._up());
+        // Touch (mobile) — 노드 터치만 캡처, 나머지는 스크롤 통과
+        this._touchStart = null;
+        this.svg.addEventListener('touchstart', e=>{
+            const touch = e.touches[0];
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            const node = el?.closest?.('.wt-location-node');
+            this._touchStart = {x:touch.clientX, y:touch.clientY, time:Date.now(), onNode:!!node};
+            if (node) this._down(touch);
+        }, {passive:true});
+        this.svg.addEventListener('touchmove', e=>{
+            // 노드 드래그 중일 때만 스크롤 막기
+            if(this.dragState && this._wasDrag && this._touchStart?.onNode) {
+                e.preventDefault();
+                this._move(e.touches[0]);
+            }
+        }, {passive:false});
+        this.svg.addEventListener('touchend', e=>{
+            if(this._touchStart && !this._wasDrag && this._touchStart.onNode) {
+                const dt = Date.now() - this._touchStart.time;
+                if(dt < 400) {
+                    const el = document.elementFromPoint(this._touchStart.x, this._touchStart.y);
+                    const node = el?.closest?.('.wt-location-node');
+                    if(node) this.onLocationClick?.(node.getAttribute('data-id'));
+                }
+            }
+            this._up(); this._touchStart = null;
+        });
     }
 
     render() {

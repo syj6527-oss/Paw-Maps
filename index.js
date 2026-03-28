@@ -69,23 +69,18 @@ async function init() {
         let aiMsg = typeof idx==='number' ? ctx.chat[idx] : ctx.chat[ctx.chat.length-1];
         if (!aiMsg || aiMsg.is_user) return;
 
-        console.log(`[${EXTENSION_NAME}] RECV — AI:${(aiMsg.mes||'').length}c`);
-
-        // AI 아웃풋 스캔
-        let found = false;
-        if (aiMsg.mes?.trim()) found = await scanMessage(aiMsg.mes);
-
-        // AI에서 못 잡았으면 직전 유저 인풋도 스캔
-        if (!found) {
-            const aiIdx = typeof idx==='number' ? idx : ctx.chat.length-1;
-            for (let i=aiIdx-1; i>=Math.max(0,aiIdx-3); i--) {
-                if (ctx.chat[i]?.is_user && ctx.chat[i].mes?.trim()) {
-                    console.log(`[${EXTENSION_NAME}] Fallback → user msg (${ctx.chat[i].mes.length}c)`);
-                    await scanMessage(ctx.chat[i].mes);
-                    break;
-                }
-            }
+        // 직전 유저 인풋 찾기
+        const aiIdx = typeof idx==='number' ? idx : ctx.chat.length-1;
+        let userMsg = null;
+        for (let i=aiIdx-1; i>=Math.max(0,aiIdx-3); i--) {
+            if (ctx.chat[i]?.is_user) { userMsg = ctx.chat[i]; break; }
         }
+
+        console.log(`[${EXTENSION_NAME}] RECV — AI:${(aiMsg.mes||'').length}c User:${(userMsg?.mes||'').length}c`);
+
+        // 유저 인풋 먼저 스캔 → AI 아웃풋 스캔 (AI가 최종 씬 결정)
+        if (userMsg?.mes?.trim()) await scanMessage(userMsg.mes);
+        if (aiMsg.mes?.trim()) await scanMessage(aiMsg.mes);
     });
 
     eventSource.on(event_types.MESSAGE_SENDING, () => {
