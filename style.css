@@ -60,12 +60,17 @@
 @keyframes wt-b{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .wt-empty-text{fill:var(--wt-text-dim);font-size:13px;text-anchor:middle}
 
-/* ===== DUAL LOC ===== */
-.wt-dual-loc{display:flex;flex-direction:column;gap:4px;padding:10px 14px;background:var(--wt-surface);border-radius:var(--wt-r);border:1px solid var(--wt-border)}
-.wt-dual-row{display:flex;align-items:center;gap:8px}
-.wt-dual-icon{font-size:16px;flex-shrink:0}
-.wt-dual-label{font-size:11px;color:var(--wt-text-dim);min-width:36px}
-.wt-dual-name{font-size:14px;font-weight:700;color:var(--wt-brown)}
+/* ===== SCENE LOCATION ===== */
+.wt-scene-loc{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--wt-surface);border-radius:var(--wt-r);border:1px solid var(--wt-border)}
+.wt-scene-icon{font-size:20px;flex-shrink:0}
+.wt-scene-info{display:flex;flex-direction:column;gap:2px}
+.wt-scene-label{font-size:11px;color:var(--wt-text-dim)}
+.wt-scene-name{font-size:15px;font-weight:700;color:var(--wt-brown)}
+
+/* ===== MAP TOGGLE ===== */
+.wt-map-toggle{padding:8px 14px;background:var(--wt-surface);border-radius:var(--wt-rs);border:1px solid var(--wt-border);text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--wt-brown-l);-webkit-tap-highlight-color:transparent}
+.wt-map-toggle:active{background:var(--wt-yellow)}
+.wt-map-wrap{overflow:hidden}
 
 /* ===== AI PROMPT ===== */
 .wt-prompt-preview{background:var(--wt-surface);border:1px solid var(--wt-border);border-radius:var(--wt-rs);overflow:hidden}
