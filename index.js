@@ -11,6 +11,13 @@ import { UIManager } from './ui-manager.js';
 export const EXTENSION_NAME = 'rp-world-tracker';
 export const PROMPT_KEY = 'rp-world-tracker-prompt';
 
+// ========== 확장 경로 자동 감지 (폴더명 불일치 방지) ==========
+export const EXTENSION_PATH = new URL('.', import.meta.url).pathname;
+
+// ========== 🐶/🐺 모드 아이콘 ==========
+export function wtMascot() { return extension_settings[EXTENSION_NAME]?.fantasyTheme ? '🐺' : '🐶'; }
+export function wtTreat() { return extension_settings[EXTENSION_NAME]?.fantasyTheme ? '🍖' : '🦴'; }
+
 // ========== 커스텀 알림 (번역기 스타일) ==========
 let _notiEl = null, _notiTimer = null;
 export function wtNotify(msg, type = 'move', duration = 3000) {
@@ -31,10 +38,19 @@ export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
 const defaults = {
     enabled:true, autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
-    debugMode:false, mapMode:'node',
+    debugMode:false, mapMode:'node', fantasyTheme:false,
 };
 
 let db, lm, det, pi, ui;
+
+// ========== 채팅 화면 활성 여부 (캐릭터 설정/선택 화면 방지) ==========
+function isChatActive() {
+    // offsetParent는 position:fixed에서 null 반환 → getBoundingClientRect 사용
+    const sendBtn = document.querySelector('#send_but');
+    if (!sendBtn) return false;
+    const rect = sendBtn.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+}
 
 export async function loadLeaflet() {
     if (window.L) return true;
@@ -78,8 +94,13 @@ async function scanMessage(text, source = 'USER') {
             dbg(`✅ "${location.name}" (${type} c=${confidence})`);
             if (lm.currentLocationId !== location.id) {
                 await lm.moveTo(location.id);
-                if (s.showDetectToast) wtNotify(`🐶 🐾 ${location.name}`, 'move');
+                if (s.showDetectToast) wtNotify(`${wtMascot()} ${wtTreat()} ${location.name}`, 'move');
                 pi.inject(); if (ui.panelVisible) ui.refresh();
+            }
+            // AI 응답이면 이벤트 자동 추출
+            if (source === 'AI' && text.length > 30) {
+                const summary = _extractEventSummary(text, location.name);
+                if (summary) ui.showEventNotify(location.name, summary, location.id);
             }
             return true;
         }
@@ -93,7 +114,7 @@ async function scanMessage(text, source = 'USER') {
                 const loc = await lm.addLocation(np);
                 if (loc) {
                     await lm.moveTo(loc.id);
-                    if (s.showDetectToast) wtNotify(`🐶 🆕 ${loc.name}`, 'new', 3500);
+                    if (s.showDetectToast) wtNotify(`${wtMascot()} 🆕 ${loc.name}`, 'new', 3500);
                     pi.inject(); if (ui.panelVisible) ui.refresh();
                     ui.showAutoToast(loc);
                 }
@@ -122,6 +143,7 @@ async function init() {
     let lastId = null;
     async function handle(idx) {
         try {
+            if (!isChatActive()) return; // 캐릭터 설정/선택 화면이면 스킵
             const ctx = getContext(); if (!ctx?.chat?.length) return;
             const msg = typeof idx === 'number' ? ctx.chat[idx] : ctx.chat[ctx.chat.length - 1];
             if (!msg || msg.is_user) return;
@@ -147,13 +169,17 @@ async function init() {
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         pi.clear(); lastId = null;
         // 타이밍: SillyTavern이 chatId 갱신할 때까지 대기
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 300));
         const newId = lm.getChatId();
         dbg(`🔄 CHAT_CHANGED → ${newId}`);
         await lm.loadChat();
         pi.inject();
+        ui.resetMap();
         if (ui.panelVisible) ui.refresh();
-        await scanContext();
+        // scanContext: 첫 시도 실패 시 1초 후 재시도
+        if (!await scanContext()) {
+            setTimeout(() => scanContext(), 1000);
+        }
     });
 
     if (event_types.MESSAGE_SENDING) {
@@ -172,12 +198,15 @@ async function init() {
 async function scanContext() {
     try {
         const s = extension_settings[EXTENSION_NAME];
-        if (!s?.enabled || !s?.autoDetect || !lm.currentChatId) return;
+        if (!s?.enabled || !s?.autoDetect || !lm.currentChatId) return true; // 설정 비활성 = 정상
         const ctx = getContext();
-        if (!ctx?.characterId) return;
+        if (!ctx?.characterId) return true;
 
-        // 이미 장소 있으면 스킵
-        if (lm.locations.length > 0 && lm.currentLocationId) return;
+        // Bug I: 채팅 화면 활성 체크
+        if (!isChatActive()) return false; // false = 재시도 필요
+
+        // Task 2: 장소가 1개라도 있으면 재스캔 스킵
+        if (lm.locations.length > 0) return;
 
         // 1차: 기존 채팅 히스토리 전체 스캔 (진행 중인 채팅에 확장 설치 시)
         if (ctx.chat?.length > 1) {
@@ -247,3 +276,33 @@ async function scanChatHistory(ctx) {
 }
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
+
+// ========== 이벤트 요약 추출 (간단 키워드 방식) ==========
+function _extractEventSummary(text, locName) {
+    // HTML 태그 제거 + 대사 제거
+    const clean = text.replace(/<[^>]*>/g, '').replace(/"[^"]*"/g, '').replace(/「[^」]*」/g, '').trim();
+    if (clean.length < 20) return null;
+
+    // 핵심 동작/감정 키워드 포함 문장 찾기
+    const actionKw = /싸[우웠]|울[었다]|키스|포옹|발견|숨[겼긴]|도망|만[났나]|해[어]졌|약속|비밀|선물|편지|전화|사고|부상|치료|요리|식사|파티|축하|고백|거절|화해|결투|전투|훈련/;
+    const actionEn = /fight|kiss|hug|discover|hide|escape|meet|broke up|promise|secret|gift|letter|call|accident|injur|cook|dinner|party|confess|reject|reconcil|duel|battle|train/i;
+
+    const sentences = clean.split(/[.!?。！？\n]+/).filter(s => s.trim().length > 5);
+    for (const s of sentences) {
+        if (actionKw.test(s) || actionEn.test(s)) {
+            let summary = s.trim();
+            if (summary.length > 40) summary = summary.substring(0, 40) + '...';
+            return summary;
+        }
+    }
+
+    // 키워드 없으면 첫 의미있는 문장 (30자 이상)
+    for (const s of sentences) {
+        if (s.trim().length >= 20) {
+            let summary = s.trim();
+            if (summary.length > 40) summary = summary.substring(0, 40) + '...';
+            return summary;
+        }
+    }
+    return null;
+}

@@ -1,368 +1,496 @@
-// 🐶 World Tracker — map-renderer.js (Zoom + Pan + Touch)
+// 🐶 World Tracker — map-renderer.js (v0.3.0-beta hotfix8)
+// 목업 v4.1 디자인 이식: Hub 기반 + rect 그리드 + ㄱ/ㄴ/T 건물 + 카메라 분리
 
 export class MapRenderer {
     constructor(container, lm) {
         this.container = container; this.lm = lm;
         this.svg = null; this._wasDrag = false; this._movingNodeId = null;
         this.onLocationClick = null; this.onMoveRequest = null;
-        // ViewBox state for zoom/pan
-        this.vb = { x: 0, y: 0, w: 600, h: 500 };
+        this.vb = { x: 0, y: 0, w: 500, h: 500 };
         this._pinch = null; this._pan = null;
+        this._cityBgEl = null;       // Hub별 배경 캐시
+        this._cityHubKey = null;     // 현재 생성된 Hub 식별자
         this._init();
     }
+    _srand(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};}
+    _hashStr(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return Math.abs(h);}
 
     _init() {
-        if (!this.container) { console.error('[MAP] Container is null!'); return; }
+        if (!this.container) return;
+        this.container.querySelectorAll('svg.wt-map-svg').forEach(el => el.remove());
         this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         this.svg.setAttribute('class', 'wt-map-svg');
         this.svg.setAttribute('width', '100%');
-        // 모바일: height 100% → 0px 버그 방지, 명시적 높이
         const h = this.container.offsetHeight || this.container.clientHeight || 320;
         this.svg.setAttribute('height', Math.max(h, 320) + 'px');
         this.svg.style.minHeight = '320px';
         this._applyVB();
         this.container.appendChild(this.svg);
-
-        // Mouse
         this.svg.addEventListener('mousedown', e => this._onDown(e));
         this.svg.addEventListener('mousemove', e => this._onMove(e));
         this.svg.addEventListener('mouseup', () => this._onUp());
         this.svg.addEventListener('mouseleave', () => this._onUp());
-        // Mouse wheel zoom
         this.svg.addEventListener('wheel', e => { e.preventDefault(); this._zoom(e.deltaY > 0 ? 1.1 : 0.9, e); }, { passive: false });
-
-        // Touch
         this.svg.addEventListener('touchstart', e => this._touchStart(e), { passive: false });
         this.svg.addEventListener('touchmove', e => this._touchMove(e), { passive: false });
         this.svg.addEventListener('touchend', e => this._touchEnd(e));
     }
-
     _applyVB() { this.svg.setAttribute('viewBox', `${this.vb.x} ${this.vb.y} ${this.vb.w} ${this.vb.h}`); }
 
-    // ========== Render ==========
+    invalidateCity() { this._cityBgEl = null; this._cityHubKey = null; }
+
+    // 핀 클릭 → ViewBox만 이동 (배경 재생성 X)
+    recenterOn(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        this.vb.x = loc.x - this.vb.w / 2;
+        this.vb.y = loc.y - this.vb.h / 2;
+        this._vbManual = true;
+        this.render();
+    }
+
+    // ================================================================
+    //  RENDER
+    // ================================================================
     render() {
         if (!this.svg) return;
-        document.getElementById('wt-map-debug')?.remove();
         if (this.container) {
             const h = this.container.offsetHeight || this.container.clientHeight || 320;
             this.svg.setAttribute('height', Math.max(h, 320) + 'px');
         }
+        if (this.fantasyMode) { this._renderFantasy(); return; }
 
-        this.svg.innerHTML = '<defs><filter id="wt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+        this.svg.innerHTML = `<defs>
+            <filter id="wt-sh"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity="0.08"/></filter>
+            <filter id="wt-shp"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.22"/></filter>
+            <filter id="wt-bs"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000" flood-opacity="0.06"/></filter>
+        </defs>`;
+
         const { locations, movements, currentLocationId } = this.lm;
 
-        // 거리 기반 약도 자동 배치
-        if (locations.length >= 2) this._autoLayout();
+        // Hub 핀 분류 (level ≤ 6 = 같은 동네)
+        const curLoc = locations.find(l => l.id === currentLocationId) || locations[0];
+        const dists = this.lm.distances || [];
+        const hubPins = curLoc ? locations.filter(l => {
+            if (l.id === curLoc.id) return true;
+            const d = dists.find(dd => (dd.fromId === curLoc.id && dd.toId === l.id) || (dd.toId === curLoc.id && dd.fromId === l.id));
+            return !d || (d.level || 5) <= 6;
+        }) : locations;
 
-        // 경로선 + 거리 표시
-        const drawn = new Set();
-        for (const m of movements) {
-            const f = locations.find(l => l.id === m.fromId), t = locations.find(l => l.id === m.toId);
-            if (!f || !t) continue;
-            const k = [m.fromId, m.toId].sort().join('-'); if (drawn.has(k)) continue; drawn.add(k);
-            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, class: 'wt-path-line' }));
-
-            // 거리 라벨 + 레벨 점
-            const dist = this.lm.getDistanceBetween(m.fromId, m.toId);
-            const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
-            if (dist) {
-                const lvl = dist.level || 5;
-                const filled = Math.min(lvl, 10);
-                const dots = '●'.repeat(Math.ceil(filled/2)) + '○'.repeat(Math.ceil((10-filled)/2));
-                this.svg.appendChild(this._el('text', { x: mx, y: my - 8, 'text-anchor': 'middle', fill: '#9A8A7A', 'font-size': '9' }, dots));
-                if (dist.distanceText) {
-                    this.svg.appendChild(this._el('text', { x: mx, y: my + 6, 'text-anchor': 'middle', fill: '#A08060', 'font-size': '10' }, dist.distanceText));
-                }
-            }
+        // 레이아웃
+        if (hubPins.length >= 2) this._autoLayout(hubPins, curLoc);
+        if (curLoc && curLoc.x === 0 && curLoc.y === 0) {
+            curLoc.x = 300; curLoc.y = 280;
+            this.lm.updateLocation(curLoc.id, { x: curLoc.x, y: curLoc.y });
         }
 
-        // 노드 색상 결정 함수
-        const nodeColor = (loc) => {
-            if (loc.id === currentLocationId) return '#8B6EC7'; // Violet — 현재
-            const v = loc.visitCount || 0;
-            if (v >= 5) return '#5E84E2'; // Blue — 자주
-            if (v >= 2) return '#F6A93A'; // Orange — 일반
-            return '#F7EC8D'; // Yellow — 새 장소
-        };
+        // ★ ViewBox 먼저 계산
+        const cW = this.container?.offsetWidth || 360;
+        const cH = this.container?.offsetHeight || 480;
+        const aspect = cW / cH;
+        const vbW = 520, vbH = Math.round(vbW / aspect);
 
-        // 노드 렌더링
-        for (const loc of locations) {
+        if (this._lastCurLocId !== currentLocationId) {
+            this._lastCurLocId = currentLocationId;
+            this._vbManual = false;
+        }
+        if (!this._vbManual) {
+            const xs = hubPins.map(l => l.x), ys = hubPins.map(l => l.y);
+            const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 300;
+            const cy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 280;
+            this.vb = { x: cx - vbW / 2, y: cy - vbH / 2, w: vbW, h: vbH };
+        } else {
+            this.vb.w = vbW; this.vb.h = vbH;
+        }
+        this._applyVB();
+
+        // ★ clipPath (액자 프레임 — 가장자리 깔끔하게)
+        const clipId = 'wt-map-clip';
+        const defsEl = this.svg.querySelector('defs');
+        const cp = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+        cp.setAttribute('id', clipId);
+        cp.appendChild(this._el('rect', { x: this.vb.x, y: this.vb.y, width: this.vb.w, height: this.vb.h, rx: 12 }));
+        defsEl.appendChild(cp);
+
+        // 모든 콘텐츠를 클리핑 그룹에 넣기
+        const clipG = this._el('g', { 'clip-path': `url(#${clipId})` });
+
+        // ★ ViewBox 영역 기반으로 도시 생성
+        const hubKey = curLoc ? curLoc.id : 'empty';
+        const chatId = this.lm.currentChatId || 'default';
+        const seed = this._hashStr(chatId + hubKey) % 10000 + 1;
+        if (!this._cityBgEl || this._cityHubKey !== hubKey) {
+            this._buildHubCity(this.vb, seed);
+            this._cityHubKey = hubKey;
+        }
+        if (this._cityBgEl) clipG.appendChild(this._cityBgEl.cloneNode(true));
+
+        this.svg.appendChild(clipG);
+
+        // 핀, 거리선, 나침반 (클리핑 밖 — 항상 보임)
+        this._drawDistLines(hubPins, movements);
+        this._drawPins(hubPins, currentLocationId);
+        this._drawCompass(this.vb);
+
+        if (!locations.length) {
+            this.svg.appendChild(this._el('text', { x: 300, y: 280, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
+        }
+    }
+
+    // ================================================================
+    //  Hub 도시 배경 (목업 v4.1 디자인 — rect 그리드)
+    // ================================================================
+    _buildHubCity(vb, seed) {
+        const rng = this._srand(seed * 31337);
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+        const extra = 80;
+        const ox = vb.x - extra, oy = vb.y - extra;
+        const W = vb.w + extra * 2, H = vb.h + extra * 2;
+
+        // ===== 레이어 1: 배경 =====
+        const bgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        bgLayer.appendChild(this._el('rect', { x: ox - 60, y: oy - 60, width: W + 120, height: H + 120, fill: '#FDFCF8' }));
+        g.appendChild(bgLayer);
+
+        // 그리드 계산 (비대칭 열/행)
+        const cols = 5, rows = 6;
+        const cw = [], rh = [];
+        let twc = 0, thr = 0;
+        for (let c = 0; c < cols; c++) { cw[c] = 0.5 + rng() * 1.0; twc += cw[c]; }
+        for (let r = 0; r < rows; r++) { rh[r] = 0.5 + rng() * 1.0; thr += rh[r]; }
+        cw.forEach((_, i) => cw[i] = Math.round((cw[i] / twc) * W));
+        rh.forEach((_, i) => rh[i] = Math.round((rh[i] / thr) * H));
+
+        // 대로 vs 골목 — 3번째 경계마다 대로(26px), 나머지 골목(8px)
+        const xGap = []; // cols+1개 경계
+        for (let c = 0; c <= cols; c++) xGap[c] = (c > 0 && c < cols && c % 3 === 0) ? 13 : 4;
+        const yGap = [];
+        for (let r = 0; r <= rows; r++) yGap[r] = (r > 0 && r < rows && r % 3 === 0) ? 13 : 4;
+
+        const parkCell = `${1 + (seed % 2)}_${1 + (seed % (cols - 1))}`;
+        const riverRow = 2 + (seed % 2);
+
+        const merged = new Set(), plaza = new Set();
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols - 1; c++) {
+            if (!merged.has(`${r}_${c}`) && rng() < 0.12 && r !== riverRow) merged.add(`${r}_${c + 1}`);
+        }
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+            if (!merged.has(`${r}_${c}`) && rng() < 0.06 && `${r}_${c}` !== parkCell && r !== riverRow) plaza.add(`${r}_${c}`);
+        }
+
+        // ===== 레이어 2: 강 — 일직선 (±5000, clipPath가 잘라줌) =====
+        const riverLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        if (seed % 3 !== 0) {
+            let ry = oy;
+            for (let r = 0; r <= riverRow; r++) ry += rh[r];
+            ry -= rh[riverRow] * 0.5;
+            // 본체 (두꺼운 수평 직선)
+            riverLayer.appendChild(this._el('line', { x1: -5000, y1: ry, x2: 5000, y2: ry, stroke: '#9CC8E0', 'stroke-width': 42, opacity: '0.50' }));
+            // 하이라이트
+            riverLayer.appendChild(this._el('line', { x1: -5000, y1: ry, x2: 5000, y2: ry, stroke: '#BDE0F0', 'stroke-width': 16, opacity: '0.40' }));
+        }
+        g.appendChild(riverLayer);
+
+        // ===== 레이어 2.5: 간선도로 십자가 (가로 오렌지 + 세로 노랑, 딱 2개) =====
+        const roadAccent = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        { // 가로 간선도로 1개 (오렌지)
+            const mri = 1 + ((seed * 3) % (rows - 2));
+            let mry = oy; for (let r = 0; r < mri; r++) mry += rh[r];
+            if (mri !== riverRow) {
+                roadAccent.appendChild(this._el('line', { x1: -5000, y1: mry, x2: 5000, y2: mry, stroke: '#F8C471', 'stroke-width': 20, opacity: '0.55' }));
+            }
+        }
+        { // 세로 간선도로 1개 (노랑)
+            const mci = 1 + ((seed * 7) % (cols - 2));
+            let mcx = ox; for (let c = 0; c < mci; c++) mcx += cw[c];
+            roadAccent.appendChild(this._el('line', { x1: mcx, y1: -5000, x2: mcx, y2: 5000, stroke: '#F9E79F', 'stroke-width': 18, opacity: '0.50' }));
+        }
+        g.appendChild(roadAccent);
+
+        // ===== 레이어 3: 블록 (대로/골목 차등 gap) =====
+        const blocksLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        let yy = oy;
+        for (let r = 0; r < rows; r++) {
+            let xx = ox;
+            const gT = yGap[r], gB = yGap[r + 1]; // 위/아래 gap
+            for (let c = 0; c < cols; c++) {
+                const gL = xGap[c], gR = xGap[c + 1]; // 좌/우 gap
+                const ck = `${r}_${c}`;
+                if (merged.has(ck)) { xx += cw[c]; continue; }
+
+                // 광장 → 호수(둥근 네모) 또는 미니 공원
+                if (plaza.has(ck)) {
+                    const px = xx + gL, py = yy + gT;
+                    const pw = cw[c] - gL - gR, ph = rh[r] - gT - gB;
+                    if (pw > 20 && ph > 16) {
+                        if (rng() < 0.5) blocksLayer.appendChild(this._el('rect', { x: px, y: py, width: pw, height: ph, rx: 10, fill: '#B8D8EC', opacity: '0.40' }));
+                        else this._drawPark(blocksLayer, px, py, pw, ph, rng);
+                    }
+                    xx += cw[c]; continue;
+                }
+
+                const isMg = merged.has(`${r}_${c + 1}`);
+                const gR2 = isMg ? xGap[c + 2] || gR : gR; // 병합 시 오른쪽 gap
+                const bx = xx + gL, by = yy + gT;
+                const bw = (isMg ? cw[c] + cw[c + 1] : cw[c]) - gL - gR2;
+                const bh = rh[r] - gT - gB;
+                if (bw < 20 || bh < 16) { xx += cw[c]; continue; }
+
+                // 강 행 → 분할
+                if (seed % 3 !== 0 && r === riverRow) {
+                    const ry2 = yy + rh[r] * 0.5;
+                    const aH = (ry2 - 25) - by, bY = ry2 + 25, bH2 = (by + bh) - bY;
+                    if (aH > 12) this._drawBlock(blocksLayer, bx, by, bw, aH, rng);
+                    if (bH2 > 12) this._drawBlock(blocksLayer, bx, bY, bw, bH2, rng);
+                    xx += cw[c]; continue;
+                }
+
+                if (ck === parkCell) this._drawPark(blocksLayer, bx, by, bw, bh, rng);
+                else this._drawBlock(blocksLayer, bx, by, bw, bh, rng);
+                xx += cw[c];
+            }
+            yy += rh[r];
+        }
+        g.appendChild(blocksLayer);
+
+        // 구역 이름 (최상단)
+        const zn = ['DOWNTOWN','WEST SIDE','CENTRAL','RIVERSIDE','PARK AREA','HILLSIDE','HARBOR','OLD TOWN'];
+        g.appendChild(this._el('text', { x: ox + W * 0.3, y: oy + H * 0.48, fill: '#B8B0A0', 'font-size': '11', 'font-weight': '600', 'letter-spacing': '3', opacity: '0.30' }, zn[seed % zn.length]));
+
+        this._cityBgEl = g;
+    }
+
+    // ========== 블록 (rect + rx + 건물) ==========
+    _drawBlock(parent, x, y, w, h, rng) {
+        parent.appendChild(this._el('rect', { x, y, width: w, height: h, rx: 6, fill: '#E4E0D6', filter: 'url(#wt-bs)' }));
+        if (w > 35 && h > 28) this._drawBuildings(parent, x, y, w, h, rng);
+    }
+
+    // ========== 건물 (1~3개 작은 rect 흩뿌리기) ==========
+    _drawBuildings(parent, bx, by, bw, bh, rng) {
+        const m = 5; // 블록 안쪽 여백
+        const count = 1 + Math.floor(rng() * 3); // 1~3개
+        const tones = ['#D0CBC0', '#C8C3B8', '#D5D0C6', '#CCC7BC'];
+        const placed = [];
+
+        for (let i = 0; i < count * 6; i++) {
+            if (placed.length >= count) break;
+            const wr = 0.25 + rng() * 0.25; // 블록 대비 25~50%
+            const hr = 0.25 + rng() * 0.25;
+            const w = bw * wr, h = bh * hr;
+            const x = bx + m + rng() * Math.max(0, bw - m * 2 - w);
+            const y = by + m + rng() * Math.max(0, bh - m * 2 - h);
+            // 겹침 방지
+            if (placed.some(p => x < p.x + p.w + 4 && x + w + 4 > p.x && y < p.y + p.h + 4 && y + h + 4 > p.y)) continue;
+            placed.push({ x, y, w, h });
+            parent.appendChild(this._el('rect', {
+                x, y, width: w, height: h, rx: 1.5,
+                fill: tones[Math.floor(rng() * tones.length)],
+                opacity: 0.40 + rng() * 0.12,
+            }));
+        }
+    }
+
+    // ========== 공원 (ellipse blob) ==========
+    _drawPark(parent, x, y, w, h, rng) {
+        parent.appendChild(this._el('rect', { x, y, width: w, height: h, rx: 6, fill: '#C5E0A8', filter: 'url(#wt-bs)' }));
+        // 연못
+        if (rng() < 0.6 && w > 60) {
+            parent.appendChild(this._el('ellipse', {
+                cx: x + w * (0.35 + rng() * 0.3), cy: y + h * (0.35 + rng() * 0.3),
+                rx: Math.min(w, h) * 0.14, ry: Math.min(w, h) * 0.09,
+                fill: '#9CC5E0', opacity: '0.45',
+            }));
+        }
+        // 나무
+        const tc = 3 + Math.floor(rng() * 4);
+        for (let i = 0; i < tc; i++) {
+            parent.appendChild(this._el('circle', {
+                cx: x + w * (0.1 + rng() * 0.8), cy: y + h * (0.1 + rng() * 0.8),
+                r: 2.5 + rng() * 3, fill: '#98CC88', opacity: 0.25 + rng() * 0.12,
+            }));
+        }
+    }
+
+    // ================================================================
+    //  거리 점선 + pill (Hub 핀만)
+    // ================================================================
+    _drawDistLines(hubPins, movements) {
+        const hubIds = new Set(hubPins.map(l => l.id));
+        const drawn = new Set();
+
+        for (const d of (this.lm.distances || [])) {
+            if (!hubIds.has(d.fromId) || !hubIds.has(d.toId)) continue;
+            const f = hubPins.find(l => l.id === d.fromId), t = hubPins.find(l => l.id === d.toId);
+            if (!f || !t) continue;
+            const k = [d.fromId, d.toId].sort().join('-');
+            if (drawn.has(k)) continue; drawn.add(k);
+            const lvl = d.level || 5;
+            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#C0B8A8', 'stroke-width': lvl <= 3 ? 2 : 1.5, 'stroke-dasharray': '5 3', 'stroke-linecap': 'round', opacity: lvl <= 4 ? 0.3 : 0.22 }));
+            if (d.distanceText) {
+                const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
+                const tl = d.distanceText.length * 5 + 10;
+                const pill = this._el('g', { transform: `translate(${mx},${my - 8})` });
+                pill.appendChild(this._el('rect', { x: -tl / 2, y: -7, width: tl, height: 14, rx: 7, fill: '#fff', stroke: '#E8E4D8', 'stroke-width': 0.6, filter: 'url(#wt-sh)' }));
+                pill.appendChild(this._el('text', { x: 0, y: 3, 'text-anchor': 'middle', fill: '#5E84E2', 'font-size': '7.5', 'font-weight': '600' }, d.distanceText));
+                this.svg.appendChild(pill);
+            }
+        }
+        for (const m of movements) {
+            if (!hubIds.has(m.fromId) || !hubIds.has(m.toId)) continue;
+            const f = hubPins.find(l => l.id === m.fromId), t = hubPins.find(l => l.id === m.toId);
+            if (!f || !t) continue;
+            const k = [m.fromId, m.toId].sort().join('-');
+            if (drawn.has(k)) continue; drawn.add(k);
+            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#C0B8A8', 'stroke-width': 1.5, 'stroke-dasharray': '5 3', 'stroke-linecap': 'round', opacity: 0.2 }));
+        }
+    }
+
+    // ================================================================
+    //  핀 (Hub 핀만 — 목업 그대로)
+    // ================================================================
+    _drawPins(hubPins, currentLocationId) {
+        for (const loc of hubPins) {
             const cur = loc.id === currentLocationId;
-            const r = cur ? 26 : 18;
-            const color = nodeColor(loc);
+            const ps = this._pinStyle(loc.name);
             const g = this._el('g', { class: 'wt-location-node', 'data-id': loc.id, transform: `translate(${loc.x},${loc.y})` });
 
-            // 그림자 (현재 위치만)
             if (cur) {
-                g.appendChild(this._el('circle', { r: r + 4, fill: color, opacity: '0.2', filter: 'url(#wt-glow)' }));
+                const pulse = this._el('circle', { r: 22, fill: 'none', stroke: ps.color, 'stroke-width': 2, opacity: '0.15' });
+                const aR = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                aR.setAttribute('attributeName', 'r'); aR.setAttribute('from', '18'); aR.setAttribute('to', '36');
+                aR.setAttribute('dur', '2s'); aR.setAttribute('repeatCount', 'indefinite'); pulse.appendChild(aR);
+                const aO = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                aO.setAttribute('attributeName', 'opacity'); aO.setAttribute('from', '0.3'); aO.setAttribute('to', '0');
+                aO.setAttribute('dur', '2s'); aO.setAttribute('repeatCount', 'indefinite'); pulse.appendChild(aO);
+                g.appendChild(pulse);
             }
-
-            // 메인 원
-            g.appendChild(this._el('circle', {
-                r, fill: color, class: 'wt-node-circle',
-                stroke: cur ? '#775537' : '#9e8e7e',
-                'stroke-width': cur ? 3 : 1.5,
-            }));
-
-            // 방문 횟수 (원 안에)
-            if (loc.visitCount > 0) {
-                g.appendChild(this._el('text', {
-                    class: 'wt-visit-badge', y: 5,
-                    fill: (color === '#F7EC8D') ? '#5A4030' : '#fff',
-                    'font-size': cur ? '14' : '12',
-                }, loc.visitCount));
-            }
-
-            // 장소명
-            g.appendChild(this._el('text', { class: 'wt-location-label', y: r + 16 }, loc.name));
-
-            // 🐾 현재 위치 마커
-            if (cur) g.appendChild(this._el('text', { class: 'wt-paw-marker', y: -(r + 10) }, '🐾'));
-
+            const sz = cur ? 19 : 13, ph = cur ? 26 : 18;
+            const pin = this._el('g', { transform: `translate(0,${-ph})`, filter: 'url(#wt-shp)' });
+            pin.appendChild(this._el('path', { d: `M0,${ph}C0,${ph},${-sz},${ph * 0.35},${-sz},${-sz * 0.15}A${sz},${sz},0,1,1,${sz},${-sz * 0.15}C${sz},${ph * 0.35},0,${ph},0,${ph}Z`, fill: ps.color, stroke: cur ? '#fff' : ps.border, 'stroke-width': cur ? 1.5 : 0.8 }));
+            pin.appendChild(this._el('text', { x: 0, y: -sz * 0.1 + 5, 'text-anchor': 'middle', 'font-size': cur ? '14' : '11', style: 'pointer-events:none' }, ps.emoji));
+            g.appendChild(pin);
+            if (loc.visitCount > 0) { const bx2 = sz * 0.5, by2 = -(ph + sz * 0.3); const bdg = this._el('g', { transform: `translate(${bx2},${by2})` }); bdg.appendChild(this._el('circle', { r: 8, fill: '#fff', stroke: ps.color, 'stroke-width': 1.5 })); bdg.appendChild(this._el('text', { 'text-anchor': 'middle', y: 3.5, 'font-size': '8.5', 'font-weight': '700', fill: ps.color }, loc.visitCount)); g.appendChild(bdg); }
+            const nl = loc.name.length * 6.5 + 12;
+            const lg = this._el('g', { transform: 'translate(0,6)' });
+            lg.appendChild(this._el('rect', { x: -nl / 2, y: -8, width: nl, height: 16, rx: 8, fill: '#fff', stroke: '#E8E4D8', 'stroke-width': 0.7, filter: 'url(#wt-sh)' }));
+            lg.appendChild(this._el('text', { class: 'wt-location-label', y: 3, 'font-size': '9', 'font-weight': '600' }, loc.name));
+            g.appendChild(lg);
+            if (cur) { const paw = this._el('text', { 'text-anchor': 'middle', y: -(ph + sz + 5), 'font-size': '15' }, '🐾'); const pa = document.createElementNS('http://www.w3.org/2000/svg', 'animateTransform'); pa.setAttribute('attributeName', 'transform'); pa.setAttribute('type', 'translate'); pa.setAttribute('values', '0 0;0 -4;0 0'); pa.setAttribute('dur', '1.2s'); pa.setAttribute('repeatCount', 'indefinite'); paw.appendChild(pa); g.appendChild(paw); }
             this.svg.appendChild(g);
         }
-
-        if (!locations.length) this.svg.appendChild(this._el('text', { x: 300, y: 250, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
-
-        // ViewBox 자동 맞춤
-        if (locations.length) {
-            const pad = 80;
-            const xs = locations.map(l => l.x), ys = locations.map(l => l.y);
-            const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
-            const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
-            this.vb = { x: minX, y: minY, w: Math.max(300, maxX - minX), h: Math.max(250, maxY - minY) };
-        } else {
-            this.vb = { x: 0, y: 0, w: 600, h: 500 };
-        }
-        this._applyVB();
     }
 
-    // ========== 거리 기반 약도 자동 배치 ==========
-    _autoLayout() {
-        const locs = this.lm.locations;
+    // ========== 나침반 ==========
+    _drawCompass(vb) {
+        const ccx = vb.x + 22, ccy = vb.y + vb.h - 22, s = 12;
+        const cg = this._el('g', { transform: `translate(${ccx},${ccy})`, opacity: '0.4' });
+        cg.appendChild(this._el('circle', { r: s, fill: 'rgba(242,238,228,0.75)', stroke: '#B0A090', 'stroke-width': 0.7 }));
+        cg.appendChild(this._el('polygon', { points: `0,${-s + 3} -2.5,${-s * 0.35} 2.5,${-s * 0.35}`, fill: '#E07060', opacity: 0.75 }));
+        cg.appendChild(this._el('polygon', { points: `0,${s - 3} -2.5,${s * 0.35} 2.5,${s * 0.35}`, fill: '#D0C8B8', opacity: 0.5 }));
+        cg.appendChild(this._el('text', { y: -s - 2, 'text-anchor': 'middle', fill: '#E07060', 'font-size': '5', 'font-weight': '700' }, 'N'));
+        this.svg.appendChild(cg);
+    }
+
+    // ================================================================
+    //  AUTO LAYOUT (Hub 핀만, centerX 강제 없음)
+    // ================================================================
+    _autoLayout(hubPins, curLoc) {
+        if (this._skipLayout) { this._skipLayout = false; return; }
+        const needsInit = hubPins.some(l => l.x === 0 && l.y === 0);
+        if (!needsInit && !this._layoutDirty && this._layoutDone === true) return;
+        this._layoutDirty = false; this._layoutDone = true;
+
         const dists = this.lm.distances || [];
-        if (locs.length < 2) return;
+        const geoLocs = hubPins.filter(l => l.lat != null && l.lng != null);
 
-        // 거리 level → 픽셀 거리 매핑 (1~10)
-        const levelToPx = { 1: 60, 2: 80, 3: 100, 4: 130, 5: 160, 6: 200, 7: 240, 8: 280, 9: 330, 10: 400 };
+        if (geoLocs.length >= 2) {
+            this._geoAwareLayout(hubPins, geoLocs, curLoc);
+        } else {
+            this._circularLayout(hubPins, dists, curLoc);
+        }
 
-        // 첫 노드가 (0,0)이면 초기 배치 필요
-        const needsInit = locs.some(l => l.x === 0 && l.y === 0);
-        if (!needsInit && !this._layoutDirty) return;
-        this._layoutDirty = false;
+        // 겹침 방지 (_manualXY 보존)
+        for (let iter = 0; iter < 3; iter++) {
+            for (let i = 0; i < hubPins.length; i++) for (let j = i + 1; j < hubPins.length; j++) {
+                const a = hubPins[i], b = hubPins[j];
+                const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy);
+                if (d < 70) {
+                    const push = (70 - d) / 2, nx = dx / (d || 1), ny = dy / (d || 1);
+                    if (a.id !== curLoc.id && !a._manualXY) { a.x -= Math.round(push * nx); a.y -= Math.round(push * ny); }
+                    if (b.id !== curLoc.id && !b._manualXY) { b.x += Math.round(push * nx); b.y += Math.round(push * ny); }
+                }
+            }
+        }
+        for (const loc of hubPins) this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
+    }
 
-        // 현재 위치를 중심에
-        const curId = this.lm.currentLocationId;
-        const curLoc = locs.find(l => l.id === curId) || locs[0];
-        curLoc.x = 300; curLoc.y = 250;
-
-        // 거리 데이터 없는 노드는 원형 배치
-        let angle = 0;
-        const angleStep = (2 * Math.PI) / Math.max(locs.length - 1, 1);
-
+    _geoAwareLayout(locs, geoLocs, curLoc) {
+        let baseLat, baseLng;
+        if (curLoc.lat != null && curLoc.lng != null) { baseLat = curLoc.lat; baseLng = curLoc.lng; }
+        else { baseLat = geoLocs.reduce((s, l) => s + l.lat, 0) / geoLocs.length; baseLng = geoLocs.reduce((s, l) => s + l.lng, 0) / geoLocs.length; }
+        const toM = (lat, lng) => ({ mx: (lng - baseLng) * 111320 * Math.cos(baseLat * Math.PI / 180), my: -(lat - baseLat) * 111320 });
+        let maxR = 1;
+        for (const l of geoLocs) { const { mx, my } = toM(l.lat, l.lng); maxR = Math.max(maxR, Math.abs(mx), Math.abs(my)); }
+        const scale = 180 / maxR;
+        // curLoc 좌표가 0이면 초기 배치
+        if (curLoc.x === 0 && curLoc.y === 0) { curLoc.x = 300; curLoc.y = 280; }
+        const cx = curLoc.x, cy = curLoc.y;
         for (const loc of locs) {
-            if (loc.id === curLoc.id) continue;
-            // 거리 데이터 확인
-            const dist = dists.find(d =>
-                (d.fromId === curLoc.id && d.toId === loc.id) ||
-                (d.toId === curLoc.id && d.fromId === loc.id)
-            );
-            const level = dist?.level || 3;
-            const px = levelToPx[level] || 160;
+            if (loc.id === curLoc.id || loc._manualXY) continue;
+            if (loc.x !== 0 || loc.y !== 0) continue; // 이미 배치된 건 스킵
+            if (loc.lat != null && loc.lng != null) {
+                const { mx, my } = toM(loc.lat, loc.lng);
+                loc.x = Math.round(cx + mx * scale); loc.y = Math.round(cy + my * scale);
+            } else {
+                const dist = (this.lm.distances || []).find(d => (d.fromId === curLoc.id && d.toId === loc.id) || (d.toId === curLoc.id && d.fromId === loc.id));
+                const level = dist?.level || 5;
+                const px = level * 28 + 40;
+                const angle = ((loc.id.charCodeAt(4) || 0) * 37 + 11) % 360 * Math.PI / 180;
+                loc.x = Math.round(cx + px * Math.cos(angle)); loc.y = Math.round(cy + px * Math.sin(angle));
+            }
+        }
+    }
 
-            loc.x = Math.round(300 + px * Math.cos(angle));
-            loc.y = Math.round(250 + px * Math.sin(angle));
+    _circularLayout(hubPins, dists, curLoc) {
+        if (curLoc.x === 0 && curLoc.y === 0) { curLoc.x = 300; curLoc.y = 280; }
+        const cx = curLoc.x, cy = curLoc.y;
+        const others = hubPins.filter(l => l.id !== curLoc.id && !l._manualXY && l.x === 0 && l.y === 0);
+        const angleStep = (2 * Math.PI) / Math.max(others.length, 1);
+        let angle = ((hubPins.length * 37 + 11) % 360) * Math.PI / 180;
+        for (const loc of others) {
+            const dist = dists.find(d => (d.fromId === curLoc.id && d.toId === loc.id) || (d.toId === curLoc.id && d.fromId === loc.id));
+            const level = dist?.level || 5;
+            const px = level * 28 + 40 + (Math.random() - 0.5) * 20;
+            angle += (Math.random() - 0.5) * 0.5; // 각도 흔들기
+            loc.x = Math.round(cx + px * Math.cos(angle)); loc.y = Math.round(cy + px * Math.sin(angle));
             angle += angleStep;
         }
-
-        // 스프링 시뮬레이션 (5회 반복)
-        for (let iter = 0; iter < 5; iter++) {
-            for (const d of dists) {
-                const a = locs.find(l => l.id === d.fromId);
-                const b = locs.find(l => l.id === d.toId);
-                if (!a || !b) continue;
-
-                const ideal = levelToPx[d.level || 5] || 160;
-                const dx = b.x - a.x, dy = b.y - a.y;
-                const actual = Math.sqrt(dx * dx + dy * dy) || 1;
-                const force = (actual - ideal) * 0.15;
-                const fx = (dx / actual) * force, fy = (dy / actual) * force;
-
-                if (a.id !== curLoc.id) { a.x += Math.round(fx); a.y += Math.round(fy); }
-                if (b.id !== curLoc.id) { b.x -= Math.round(fx); b.y -= Math.round(fy); }
-            }
-
-            // 겹침 방지 (최소 60px)
-            for (let i = 0; i < locs.length; i++) {
-                for (let j = i + 1; j < locs.length; j++) {
-                    const dx = locs[j].x - locs[i].x, dy = locs[j].y - locs[i].y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < 60) {
-                        const push = (60 - dist) / 2;
-                        const nx = dx / (dist || 1), ny = dy / (dist || 1);
-                        if (locs[i].id !== curLoc.id) { locs[i].x -= Math.round(push * nx); locs[i].y -= Math.round(push * ny); }
-                        if (locs[j].id !== curLoc.id) { locs[j].x += Math.round(push * nx); locs[j].y += Math.round(push * ny); }
-                    }
-                }
-            }
-        }
-
-        // DB에 위치 저장
-        for (const loc of locs) {
-            this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
-        }
-        this._layoutDirty = false;
     }
 
-    // ========== Touch Handling (롱프레스 이동) ==========
-    _touchStart(e) {
-        if (e.touches.length === 2) {
-            e.preventDefault();
-            this._pinch = this._pinchDist(e);
-            this._pan = null; this._longPress = null;
-            return;
-        }
-        if (e.touches.length === 1) {
-            const t = e.touches[0];
-            const pt = this._svgPt(t);
-            const hitId = this._hitTest(pt);
-            this._touchInfo = { x: t.clientX, y: t.clientY, time: Date.now(), nodeId: hitId, pt };
-            this._wasDrag = false;
+    _pinStyle(name) { const lo = name.toLowerCase(); if (/카페|cafe|coffee|커피/i.test(lo)) return { color: '#E74C3C', emoji: '🐱', border: '#C0392B' }; if (/서점|book|도서|library|서재/i.test(lo)) return { color: '#3498DB', emoji: '📚', border: '#2980B9' }; if (/집|home|house|숙소|기숙|방/i.test(lo)) return { color: '#27AE60', emoji: '🏠', border: '#1E8449' }; if (/공원|park|정원|garden|광장/i.test(lo)) return { color: '#2ECC71', emoji: '🌳', border: '#27AE60' }; if (/편의|convenience|마트|mart|가게|shop|store|문구|supermarket|grocery/i.test(lo)) return { color: '#F39C12', emoji: '🏪', border: '#D68910' }; if (/식당|restaurant|음식|레스토랑/i.test(lo)) return { color: '#E67E22', emoji: '🍽️', border: '#CA6F1E' }; if (/학교|school|학원|academy/i.test(lo)) return { color: '#9B59B6', emoji: '🎓', border: '#7D3C98' }; if (/병원|hospital|의원|clinic/i.test(lo)) return { color: '#1ABC9C', emoji: '🏥', border: '#17A589' }; if (/역|station|지하철|subway|버스|bus/i.test(lo)) return { color: '#34495E', emoji: '🚉', border: '#2C3E50' }; if (/술집|bar|pub|tavern|주점|주막/i.test(lo)) return { color: '#8E44AD', emoji: '🍺', border: '#6C3483' }; if (/체육|gym|운동|fitness|arena/i.test(lo)) return { color: '#E74C3C', emoji: '💪', border: '#C0392B' }; if (/성|castle|궁|palace|요새/i.test(lo)) return { color: '#7F8C8D', emoji: '🏰', border: '#616A6B' }; if (/숲|forest|산|mountain/i.test(lo)) return { color: '#1E8449', emoji: '🌲', border: '#145A32' }; if (/해변|beach|바다|sea|강|river|호수|lake/i.test(lo)) return { color: '#2980B9', emoji: '🌊', border: '#1F618D' }; if (/동굴|cave|dungeon|던전|지하/i.test(lo)) return { color: '#5D6D7E', emoji: '🕳️', border: '#4A5568' }; if (/항구|port|harbor|dock|부두/i.test(lo)) return { color: '#2471A3', emoji: '⚓', border: '#1A5276' }; return { color: '#F6A93A', emoji: '📍', border: '#D68910' }; }
 
-            if (hitId && !this._movingNodeId) {
-                // 롱프레스 감지 시작 (500ms)
-                e.preventDefault();
-                this._longPress = setTimeout(() => {
-                    this._movingNodeId = hitId;
-                    const loc = this.lm.locations.find(l => l.id === hitId);
-                    if (loc && this.onMoveRequest) this.onMoveRequest(hitId, loc.name);
-                    this._longPress = null;
-                }, 500);
-            } else if (this._movingNodeId) {
-                // 이동 모드 중 — 터치한 위치로 노드 이동
-                e.preventDefault();
-                const loc = this.lm.locations.find(l => l.id === this._movingNodeId);
-                if (loc) {
-                    loc.x = Math.round(pt.x); loc.y = Math.round(pt.y);
-                    this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
-                    this.render();
-                }
-                this._movingNodeId = null;
-            } else {
-                // 맵 팬
-                this._pan = { sx: t.clientX, sy: t.clientY, vx: this.vb.x, vy: this.vb.y };
-            }
-        }
-    }
+    // ================================================================
+    //  🏰 FANTASY (기존 유지)
+    // ================================================================
+    _renderFantasy() { const{locations,movements,currentLocationId}=this.lm;if(locations.length>=2)this._autoLayout(locations,locations.find(l=>l.id===currentLocationId)||locations[0]);const cW=Math.max(this.container?.offsetWidth||600,300),cH=Math.max(this.container?.offsetHeight||400,300),aspect=cW/cH;if(locations.length){const pad=100,xs=locations.map(l=>l.x),ys=locations.map(l=>l.y),minX=Math.min(...xs)-pad,maxX=Math.max(...xs)+pad,minY=Math.min(...ys)-pad,maxY=Math.max(...ys)+pad,w=Math.max(400,maxX-minX),h=Math.max(300,maxY-minY,w/aspect);this.vb={x:minX,y:minY,w,h};}else{this.vb={x:0,y:0,w:600,h:Math.max(400,Math.round(600/aspect))};}this._applyVB();const vb=this.vb;let svg=`<defs><filter id="wt-glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;const drawn=new Set();for(const d of(this.lm.distances||[])){const f=locations.find(l=>l.id===d.fromId),t=locations.find(l=>l.id===d.toId);if(!f||!t)continue;const k=[d.fromId,d.toId].sort().join('-');if(drawn.has(k))continue;drawn.add(k);const mx=(f.x+t.x)/2+((k.charCodeAt(0)%20)-10),my=(f.y+t.y)/2+((k.charCodeAt(1%k.length)%20)-10);svg+=`<path d="M${f.x},${f.y} Q${mx},${my} ${t.x},${t.y}" fill="none" stroke="#6B3A2A" stroke-width="2.5" stroke-dasharray="10 6" opacity="0.55" stroke-linecap="round"/>`;if(d.distanceText){const lx=(f.x+t.x)/2,ly=(f.y+t.y)/2-6;svg+=`<text x="${lx}" y="${ly}" text-anchor="middle" fill="#5D4037" font-size="9" font-family="serif" opacity="0.6" font-style="italic">${d.distanceText}</text>`;}}for(const m of movements){const f=locations.find(l=>l.id===m.fromId),t=locations.find(l=>l.id===m.toId);if(!f||!t)continue;const k=[m.fromId,m.toId].sort().join('-');if(drawn.has(k))continue;drawn.add(k);svg+=`<path d="M${f.x},${f.y} Q${(f.x+t.x)/2+((k.charCodeAt(0)%16)-8)},${(f.y+t.y)/2+((k.charCodeAt(1%k.length)%16)-8)} ${t.x},${t.y}" fill="none" stroke="#6B3A2A" stroke-width="2" stroke-dasharray="8 5" opacity="0.35" stroke-linecap="round"/>`;}for(const loc of locations){const cur=loc.id===currentLocationId,type=this._getLocType(loc.name);if(cur)svg+=`<circle cx="${loc.x}" cy="${loc.y}" r="28" fill="#CD853F" opacity="0.15" filter="url(#wt-glow)"/>`;svg+=this._fantasyIcon(loc.x,loc.y,type,cur,loc.visitCount||0,loc.id);svg+=`<text x="${loc.x}" y="${loc.y+24}" text-anchor="middle" fill="#3E2723" font-size="${cur?13:11}" font-weight="${cur?'700':'600'}" font-family="'Georgia',serif">${loc.name}</text>`;if(cur)svg+=`<text x="${loc.x}" y="${loc.y-24}" text-anchor="middle" font-size="14">🐾</text>`;}if(!locations.length)svg+=`<text x="${vb.x+vb.w/2}" y="${vb.y+vb.h/2}" text-anchor="middle" fill="#5D4037" font-size="14" font-family="serif" font-style="italic">모험을 시작해보세요... 🏰</text>`;svg+=this._compassRose(vb.x+32,vb.y+vb.h-32);this.svg.innerHTML=svg;}
+    _getLocType(n){const l=n.toLowerCase();if(/성|castle|palace|궁|요새|tower|탑/.test(l))return'castle';if(/산|mountain|peak|봉/.test(l))return'mountain';if(/숲|forest|woods|jungle/.test(l))return'forest';if(/신전|temple|church|성당|교회/.test(l))return'temple';if(/마을|village|town/.test(l))return'village';if(/집|home|house|오두막/.test(l))return'house';if(/가게|shop|market|시장/.test(l))return'shop';if(/술집|tavern|bar|pub|inn|주막/.test(l))return'tavern';if(/동굴|cave|dungeon|지하/.test(l))return'cave';if(/항구|port|harbor|부두/.test(l))return'port';if(/강|river|lake|호수|바다|sea/.test(l))return'water';if(/학교|school|도서관|library/.test(l))return'library';if(/arena|훈련|체육|gym/.test(l))return'arena';return'flag';}
+    _fantasyIcon(x,y,type,cur,v,id){const s=cur?1.15:1,em={castle:'🏰',mountain:'⛰️',forest:'🌲',temple:'⛪',village:'🏘️',house:'🏠',shop:'🏪',tavern:'🍺',cave:'🕳️',port:'⚓',water:'💧',library:'📚',arena:'⚔️',flag:'🪧'},e=em[type]||'📍',sz=cur?28:22;let svg=`<g transform="translate(${x},${y}) scale(${s})" class="wt-location-node" data-id="${id}">`;if(cur)svg+=`<circle r="20" fill="#CD853F" opacity="0.2" filter="url(#wt-glow)"/>`;svg+=`<text y="6" text-anchor="middle" font-size="${sz}" style="cursor:pointer;pointer-events:none;user-select:none">${e}</text>`;if(v>0)svg+=`<circle cx="14" cy="-8" r="7" fill="#DAA520" stroke="#5D4037" stroke-width="0.8"/><text x="14" y="-5" text-anchor="middle" fill="#3E2723" font-size="8" font-weight="700">${v}</text>`;svg+='</g>';return svg;}
+    _compassRose(cx,cy){const s=22;return`<g transform="translate(${cx},${cy})"><circle r="${s}" fill="rgba(244,228,193,0.6)" stroke="#8B6914" stroke-width="1.2"/><circle r="${s*0.15}" fill="#8B6914"/><polygon points="0,${-s+3} -4,${-s*0.35} 4,${-s*0.35}" fill="#8B0000" stroke="#5D4037" stroke-width="0.5"/><polygon points="0,${s-3} -4,${s*0.35} 4,${s*0.35}" fill="#D4C5A0" stroke="#5D4037" stroke-width="0.5"/><text y="${-s-3}" text-anchor="middle" fill="#8B0000" font-size="8" font-weight="700" font-family="serif">N</text><text y="${s+9}" text-anchor="middle" fill="#5D4037" font-size="7" font-weight="600" font-family="serif">S</text></g>`;}
 
-    _touchMove(e) {
-        if (e.touches.length === 2 && this._pinch) {
-            e.preventDefault();
-            const dist = this._pinchDist(e);
-            const scale = this._pinch / dist;
-            const cx = this.vb.x + this.vb.w / 2, cy = this.vb.y + this.vb.h / 2;
-            const nw = Math.max(200, Math.min(1200, this.vb.w * scale));
-            const nh = nw * (500 / 600);
-            this.vb = { x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh };
-            this._applyVB();
-            this._pinch = dist;
-            return;
-        }
-        if (e.touches.length === 1) {
-            const t = e.touches[0];
-            // 롱프레스 중 이동하면 취소
-            if (this._longPress && this._touchInfo) {
-                const dx = Math.abs(t.clientX - this._touchInfo.x);
-                const dy = Math.abs(t.clientY - this._touchInfo.y);
-                if (dx > 10 || dy > 10) { clearTimeout(this._longPress); this._longPress = null; }
-            }
-            if (this._pan) {
-                e.preventDefault();
-                const dx = (t.clientX - this._pan.sx) * (this.vb.w / this.svg.getBoundingClientRect().width);
-                const dy = (t.clientY - this._pan.sy) * (this.vb.h / this.svg.getBoundingClientRect().height);
-                this.vb.x = this._pan.vx - dx;
-                this.vb.y = this._pan.vy - dy;
-                this._applyVB(); this._wasDrag = true;
-            }
-        }
-    }
-
-    _touchEnd(e) {
-        clearTimeout(this._longPress); this._longPress = null;
-        if (this._touchInfo && !this._wasDrag && this._touchInfo.nodeId && !this._movingNodeId) {
-            const dt = Date.now() - this._touchInfo.time;
-            if (dt < 400) this.onLocationClick?.(this._touchInfo.nodeId);
-        }
-        this._pinch = null; this._pan = null; this._touchInfo = null;
-    }
-
-    // ========== Mouse Handling (롱프레스 이동) ==========
-    _onDown(e) {
-        const pt = this._svgPt(e);
-        const hitId = this._hitTest(pt);
-        this._wasDrag = false;
-        if (this._movingNodeId) {
-            // 이동 모드 — 클릭 위치로 노드 이동
-            const loc = this.lm.locations.find(l => l.id === this._movingNodeId);
-            if (loc) {
-                loc.x = Math.round(pt.x); loc.y = Math.round(pt.y);
-                this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
-                this.render();
-            }
-            this._movingNodeId = null;
-            return;
-        }
-        if (!hitId) {
-            this._pan = { sx: e.clientX, sy: e.clientY, vx: this.vb.x, vy: this.vb.y };
-        }
-    }
-
-    _onMove(e) {
-        if (this._pan) {
-            const dx = (e.clientX - this._pan.sx) * (this.vb.w / this.svg.getBoundingClientRect().width);
-            const dy = (e.clientY - this._pan.sy) * (this.vb.h / this.svg.getBoundingClientRect().height);
-            this.vb.x = this._pan.vx - dx; this.vb.y = this._pan.vy - dy;
-            this._applyVB(); this._wasDrag = true;
-        }
-    }
-
-    _onUp() {
-        this._pan = null;
-    }
-
-    _zoom(factor, e) {
-        const rect = this.svg.getBoundingClientRect();
-        const mx = (e.clientX - rect.left) / rect.width, my = (e.clientY - rect.top) / rect.height;
-        const nw = Math.max(200, Math.min(1200, this.vb.w * factor));
-        const nh = nw * (500 / 600);
-        this.vb.x += (this.vb.w - nw) * mx;
-        this.vb.y += (this.vb.h - nh) * my;
-        this.vb.w = nw; this.vb.h = nh;
-        this._applyVB();
-    }
-
-    // ========== Helpers ==========
-    _el(tag, attrs, text) {
-        const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-        for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
-        if (text !== undefined) el.textContent = text; return el;
-    }
-
-    _svgPt(e) {
-        const r = this.svg.getBoundingClientRect();
-        return { x: this.vb.x + (e.clientX - r.left) / r.width * this.vb.w, y: this.vb.y + (e.clientY - r.top) / r.height * this.vb.h };
-    }
-
-    _hitTest(pt) {
-        for (const loc of this.lm.locations) {
-            const dx = pt.x - loc.x, dy = pt.y - loc.y;
-            if (Math.sqrt(dx * dx + dy * dy) < 55) return loc.id;
-        }
-        return null;
-    }
-
-    _pinchDist(e) {
-        const a = e.touches[0], b = e.touches[1];
-        return Math.sqrt((a.clientX - b.clientX) ** 2 + (a.clientY - b.clientY) ** 2);
-    }
+    // ================================================================
+    //  TOUCH / MOUSE
+    // ================================================================
+    _touchStart(e){if(e.touches.length===2){e.preventDefault();this._pinch=this._pinchDist(e);this._pan=null;this._longPress=null;return;}if(e.touches.length===1){const t=e.touches[0],pt=this._svgPt(t),hitId=this._hitTest(pt);this._touchInfo={x:t.clientX,y:t.clientY,time:Date.now(),nodeId:hitId,pt};this._wasDrag=false;if(hitId&&!this._movingNodeId){e.preventDefault();this._longPress=setTimeout(()=>{this._movingNodeId=hitId;const loc=this.lm.locations.find(l=>l.id===hitId);if(loc&&this.onMoveRequest)this.onMoveRequest(hitId,loc.name);this._longPress=null;},500);}else if(this._movingNodeId){e.preventDefault();const loc=this.lm.locations.find(l=>l.id===this._movingNodeId);if(loc){loc.x=Math.round(pt.x);loc.y=Math.round(pt.y);loc._manualXY=true;this.lm.updateLocation(loc.id,{x:loc.x,y:loc.y,_manualXY:true});this._vbManual=true;this._skipLayout=true;this.render();}this._movingNodeId=null;}else{this._pan={sx:t.clientX,sy:t.clientY,vx:this.vb.x,vy:this.vb.y};}}}
+    _touchMove(e){if(e.touches.length===2&&this._pinch){e.preventDefault();const d=this._pinchDist(e),s=this._pinch/d;const cxv=this.vb.x+this.vb.w/2,cyv=this.vb.y+this.vb.h/2;const nw=Math.max(200,Math.min(2000,this.vb.w*s));const nh=nw*(this.vb.h/this.vb.w);this.vb={x:cxv-nw/2,y:cyv-nh/2,w:nw,h:nh};this._applyVB();this._pinch=d;return;}if(e.touches.length===1){const t=e.touches[0];if(this._longPress&&this._touchInfo){if(Math.abs(t.clientX-this._touchInfo.x)>10||Math.abs(t.clientY-this._touchInfo.y)>10){clearTimeout(this._longPress);this._longPress=null;}}if(this._pan){e.preventDefault();const dx=(t.clientX-this._pan.sx)*(this.vb.w/this.svg.getBoundingClientRect().width);const dy=(t.clientY-this._pan.sy)*(this.vb.h/this.svg.getBoundingClientRect().height);this.vb.x=this._pan.vx-dx;this.vb.y=this._pan.vy-dy;this._applyVB();this._wasDrag=true;}}}
+    _touchEnd(){clearTimeout(this._longPress);this._longPress=null;if(this._touchInfo&&!this._wasDrag&&this._touchInfo.nodeId&&!this._movingNodeId){if(Date.now()-this._touchInfo.time<400)this.onLocationClick?.(this._touchInfo.nodeId);}this._pinch=null;this._pan=null;this._touchInfo=null;}
+    _onDown(e){const pt=this._svgPt(e),hitId=this._hitTest(pt);this._wasDrag=false;if(this._movingNodeId){e.preventDefault();const loc=this.lm.locations.find(l=>l.id===this._movingNodeId);if(loc){loc.x=Math.round(pt.x);loc.y=Math.round(pt.y);loc._manualXY=true;this.lm.updateLocation(loc.id,{x:loc.x,y:loc.y,_manualXY:true});this._vbManual=true;this._skipLayout=true;this.render();}this._movingNodeId=null;return;}if(hitId){e.preventDefault();this._mouseClickId=hitId;}if(!hitId){this._pan={sx:e.clientX,sy:e.clientY,vx:this.vb.x,vy:this.vb.y};}}
+    _onMove(e){if(this._pan){const dx=(e.clientX-this._pan.sx)*(this.vb.w/this.svg.getBoundingClientRect().width);const dy=(e.clientY-this._pan.sy)*(this.vb.h/this.svg.getBoundingClientRect().height);this.vb.x=this._pan.vx-dx;this.vb.y=this._pan.vy-dy;this._applyVB();this._wasDrag=true;this._mouseClickId=null;}}
+    _onUp(){this._pan=null;if(this._mouseClickId&&!this._wasDrag)this.onLocationClick?.(this._mouseClickId);this._mouseClickId=null;}
+    _zoom(f,e){const r=this.svg.getBoundingClientRect();const mx=(e.clientX-r.left)/r.width,my=(e.clientY-r.top)/r.height;const nw=Math.max(200,Math.min(2000,this.vb.w*f));const nh=nw*(this.vb.h/this.vb.w);this.vb.x+=(this.vb.w-nw)*mx;this.vb.y+=(this.vb.h-nh)*my;this.vb.w=nw;this.vb.h=nh;this._applyVB();}
+    _el(tag,attrs,text){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs||{}))el.setAttribute(k,v);if(text!==undefined)el.textContent=text;return el;}
+    _svgPt(e){const r=this.svg.getBoundingClientRect();return{x:this.vb.x+(e.clientX-r.left)/r.width*this.vb.w,y:this.vb.y+(e.clientY-r.top)/r.height*this.vb.h};}
+    _hitTest(pt){for(const l of this.lm.locations){const dx=pt.x-l.x,dy=pt.y-l.y;if(Math.sqrt(dx*dx+dy*dy)<30)return l.id;}return null;}
+    _pinchDist(e){const a=e.touches[0],b=e.touches[1];return Math.sqrt((a.clientX-b.clientX)**2+(a.clientY-b.clientY)**2);}
 }

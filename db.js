@@ -54,7 +54,7 @@ export class WorldTrackerDB {
         const movs = await this.getMovementsByChatId(chatId) || [];
         const dists = await this.getDistancesByChatId(chatId) || [];
         const cfg = await this.getMapConfig(chatId);
-        return { chatId, locations: locs, movements: movs, distances: dists, mapConfig: cfg, exportedAt: Date.now(), version: '0.2.1' };
+        return { chatId, locations: locs, movements: movs, distances: dists, mapConfig: cfg, exportedAt: Date.now(), version: '0.3.0-beta' };
     }
 
     // 채팅별 복원
