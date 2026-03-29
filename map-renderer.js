@@ -327,7 +327,7 @@ export class MapRenderer {
             const k = [d.fromId, d.toId].sort().join('-');
             if (drawn.has(k)) continue; drawn.add(k);
             const lvl = d.level || 5;
-            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#C0B8A8', 'stroke-width': lvl <= 3 ? 2 : 1.5, 'stroke-dasharray': '5 3', 'stroke-linecap': 'round', opacity: lvl <= 4 ? 0.3 : 0.22 }));
+            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#A09888', 'stroke-width': 2, 'stroke-dasharray': '6 4', 'stroke-linecap': 'round', opacity: 0.45 }));
             if (d.distanceText) {
                 const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
                 const tl = d.distanceText.length * 5 + 10;
@@ -343,7 +343,7 @@ export class MapRenderer {
             if (!f || !t) continue;
             const k = [m.fromId, m.toId].sort().join('-');
             if (drawn.has(k)) continue; drawn.add(k);
-            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#C0B8A8', 'stroke-width': 1.5, 'stroke-dasharray': '5 3', 'stroke-linecap': 'round', opacity: 0.2 }));
+            this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#A09888', 'stroke-width': 1.5, 'stroke-dasharray': '6 4', 'stroke-linecap': 'round', opacity: 0.35 }));
         }
     }
 
