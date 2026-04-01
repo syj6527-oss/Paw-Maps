@@ -2,7 +2,7 @@
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
-import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat } from './index.js';
+import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat, runWithoutAutoDetect } from './index.js';
 import { MapRenderer } from './map-renderer.js';
 import { LeafletRenderer } from './leaflet-renderer.js';
 
@@ -17,7 +17,15 @@ const catGroups = [
 ];
 
 export class UIManager {
-    constructor(lm, pi) { this.lm=lm; this.pi=pi; this.mapRenderer=null; this.leafletRenderer=null; this.panelVisible=false; }
+    constructor(lm, pi) {
+        this.lm=lm;
+        this.pi=pi;
+        this.mapRenderer=null;
+        this.leafletRenderer=null;
+        this.panelVisible=false;
+        this._reviewCache = new Map();
+        this._reviewPending = new Set();
+    }
 
     // ========== 설정 패널 (SillyTavern 확장 설정) ==========
     createSettingsPanel() {
@@ -32,13 +40,22 @@ export class UIManager {
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-toast"/> 📍 이동 알림</label></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
+                <div class="wt-s-row"><label><input type="checkbox" id="wt-s-moveevent"/> 🐾 발자취 기록</label></div>
                 <div class="wt-s-row"><label><span id="wt-secret" style="cursor:default">💭</span> 기억</label>
                     <select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select>
                 </div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>🧠 감지 모델</label></div>
-                <div class="wt-s-row"><select id="wt-s-profile" class="text_pole wt-select wt-select-full"><option value="">없음 (regex만)</option></select></div>
-                <div class="wt-s-row"><button id="wt-s-profile-save" class="menu_button" style="font-size:12px;padding:4px 12px">💾 모델 저장</button><span id="wt-s-profile-status" style="font-size:11px;color:#9A8A7A;margin-left:6px"></span></div>
+                <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
+                    <select id="wt-s-profile" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="">없음 (regex만)</option></select>
+                    <button id="wt-s-profile-save" class="menu_button" style="font-size:11px;padding:6px 10px;white-space:nowrap">💾 저장</button>
+                </div>
+                <span id="wt-s-profile-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px"></span>
+                <div class="wt-divider"></div>
+                <div class="wt-s-row" style="display:flex;align-items:center;gap:6px">
+                    <label style="white-space:nowrap">🌐 요약 언어</label>
+                    <select id="wt-s-eventlang" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="auto">🔄 자동 (RP 언어)</option><option value="ko">🇰🇷 한국어</option><option value="en">🇺🇸 English</option></select>
+                </div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>📦 전체 데이터 관리</label></div>
                 <div class="wt-s-row" style="display:flex;gap:4px">
@@ -59,9 +76,10 @@ export class UIManager {
     _bindSettings() {
         const s = extension_settings[EXTENSION_NAME];
         const bind = (sel, key, def) => $(sel).prop('checked', s?.[key] ?? def).on('change', function(){ s[key]=$(this).is(':checked'); saveSettingsDebounced(); });
-        bind('#wt-s-enabled','enabled',true); bind('#wt-s-detect','autoDetect',true); bind('#wt-s-toast','showDetectToast',true); bind('#wt-s-inject','aiInjection',true);
+        bind('#wt-s-enabled','enabled',true); bind('#wt-s-detect','autoDetect',true); bind('#wt-s-toast','showDetectToast',true); bind('#wt-s-inject','aiInjection',true); bind('#wt-s-moveevent','moveEvent',true);
         $('#wt-s-inject').on('change', () => { s.aiInjection ? this.pi?.inject() : this.pi?.clear(); });
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change', () => { s.memoryMode=$('#wt-s-mem').val(); saveSettingsDebounced(); this.pi?.inject(); });
+        $('#wt-s-eventlang').val(s?.eventLang||'auto').on('change', () => { s.eventLang=$('#wt-s-eventlang').val(); saveSettingsDebounced(); });
         // 🧠 감지 모델 프로필 로드
         this._loadProfiles();
         $('#wt-s-profile').on('change', () => { $('#wt-s-profile-status').text('⚠️ 미저장').css('color','#F5A8A8'); });
@@ -138,13 +156,12 @@ export class UIManager {
                 <input type="file" id="wt-data-file" accept=".json" style="display:none"/>
             </div>
             <div class="wt-panel-body" id="wt-panel-body">
-                <div class="wt-opacity-row"><span>🔮</span><input type="range" id="wt-opacity" min="30" max="100" value="100"/><span id="wt-op-val">100%</span></div>
 
                 <div class="wt-map-toggle" id="wt-map-toggle">🗺️ 지도 ▾</div>
                 <div id="wt-map-section" style="display:none">
                     <div class="wt-map-mode-bar">
                         <button id="wt-mode-node" class="wt-mode-btn wt-mode-active">🗺️ 약도</button>
-                        <button id="wt-mode-leaflet" class="wt-mode-btn">🌍 실제</button>
+                        <button id="wt-mode-leaflet" class="wt-mode-btn">🐾 Paw Map</button>
                         <button id="wt-mode-fantasy" class="wt-mode-btn" style="display:none">🏰 지도</button>
                     </div>
                     <div id="wt-search-bar" class="wt-search-bar">
@@ -161,16 +178,20 @@ export class UIManager {
                     </div>
                     <div id="wt-leaflet-wrap" class="wt-map-wrap" style="display:none">
                         <div id="wt-leaflet-container" class="wt-map-container wt-leaflet-map"></div>
+                        <!-- 구글맵 스타일 바텀시트 -->
+                        <div id="wt-bottomsheet" class="wt-bs" style="display:none"></div>
                     </div>
                 </div>
 
                 <!-- 팝오버 (인라인!) -->
                 <div id="wt-popover" class="wt-popover-inline" style="display:none">
-                    <div class="wt-pop-header">
-                        <input type="text" id="wt-pop-title" style="font-size:14px;font-weight:700;color:var(--wt-brown);background:transparent;border:none;border-bottom:1.5px dashed transparent;outline:none;flex:1;padding:2px 0;font-family:inherit" onfocus="this.style.borderBottomColor='var(--wt-yellow-d)'" onblur="this.style.borderBottomColor='transparent'"/>
-                        <button id="wt-pop-close" class="wt-btn-icon">✕</button>
+                    <div class="wt-pop-header" style="display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:1;background:var(--wt-cream,#FEFEF2);padding:8px 4px 4px">
+                        <input type="text" id="wt-pop-title" style="font-size:16px;font-weight:800;color:var(--wt-brown);background:transparent;border:none;border-bottom:1.5px dashed transparent;outline:none;flex:1;min-width:0;padding:2px 0;font-family:inherit" onfocus="this.style.borderBottomColor='var(--wt-yellow-d)'" onblur="this.style.borderBottomColor='transparent'"/>
+                        <button id="wt-pop-close" style="width:32px;height:32px;min-width:32px;border:none;background:rgba(0,0,0,0.05);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:8px;flex-shrink:0" title="닫기">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 2.5L13.5 13.5M13.5 2.5L2.5 13.5" stroke="#9A8A7A" stroke-width="2.8" stroke-linecap="round"/></svg>
+                        </button>
                     </div>
-                    <div class="wt-pop-body">
+                    <div class="wt-pop-body" style="padding:10px 14px;display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto">
                         <div class="wt-pop-stats">
                             <div><span class="wt-stat-l">방문</span><span id="wt-pop-visits">0</span>회</div>
                             <div><span class="wt-stat-l">첫</span><span id="wt-pop-first">—</span></div>
@@ -212,14 +233,25 @@ export class UIManager {
                                 <option value="flag">🪧 이정표</option>
                             </select>
                         </div>
-                        <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="메모..." rows="2"></textarea>
+                        <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="예: 행복한 우리집, 비밀 아지트..." rows="2"></textarea>
+                        <div id="wt-pop-ainotes-section" style="margin-top:2px">
+                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">🤖 특이사항 <span style="font-size:10px;color:#B0A898">(AI에게만 전달)</span></div>
+                            <textarea id="wt-pop-ainotes" class="wt-input wt-textarea" placeholder="예: 0900 붐빔, 바리스타 민수, 2층 창가석 단골..." rows="3" style="font-size:11px;line-height:1.5"></textarea>
+                        </div>
                         <div id="wt-pop-events-section" style="margin-top:4px">
                             <div style="font-size:12px;color:#9A8A7A;margin-bottom:4px">📝 이벤트 기록</div>
-                            <div id="wt-pop-events-list" style="display:flex;flex-direction:column;gap:3px;max-height:120px;overflow-y:auto"></div>
+                            <div id="wt-pop-events-list" style="display:flex;flex-direction:column;gap:3px;max-height:300px;overflow-y:auto"></div>
                             <div style="display:flex;gap:4px;margin-top:4px">
                                 <input type="text" id="wt-pop-event-input" class="wt-input" placeholder="이벤트 추가..." style="flex:1;font-size:12px;padding:5px 8px"/>
                                 <button id="wt-pop-event-add" class="wt-btn-accent wt-btn-s">+</button>
                             </div>
+                        </div>
+                        <div id="wt-pop-review-section" style="margin-top:6px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                                <span style="font-size:12px;color:#9A8A7A">⭐ 랜덤 리뷰</span>
+                                <button id="wt-pop-review-gen" style="font-size:10px;color:#1A73E8;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:500">🔄 새 리뷰 생성</button>
+                            </div>
+                            <div id="wt-pop-review-list" style="display:flex;flex-direction:column;gap:6px"></div>
                         </div>
                         <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
                         <div style="font-size:12px;color:#9A8A7A;margin-top:2px">🏷️ 별칭 (쉼표 구분)</div>
@@ -256,6 +288,20 @@ export class UIManager {
                 <div id="wt-loc-wrap" style="display:none"><div id="wt-loc-list" class="wt-loc-list"></div></div>
                 <div class="wt-section-toggle" id="wt-move-toggle">🚶 이동 히스토리 <span id="wt-move-arrow">▾</span></div>
                 <div id="wt-move-wrap" style="display:none"><div id="wt-move-list" class="wt-move-list"></div></div>
+            </div>
+            <!-- 🐾 Paw Map 하단 탭 (Leaflet 모드에서만 보임) -->
+            <div id="wt-paw-nav" style="display:none;border-top:1px solid #E0E0E0;background:#fff;flex-shrink:0;z-index:40">
+                <div style="display:flex">
+                    <div class="wt-paw-tab wt-paw-tab-on" data-tab="explore" onclick="window.__wtNavTab&&window.__wtNavTab('explore',this)" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 12px;min-height:68px;cursor:pointer;background:#fff">
+                        <span style="font-size:20px">🐾</span><span style="font-size:12px;font-weight:700;color:#1A73E8">탐색</span>
+                    </div>
+                    <div class="wt-paw-tab" data-tab="mypage" onclick="window.__wtNavTab&&window.__wtNavTab('mypage',this)" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 12px;min-height:68px;cursor:pointer;background:#fff">
+                        <span style="font-size:20px">🔖</span><span style="font-size:12px;font-weight:500;color:#5F6368">내 페이지</span>
+                    </div>
+                    <div class="wt-paw-tab" data-tab="timeline" onclick="window.__wtNavTab&&window.__wtNavTab('timeline',this)" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 12px;min-height:68px;cursor:pointer;background:#fff">
+                        <span style="font-size:20px">🕐</span><span style="font-size:12px;font-weight:500;color:#5F6368">타임라인</span>
+                    </div>
+                </div>
             </div>
         </div>`;
         $('body').append(html);
@@ -303,6 +349,12 @@ export class UIManager {
         $('#wt-pop-geo-input').on('keydown', (e) => { if (e.key === 'Enter') this._geoSearch(); });
         $('#wt-pop-event-add').on('click', () => this._addEvent());
         $('#wt-pop-event-input').on('keydown', (e) => { if (e.key === 'Enter') this._addEvent(); });
+        $('#wt-pop-review-gen').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const locId = $('#wt-popover').attr('data-id');
+            if (locId) this._generateReviews(locId, 'popover');
+        });
         $('#wt-pop-dist-add').on('click', () => this._addDist());
         $(document).on('input', '#wt-pop-dist-level', function() {
             const v = parseInt($(this).val());
@@ -319,17 +371,17 @@ export class UIManager {
         // 🔄 약도 재배치 (전체 핀 리셋 + 배경 캐시 무효화)
         $('#wt-btn-refresh').on('click', () => {
             if (this.mapRenderer) {
-                // 모든 핀 위치 리셋 → 새 levelToPx 적용 (③ 15분 반경)
+                // 모든 핀 위치 리셋 + localStorage 초기화
                 for (const loc of this.lm.locations) {
                     loc._manualXY = false;
                     loc.x = 0; loc.y = 0;
                     this.lm.updateLocation(loc.id, { _manualXY: false, x: 0, y: 0 });
+                    this.mapRenderer._clearPinPos(loc.id);
                 }
                 this.mapRenderer._layoutDirty = true;
                 this.mapRenderer._layoutDone = false;
                 this.mapRenderer._skipLayout = false;
                 this.mapRenderer._vbManual = false;
-                // ① 배경 캐시 무효화 → 새 배경 생성
                 if (this.mapRenderer.invalidateCity) this.mapRenderer.invalidateCity();
                 this.mapRenderer.render();
                 toastSuccess('🗺️ 약도 재생성!');
@@ -358,12 +410,10 @@ export class UIManager {
         $('#wt-search-input').on('focus', () => {
             setTimeout(() => { document.getElementById('wt-search-input')?.scrollIntoView({behavior:'smooth',block:'center'}); }, 300);
         });
-        $('#wt-opacity').on('input', function(){ const v=$(this).val(); $('#wt-op-val').text(v+'%'); $('#wt-panel').css('opacity',v/100); extension_settings[EXTENSION_NAME].panelOpacity=+v; saveSettingsDebounced(); });
-        const op = extension_settings[EXTENSION_NAME]?.panelOpacity ?? 100;
-        $('#wt-opacity').val(op); $('#wt-op-val').text(op+'%');
-
         // ========== Feature 2: 문장 드래그 → 이벤트 저장 ==========
         this._setupTextSelection();
+        // ========== 구글맵 바텀시트 바인딩 ==========
+        this._bindBottomSheet();
     }
 
     // ========== 문장 드래그 → 이벤트 저장 ==========
@@ -529,7 +579,6 @@ export class UIManager {
 
     // 채팅 전환 시 지도 완전 리셋
     resetMap() {
-        // 🐛 Bug1 Fix: 컨테이너 DOM도 클리어 → SVG 잔존 방지
         const nodeContainer = document.querySelector('#wt-map-container');
         if (nodeContainer) nodeContainer.innerHTML = '';
         this.mapRenderer = null;
@@ -537,6 +586,19 @@ export class UIManager {
         const leafletContainer = document.querySelector('#wt-leaflet-container');
         if (leafletContainer) leafletContainer.innerHTML = '';
         $('#wt-scan-overlay').remove();
+        // ★ Paw Map 완전 정리
+        this._hideBottomSheet();
+        $('#wt-paw-mypage').remove();
+        $('#wt-pawmap-tag').remove();
+        this._isLeafletFull = false;
+        this._isGeneratingReview = false;
+        $('#wt-panel-body').removeClass('wt-leaflet-full');
+        $('#wt-paw-nav').hide();
+        // ★ 숨겨진 요소 전부 복원
+        $('#wt-loc-toggle,#wt-move-toggle,#wt-add-toggle,.wt-scene-loc,#wt-map-toggle,#wt-btn-refresh').show();
+        // leaflet wrap 스타일 복원
+        const lWrap = document.querySelector('#wt-leaflet-wrap');
+        if (lWrap) { lWrap.style.flex = ''; lWrap.style.display = 'none'; lWrap.style.flexDirection = ''; }
     }
 
     async refresh() {
@@ -553,6 +615,7 @@ export class UIManager {
             if (!this.mapRenderer && container) {
                 this.mapRenderer = new MapRenderer(container, this.lm);
                 this.mapRenderer.onLocationClick = id => this._yakdoRecenter(id);
+                this.mapRenderer.onPopupCardClick = id => { this.showPop(id); };
                 this.mapRenderer.onMoveRequest = (id, name) => {
                     wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
                 };
@@ -571,7 +634,14 @@ export class UIManager {
 
         const cur = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
         $('#wt-scene-name').text(cur?.name || '—').css('color', cur?.color || '');
-        this._updLocList(); this._updMoveList();
+        // ★ Leaflet 풀스크린이면 장소목록/이동히스토리 숨김 유지
+        if (this._isLeafletFull) {
+            $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
+            $('#wt-paw-nav').show();
+        } else {
+            this._updLocList(); this._updMoveList();
+            $('#wt-paw-nav').hide();
+        }
     }
 
     // ========== 맵 모드 전환 ==========
@@ -583,6 +653,24 @@ export class UIManager {
         $('.wt-mode-btn').removeClass('wt-mode-active');
         $(`#wt-mode-${mode}`).addClass('wt-mode-active');
 
+        // ★ Leaflet 풀스크린 해제 (다른 모드로 전환 시)
+        if (mode !== 'leaflet') {
+            this._isLeafletFull = false;
+            $('#wt-panel-body').removeClass('wt-leaflet-full');
+            $('#wt-loc-toggle,#wt-move-toggle,#wt-add-toggle,.wt-scene-loc').show();
+            $('#wt-map-toggle').show();
+            $('#wt-btn-refresh').show();
+            $('#wt-paw-nav').hide();
+            // ★ 바텀시트 + 내페이지 완전 정리
+            this._hideBottomSheet();
+            $('#wt-paw-mypage').remove();
+            // leaflet wrap 스타일 복원
+            const lWrap = document.querySelector('#wt-leaflet-wrap');
+            if (lWrap) { lWrap.style.flex = ''; lWrap.style.display = 'none'; lWrap.style.flexDirection = ''; }
+            const lCont = document.querySelector('#wt-leaflet-container');
+            if (lCont) { lCont.style.flex = ''; lCont.style.height = '320px'; lCont.style.minHeight = '320px'; }
+        }
+
         if (mode === 'node') {
             $('#wt-leaflet-wrap').hide();
             $('#wt-map-wrap').show();
@@ -593,6 +681,7 @@ export class UIManager {
                 if (container) {
                     this.mapRenderer = new MapRenderer(container, this.lm);
                     this.mapRenderer.onLocationClick = id => this._yakdoRecenter(id);
+                this.mapRenderer.onPopupCardClick = id => { this.showPop(id); };
                     this.mapRenderer.onMoveRequest = (id, name) => {
                         wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
                     };
@@ -602,6 +691,23 @@ export class UIManager {
         } else if (mode === 'leaflet') {
             $('#wt-map-wrap').hide();
             $('#wt-leaflet-wrap').show();
+            // ★ 구글맵 스타일: 풀스크린
+            this._isLeafletFull = true;
+            $('#wt-panel-body').addClass('wt-leaflet-full');
+            $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
+            $('#wt-map-section').show(); // 지도 섹션은 보여야 함
+            $('#wt-map-toggle').hide(); // 접기 버튼 숨김
+            $('#wt-btn-refresh').hide(); // 약도 재생성 숨김
+            $('#wt-paw-nav').show(); // 하단 탭 표시
+            // 지도 컨테이너 풀사이즈
+            const lWrap = document.querySelector('#wt-leaflet-wrap');
+            const lContainer = document.querySelector('#wt-leaflet-container');
+            if (lWrap) { lWrap.style.flex = '1'; lWrap.style.display = 'flex'; lWrap.style.flexDirection = 'column'; }
+            if (lContainer) { lContainer.style.flex = '1'; lContainer.style.height = 'auto'; lContainer.style.minHeight = '0'; }
+            // 3. Paw Map 태그 (좌하단)
+            if (!$('#wt-pawmap-tag').length) {
+                $('#wt-leaflet-wrap').append('<div id="wt-pawmap-tag" style="position:absolute;bottom:8px;left:8px;z-index:20;font-size:11px;font-weight:600;color:rgba(0,0,0,.35);font-family:Outfit,sans-serif;pointer-events:none">🐾 Paw Map</div>');
+            }
             if (!this.leafletRenderer) {
                 const ok = await loadLeaflet();
                 if (!ok) { toastWarn('Leaflet CDN 로드 실패!'); this._setMapMode('node'); return; }
@@ -609,14 +715,15 @@ export class UIManager {
                 const container = document.querySelector('#wt-leaflet-container');
                 if (container) {
                     container.style.width = '100%';
-                    container.style.height = '320px';
+                    container.style.height = '100%';
                     container.style.minHeight = '320px';
                 }
                 // rAF 2번 → 브라우저 레이아웃 확정 후 init
                 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
                 this.leafletRenderer = new LeafletRenderer(document.querySelector('#wt-leaflet-container'), this.lm);
                 await this.leafletRenderer.init();
-                this.leafletRenderer.onLocationClick = id => this.showPop(id);
+                // ★ 핀 클릭 → 바텀시트 (구글맵 스타일)
+                this.leafletRenderer.onLocationClick = id => this._showBottomSheet(id);
                 // #1: 마커 롱프레스 → 이동 모드 → 빈 곳 터치 → 이동
                 this.leafletRenderer.onMoveStart = (locId, name) => {
                     wtNotify(`📍 "${name}" 이동 모드 — 원하는 곳을 터치하세요`, 'info', 3000);
@@ -659,6 +766,7 @@ export class UIManager {
                 if (container) {
                     this.mapRenderer = new MapRenderer(container, this.lm);
                     this.mapRenderer.onLocationClick = id => this._yakdoRecenter(id);
+                this.mapRenderer.onPopupCardClick = id => { this.showPop(id); };
                     this.mapRenderer.onMoveRequest = (id, name) => {
                         wtNotify(`📍 "${name}" 이동 모드 — 맵을 터치하세요`, 'info', 3000);
                     };
@@ -697,6 +805,7 @@ export class UIManager {
     async _yakdoRecenter(locId) {
         const loc = this.lm.locations.find(l => l.id === locId);
         if (!loc) return;
+        if (this._reviewPending.has(locId)) return;
         if (this.mapRenderer?.recenterOn) {
             this.mapRenderer.recenterOn(locId);
         }
@@ -762,9 +871,10 @@ export class UIManager {
         const l = this.lm.locations.find(x=>x.id===id); if(!l) return;
         $('#wt-popover').attr('data-id', id);
         $('#wt-pop-title').val(l.name); $('#wt-pop-visits').text(l.visitCount||0);
-        $('#wt-pop-first').text(l.firstVisited?this._fmt(l.firstVisited):'—');
-        $('#wt-pop-last').text(l.lastVisited?this._fmt(l.lastVisited):'—');
+        $('#wt-pop-first').text(l.rpFirstVisited || (l.firstVisited?this._fmt(l.firstVisited):'—'));
+        $('#wt-pop-last').text(l.rpLastVisited || (l.lastVisited?this._fmt(l.lastVisited):'—'));
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
+        $('#wt-pop-ainotes').val(l.aiNotes||'');
         $('#wt-pop-aliases').val((l.aliases||[]).join(', '));
         // Task 5: 아이콘 타입 선택 복원
         $('#wt-pop-icon-type').val(l.locationType || '');
@@ -777,6 +887,7 @@ export class UIManager {
         if (l.address) { $('#wt-pop-cur-addr').show(); $('#wt-pop-addr-text').text(l.address); } else { $('#wt-pop-cur-addr').hide(); }
         this._updDistSection(id);
         this._updEventsList(id);
+        this._renderCachedReviews(id, '#wt-pop-review-list');
         // 지도 섹션 상태 저장 후 숨김
         this._mapWasVisible = $('#wt-map-section').is(':visible');
         if (this._mapWasVisible) {
@@ -786,7 +897,7 @@ export class UIManager {
         $('#wt-popover').show();
         const pop = document.getElementById('wt-popover');
         const body = document.getElementById('wt-panel-body');
-        if (pop && body) body.scrollTop = pop.offsetTop - 10;
+        if (pop && body) body.scrollTop = pop.offsetTop - 5;
     }
     hidePop() {
         $('#wt-popover').hide();
@@ -802,6 +913,335 @@ export class UIManager {
         }
     }
 
+    // ========== 구글맵 스타일 바텀시트 ==========
+    _showBottomSheet(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        const bs = $('#wt-bottomsheet');
+        bs.attr('data-id', locId);
+
+        const style = this.leafletRenderer?._locStyle?.(loc.name) || { emoji: '📍' };
+        const v = loc.visitCount || 0;
+        const cur = loc.id === this.lm.currentLocationId;
+        const visitLabel = v === 0 ? '새 장소' : `방문 ${v}회`;
+        const events = (loc.events || []).filter(e => e.source !== 'move');
+
+        // 주변 장소
+        let nearbyHtml = '';
+        const nearList = [];
+        for (const d of (this.lm.distances || [])) {
+            const otherId = d.fromId === locId ? d.toId : d.toId === locId ? d.fromId : null;
+            if (!otherId) continue;
+            const other = this.lm.locations.find(l => l.id === otherId);
+            if (other) nearList.push({ name: other.name, text: d.distanceText || '—', level: d.level || 5, color: other.color || '#9AA0A6' });
+        }
+        // ★ 도보 15분 이내만 (level 1~6)
+        const walkNear = nearList.filter(n => n.level <= 6);
+        if (walkNear.length) {
+            nearbyHtml = `<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:#5A4030;margin-bottom:4px">📌 주변 장소</div>` +
+                walkNear.sort((a,b) => a.level - b.level).slice(0, 4).map(n =>
+                    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;color:#3C4043"><div style="width:8px;height:8px;border-radius:50%;background:${n.color};flex-shrink:0"></div>${n.name}<span style="font-size:9px;color:#9AA0A6;margin-left:auto">${n.text}</span></div>`
+                ).join('') + '</div>';
+        }
+
+        // 이벤트 HTML
+        let eventsHtml = '';
+        if (events.length) {
+            eventsHtml = events.slice(-5).reverse().map(ev => {
+                const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : '');
+                const hasDetail = ev.text && ev.text !== ev.title && ev.text.length > 15;
+                return `<div class="wt-bs-ev-card" style="background:#FAFAF5;border-radius:7px;padding:7px 9px;border:1px solid #EAE6DC;margin-bottom:4px;cursor:${hasDetail ? 'pointer' : 'default'}">
+                    <div style="display:flex;align-items:center;gap:5px"><span style="font-size:12px">${ev.mood||'📝'}</span><span style="flex:1;font-weight:600;font-size:10.5px;color:#5A4030">${ev.title||ev.text||''}</span><span style="font-size:8px;color:#B0A898">${dateStr}</span>${hasDetail ? '<span class="wt-bs-ev-arrow" style="font-size:8px;color:#B0A898">▼</span>' : ''}</div>
+                    ${hasDetail ? `<div class="wt-bs-ev-detail" style="display:none;margin-top:5px;padding-top:5px;border-top:1px dashed #EAE6DC;font-size:9.5px;line-height:1.6;color:#7A7060">${ev.text}</div>` : ''}
+                </div>`;
+            }).join('');
+        } else {
+            eventsHtml = '<div style="font-size:11px;color:#9AA0A6;padding:12px;text-align:center;font-style:italic">아직 기억이 없어요</div>';
+        }
+
+        // 특이사항
+        let specialHtml = '';
+        if (loc.aiNotes) {
+            specialHtml = `<div style="margin-top:6px;padding:7px 9px;background:rgba(94,132,226,.06);border-radius:7px;border:1px solid rgba(94,132,226,.1)">
+                <div style="font-size:9px;color:#5E84E2;font-weight:600;margin-bottom:2px">🤖 특이사항 <span style="font-size:7px;background:#5E84E2;color:#fff;padding:1px 4px;border-radius:3px">AI 참고</span></div>
+                <div style="font-size:10px;color:#5E84E2;line-height:1.5">${loc.aiNotes}</div>
+            </div>`;
+        }
+
+        const html = `
+            <div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;cursor:pointer;min-height:44px"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:2px 14px 8px">
+                <span style="font-size:24px;flex-shrink:0;margin-top:2px">${style.emoji}</span>
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:17px;font-weight:800;color:#202124;line-height:1.25">${loc.name}</div>
+                    <div style="font-size:11px;color:#70757A;margin-top:2px">${visitLabel}${cur ? ' · 현재 위치 🐾' : ''}${walkNear.length ? ' · Near ' + walkNear[0].name : ''}</div>
+                </div>
+                <button id="wt-bs-x" style="width:28px;height:28px;border:none;background:rgba(0,0,0,.04);border-radius:50%;font-size:12px;color:#70757A;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+            </div>
+            ${loc.memo ? `<div style="padding:0 14px 6px"><div style="font-size:11px;color:#5A4030;font-style:italic;border-left:3px solid #D4D0C8;padding-left:8px">"${loc.memo}"</div></div>` : ''}
+            <div style="display:flex;gap:5px;padding:2px 14px 8px;overflow-x:auto">
+                <button class="wt-bs-pill-btn" data-action="move" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#2B8A6E;font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;font-family:inherit${cur ? ';opacity:.4' : ''}">🐾 이동</button>
+                <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
+                <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#E8F4F0;font-size:10.5px;font-weight:600;color:#2B8A6E;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 저장됨</button>
+                <button class="wt-bs-pill-btn" data-action="dist" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">📏 거리</button>
+            </div>
+            <div id="wt-bs-tabs" style="display:flex;border-bottom:2px solid #F0EDE5">
+                <div class="wt-bs-tab" data-tab="overview" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#2B8A6E;cursor:pointer;border-bottom:2.5px solid #2B8A6E;margin-bottom:-2px">개요</div>
+                <div class="wt-bs-tab" data-tab="events" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">이벤트</div>
+                <div class="wt-bs-tab" data-tab="review" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">리뷰</div>
+            </div>
+            <div id="wt-bs-tab-overview" style="padding:10px 14px;max-height:200px;overflow-y:auto">
+                ${loc.address ? `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📍</span><div>${loc.address}</div></div>` : ''}
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📊</span><div>방문 ${v}회<div style="font-size:9px;color:#B0A898">첫 ${loc.rpFirstVisited || (loc.firstVisited ? this._fmt(loc.firstVisited) : '—')} · 최근 ${loc.rpLastVisited || (loc.lastVisited ? this._fmt(loc.lastVisited) : '—')}</div></div></div>
+                ${specialHtml}
+                ${nearbyHtml}
+            </div>
+            <div id="wt-bs-tab-events" style="display:none;padding:10px 14px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px;padding:8px 10px;background:#FAFAF5;border-radius:8px;border:1px solid #EAE6DC">
+                    <div style="font-size:10px;font-weight:600;color:#5A4030;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">🌡️ 분위기 지수 <span style="font-size:9px;color:#9AA0A6;font-weight:400">최근 7일</span></div>
+                    <div style="display:flex;align-items:flex-end;gap:3px;height:36px">
+                        ${(() => { const moods = events.slice(-7); const bars = []; for(let i=0;i<7;i++){const ev=moods[i]; const h=ev?(['💕','😊'].some(m=>m===ev.mood)?30:['⚡','🔍'].some(m=>m===ev.mood)?70:45):12; const c=ev?(['💕','😊'].some(m=>m===ev.mood)?'#A8D8EA':['⚡','🔍'].some(m=>m===ev.mood)?'#F5A8A8':'#F5C6AA'):'#E8E4D8'; bars.push(`<div style="flex:1;height:${h}%;background:${c};border-radius:2px 2px 0 0"></div>`);} return bars.join(''); })()}
+                    </div>
+                    <div style="font-size:8px;color:#9AA0A6;text-align:center;margin-top:4px">${events.length ? `이벤트 ${events.length}건 기반` : '데이터 수집 중...'}</div>
+                </div>
+                ${eventsHtml}
+            </div>
+            <div id="wt-bs-tab-review" style="display:none;padding:10px 14px;max-height:200px;overflow-y:auto">
+                <div style="text-align:center;padding:8px">
+                    <button id="wt-bs-gen-review" style="padding:8px 16px;background:#E8F0FE;border:1.5px solid #1A73E8;border-radius:18px;font-size:11px;font-weight:600;color:#1A73E8;cursor:pointer;font-family:inherit">🔄 랜덤 리뷰 생성</button>
+                </div>
+                <div id="wt-bs-review-list"></div>
+            </div>`;
+
+        bs.html(html).show().css({ background: '#fff' });
+        this._applyBsStage(1); // peek
+        this._bindBsDrag(bs[0]); // ★ 터치 드래그 바인딩!
+        bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
+
+        // 이벤트 바인딩 (핸들은 글로벌 _bindBottomSheet가 처리)
+        const self = this;
+        bs.find('#wt-bs-x').on('click', (e) => { e.stopPropagation(); e.stopImmediatePropagation(); self._hideBottomSheet(); });
+        bs.find('.wt-bs-pill-btn').on('click', function(e) {
+            e.stopPropagation();
+            const action = $(this).data('action');
+            const id = bs.attr('data-id');
+            if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
+            if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
+            if (action === 'dist' && id) { self._hideBottomSheet(); self.showPop(id); }
+        });
+        bs.find('.wt-bs-tab').on('click', function(e) {
+            e.stopPropagation();
+            const tab = $(this).data('tab');
+            bs.find('.wt-bs-tab').css({ color: '#B0A898', borderBottomColor: 'transparent' });
+            $(this).css({ color: '#2B8A6E', borderBottomColor: '#2B8A6E' });
+            bs.find('[id^="wt-bs-tab-"]').hide();
+            bs.find(`#wt-bs-tab-${tab}`).show();
+            // 이벤트/리뷰 탭은 full로 확장
+            if (tab !== 'overview' && self._bsStage < 3) self._applyBsStage(3);
+        });
+        // 7. 이벤트 아코디언 클릭 → 펼치기
+        bs.find('.wt-bs-ev-card').on('click', function() {
+            const det = $(this).find('.wt-bs-ev-detail');
+            const arrow = $(this).find('.wt-bs-ev-arrow');
+            if (det.length) {
+                det.slideToggle(200);
+                arrow.text(det.is(':visible') ? '▼' : '▲');
+            }
+        });
+        bs.find('#wt-bs-gen-review').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            self._generateReviews(locId, 'bottomsheet');
+        });
+        this._renderCachedReviews(locId, '#wt-bs-review-list');
+    }
+
+    _hideBottomSheet() {
+        const bs = document.getElementById('wt-bottomsheet');
+        if (bs) { bs.style.display = 'none'; bs.innerHTML = ''; }
+        this._bsStage = 0;
+    }
+
+    // ★ 바텀시트 3단계 + 터치 드래그 (구글맵 스타일)
+    _bsStage = 0;
+    _bsDragStartY = 0;
+    _bsDragStartH = 0;
+    _bsDragging = false;
+
+    _applyBsStage(stage) {
+        const bs = document.getElementById('wt-bottomsheet');
+        if (!bs || bs.style.display === 'none') return;
+        this._bsStage = stage;
+        bs.style.transition = 'max-height 0.3s cubic-bezier(0.4,0,0.2,1)';
+        const pH = bs.parentElement?.offsetHeight || window.innerHeight;
+        if (stage === 0) { this._hideBottomSheet(); return; }
+        if (stage === 1) { bs.style.maxHeight = '185px'; bs.style.overflowY = 'hidden'; }
+        if (stage === 2) { bs.style.maxHeight = Math.round(pH * 0.55) + 'px'; bs.style.overflowY = 'auto'; }
+        if (stage === 3) { bs.style.maxHeight = Math.round(pH - 10) + 'px'; bs.style.overflowY = 'auto'; }
+    }
+
+    _toggleBsStage() {
+        const bs = document.getElementById('wt-bottomsheet');
+        if (!bs || bs.style.display === 'none') return;
+        // ★ peek→half→full→닫기
+        if (this._bsStage >= 3) {
+            this._hideBottomSheet(); // full에서 클릭 → 완전 닫기
+        } else {
+            this._applyBsStage(this._bsStage + 1);
+        }
+    }
+
+    // ★ 터치 드래그 바인딩 (바텀시트 열릴 때마다 호출)
+    _bindBsDrag(bsEl) {
+        const self = this;
+        const handle = bsEl.querySelector('.wt-bs-handle');
+        if (!handle) return;
+
+        // 핸들 터치 시작
+        handle.addEventListener('touchstart', (e) => {
+            self._bsDragging = true;
+            self._bsDragStartY = e.touches[0].clientY;
+            self._bsDragStartH = bsEl.offsetHeight;
+            bsEl.style.transition = 'none';
+        }, { passive: true });
+
+        // ★ 핸들에서만 touchmove (콘텐츠 스크롤 충돌 방지)
+        handle.addEventListener('touchmove', (e) => {
+            if (!self._bsDragging) return;
+            e.preventDefault();
+            const deltaY = self._bsDragStartY - e.touches[0].clientY;
+            const parentH = bsEl.parentElement?.offsetHeight || window.innerHeight;
+            const newH = Math.max(80, Math.min(parentH - 10, self._bsDragStartH + deltaY));
+            bsEl.style.maxHeight = newH + 'px';
+            bsEl.style.overflowY = newH > 200 ? 'auto' : 'hidden';
+        }, { passive: false });
+
+        // 터치 끝 → 스냅
+        const onEnd = () => {
+            if (!self._bsDragging) return;
+            self._bsDragging = false;
+            const h = bsEl.offsetHeight;
+            const pH = bsEl.parentElement?.offsetHeight || window.innerHeight;
+
+            if (h < 80) {
+                self._hideBottomSheet();
+            } else if (h < pH * 0.3) {
+                self._applyBsStage(1);
+            } else if (h < pH * 0.7) {
+                self._applyBsStage(2);
+            } else {
+                self._applyBsStage(3);
+            }
+        };
+        handle.addEventListener('touchend', onEnd, { passive: true });
+        handle.addEventListener('touchcancel', onEnd, { passive: true });
+
+        // 핸들 클릭 (PC 폴백)
+        handle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!self._bsDragging) self._toggleBsStage();
+        });
+    }
+
+    _navLock = false;
+    _bindBottomSheet() {
+        const self = this;
+
+        // ★ 최후의 수단: window 전역 함수 (ST DOM 간섭 완전 우회)
+        window.__wtNavTab = (tab, el) => {
+            if (self._navLock) return;
+            self._navLock = true; setTimeout(() => self._navLock = false, 300);
+            console.log('[wt] Nav tab:', tab);
+
+            document.querySelectorAll('.wt-paw-tab span:last-child').forEach(s => { s.style.color = '#5F6368'; s.style.fontWeight = '500'; });
+            if (el) { const s = el.querySelector('span:last-child'); if (s) { s.style.color = '#1A73E8'; s.style.fontWeight = '700'; } }
+
+            // ★ 모든 탭에서 공통: 바텀시트 + 내페이지 정리
+            const bs = document.getElementById('wt-bottomsheet');
+            if (bs) { bs.style.display = 'none'; bs.innerHTML = ''; }
+            self._bsStage = 0;
+            const mp = document.getElementById('wt-paw-mypage');
+            if (mp) mp.remove();
+
+            if (tab === 'explore') {
+                $('#wt-map-section').show();
+                setTimeout(() => self.leafletRenderer?.invalidateSize(), 200);
+                console.log('[wt] Explore: map shown');
+            } else if (tab === 'mypage') {
+                self._showMyPageBS();
+            } else if (tab === 'timeline') {
+                if (bs) {
+                    bs.innerHTML = '<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;cursor:pointer;min-height:44px;position:sticky;top:0;z-index:10;background:#fff"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div><div style="padding:20px;text-align:center;color:#9AA0A6;font-size:14px">🕐 타임라인 — 다음 업데이트!</div>';
+                    bs.style.display = 'block';
+                    bs.style.background = '#fff';
+                    self._applyBsStage(2);
+                    self._bindBsDrag(bs);
+                }
+            }
+        };
+
+        window.__wtBsHandle = () => {
+            console.log('[wt] Handle toggle, stage:', self._bsStage);
+            self._toggleBsStage();
+        };
+
+        // 지도 클릭 → 바텀시트 닫기
+        $(document).off('click.wtMap', '#wt-leaflet-container').on('click.wtMap', '#wt-leaflet-container', (e) => {
+            if ($(e.target).closest('.wt-bs, .wt-bs-handle, .wt-gmap-pin, .leaflet-marker-icon, .leaflet-popup').length) return;
+            self._hideBottomSheet();
+        });
+    }
+
+    // ========== 🔖 내 페이지 (바텀시트 형식) ==========
+    _showMyPageBS() {
+        $('#wt-paw-mypage').remove();
+        const locs = [...this.lm.locations].sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+        const totalVisits = locs.reduce((s, l) => s + (l.visitCount || 0), 0);
+        const mostVisited = locs.length ? [...locs].sort((a, b) => (b.visitCount || 0) - (a.visitCount || 0))[0] : null;
+
+        let recentHtml = locs.slice(0, 5).map(l => {
+            const st = this.leafletRenderer?._locStyle?.(l.name) || { emoji: '📍' };
+            return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F1F3F4;cursor:pointer" class="wt-mp-loc" data-id="${l.id}">
+                <div style="width:28px;height:28px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:14px">${st.emoji}</div>
+                <div style="flex:1"><div style="font-size:12px;font-weight:600;color:#202124">${l.name}</div><div style="font-size:10px;color:#70757A">방문 ${l.visitCount||0}회</div></div>
+                <span style="font-size:14px;color:#9AA0A6">🔖</span>
+            </div>`;
+        }).join('');
+
+        const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;min-height:44px;cursor:pointer"><div style="width:32px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="padding:8px 14px;overflow-y:auto">
+                <div style="font-size:16px;font-weight:800;color:#202124;margin-bottom:8px">내 페이지</div>
+                <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto">
+                    <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center"><div style="font-size:16px;font-weight:800;color:#2B8A6E">${locs.length}</div><div style="font-size:8px;color:#70757A">총 장소</div></div>
+                    <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center"><div style="font-size:16px;font-weight:800;color:#2B8A6E">${totalVisits}</div><div style="font-size:8px;color:#70757A">총 방문</div></div>
+                    <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center"><div style="font-size:16px;font-weight:800;color:#2B8A6E">${mostVisited?.name||'—'}</div><div style="font-size:8px;color:#70757A">최다 방문</div></div>
+                </div>
+                <div style="font-size:12px;font-weight:700;color:#202124;margin-bottom:4px">최근 방문한 장소</div>
+                ${recentHtml || '<div style="padding:12px;text-align:center;color:#9AA0A6;font-size:11px">아직 없어요</div>'}
+                <div style="font-size:12px;font-weight:700;color:#202124;margin:14px 0 6px;display:flex;justify-content:space-between">내 목록 <span style="font-size:10px;color:#1A73E8;font-weight:500">+ 새 목록</span></div>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4">💜<div style="flex:1"><div style="font-size:12px;font-weight:600">즐겨찾는 장소</div><div style="font-size:10px;color:#70757A">비공개 · ${locs.length}곳</div></div>⋮</div>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4">⭐<div style="flex:1"><div style="font-size:12px;font-weight:600">별표표시된 장소</div><div style="font-size:10px;color:#70757A">비공개</div></div>⋮</div>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4">🚩<div style="flex:1"><div style="font-size:12px;font-weight:600">가고 싶은 장소</div><div style="font-size:10px;color:#70757A">비공개</div></div>⋮</div>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 0">🧳<div style="flex:1"><div style="font-size:12px;font-weight:600">여행 계획</div><div style="font-size:10px;color:#70757A">비공개</div></div>⋮</div>
+            </div>`;
+
+        const bs = $('#wt-bottomsheet');
+        bs.html(html).show().css({ background: '#fff' });
+        this._applyBsStage(2); // half (50vh)
+        this._bindBsDrag(bs[0]);
+
+        // 핸들바 sticky
+        bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
+
+        const self = this;
+        bs.find('.wt-mp-loc').on('click', function() {
+            const id = $(this).data('id');
+            self._hideBottomSheet();
+            $('.wt-paw-tab[data-tab="explore"]').click();
+            setTimeout(() => self._showBottomSheet(id), 300);
+        });
+    }
+
     async _popSave() {
         const id=$('#wt-popover').attr('data-id');
         const newName = $('#wt-pop-title').val().trim();
@@ -810,6 +1250,7 @@ export class UIManager {
             memo:$('#wt-pop-memo').val().trim(),
             status:$('#wt-pop-status').val().trim(),
             aliases: aliases,
+            aiNotes:$('#wt-pop-ainotes').val().trim(),
             locationType: $('#wt-pop-icon-type').val() || '',  // Task 5: 아이콘 타입
         };
         // 이름 변경
@@ -1042,8 +1483,11 @@ export class UIManager {
                 const did = $(this).attr('data-did');
                 const idx = self.lm.distances.findIndex(x => x.id === did);
                 if (idx >= 0) self.lm.distances.splice(idx, 1);
+                // ★ DB에서도 삭제
+                try { self.lm.db._tx('distances','readwrite').delete(did); } catch(_){}
                 $(this).closest('div').remove();
                 self.pi?.inject();
+                if (self.mapRenderer) self.mapRenderer.render();
                 toastSuccess('📏 거리 삭제!');
             });
             list.append(item);
@@ -1300,19 +1744,96 @@ export class UIManager {
         const events = loc?.events || [];
         if (!events.length) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:4px;font-style:italic">아직 이벤트가 없어요</div>'); return; }
         const self = this;
-        events.forEach((ev, i) => {
-            const item = $(`<div style="display:flex;align-items:flex-start;gap:4px;padding:4px 6px;background:var(--wt-surface);border-radius:4px;font-size:11px">
-                <span style="flex:1;color:var(--wt-text);line-height:1.3">${ev.text}</span>
-                <span style="font-size:9px;color:#9A8A7A;white-space:nowrap">${ev.date || ''}</span>
-                <button class="wt-btn-icon" style="font-size:10px;padding:1px 3px;color:var(--wt-pink)" data-eidx="${i}">✕</button>
+        const recent = events.slice(-3).reverse();
+        recent.forEach((ev, i) => {
+            const realIdx = events.length - 1 - i;
+            const mood = ev.mood || '📝';
+            const title = ev.title || (ev.text?.length > 15 ? ev.text.substring(0, 15) + '...' : ev.text || '');
+            const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : '');
+            const hasDetail = ev.text && ev.text !== title && ev.text.length > 15;
+
+            // occurredAt 뱃지 (다른 장소에서 회상된 이벤트)
+            let occurBadge = '';
+            if (ev.recordedAt && ev.recordedAt !== locId) {
+                const recLoc = this.lm.locations.find(l => l.id === ev.recordedAt);
+                if (recLoc) occurBadge = `<span style="font-size:9px;color:#5E84E2;background:rgba(94,132,226,0.1);padding:1px 5px;border-radius:4px;white-space:nowrap">📍 ${recLoc.name}에서 회상</span>`;
+            }
+
+            const item = $(`<div style="background:var(--wt-surface);border-radius:8px;overflow:hidden;font-size:11px">
+                <div class="wt-ev-header" style="padding:6px 8px;cursor:${hasDetail ? 'pointer' : 'default'}">
+                    <div style="display:flex;align-items:center;gap:4px">
+                        <span style="flex-shrink:0;font-size:12px">${mood}</span>
+                        <span style="flex:1;color:var(--wt-text);font-weight:600;font-size:11.5px;line-height:1.3">${title}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;margin-top:2px;padding-left:18px">
+                        <span class="wt-ev-date-view" style="font-size:10px;color:#B0A898;white-space:nowrap">${dateStr}</span>
+                        ${occurBadge}
+                        <input class="wt-ev-date-edit" type="text" value="${dateStr}" style="display:none;width:80px;font-size:10px;padding:2px 6px;border:1px solid #5E84E2;border-radius:4px;text-align:center;color:#5E84E2" />
+                        <button class="wt-ev-date-btn" data-eidx="${realIdx}" style="font-size:12px;padding:2px 4px;min-width:24px;min-height:24px;background:none;border:none;cursor:pointer;flex-shrink:0;color:#B0A898" title="날짜 수정">✏️</button>
+                        <span style="flex:1"></span>
+                        <button class="wt-ev-del" style="font-size:12px;padding:2px 4px;min-width:24px;min-height:24px;color:var(--wt-pink);background:none;border:none;cursor:pointer;flex-shrink:0" data-eidx="${realIdx}">✕</button>
+                        ${hasDetail ? '<span class="wt-ev-arrow" style="font-size:10px;color:#B0A898;flex-shrink:0;margin-left:4px">▼</span>' : ''}
+                    </div>
+                </div>
+                ${hasDetail ? `<div class="wt-ev-detail" style="display:none;padding:4px 8px 8px 24px;font-size:11px;line-height:1.5;color:#7A7060;border-top:1px dashed #EAE6DC">${ev.text}</div>` : ''}
             </div>`);
-            item.find('button').on('click', async function() {
-                events.splice(parseInt($(this).attr('data-eidx')), 1);
+
+            // 접기/펼치기
+            if (hasDetail) {
+                item.find('.wt-ev-header').on('click', function(e) {
+                    if ($(e.target).closest('.wt-ev-del,.wt-ev-date-btn,.wt-ev-date-edit').length) return;
+                    const detail = item.find('.wt-ev-detail');
+                    const arrow = item.find('.wt-ev-arrow');
+                    detail.slideToggle(200);
+                    arrow.text(detail.is(':visible') ? '▼' : '▲');
+                });
+            }
+
+            // ✏️ 날짜 수정 토글
+            item.find('.wt-ev-date-btn').on('click', async function(e) {
+                e.stopPropagation();
+                const idx = parseInt($(this).attr('data-eidx'));
+                const dateView = item.find('.wt-ev-date-view');
+                const dateEdit = item.find('.wt-ev-date-edit');
+                const btn = $(this);
+
+                if (dateEdit.is(':visible')) {
+                    // ✅ 저장 모드 → 저장하고 돌아가기
+                    const newDate = dateEdit.val().trim();
+                    if (newDate && !isNaN(idx)) {
+                        events[idx].rpDate = newDate;
+                        await self.lm.updateLocation(locId, { events });
+                    }
+                    dateView.text(newDate || dateView.text());
+                    dateEdit.hide();
+                    dateView.show();
+                    btn.text('✏️');
+                } else {
+                    // ✏️ 편집 모드
+                    dateEdit.val(dateView.text()).show().focus().select();
+                    dateView.hide();
+                    btn.text('✅');
+                }
+            });
+
+            // 삭제
+            item.find('.wt-ev-del').on('click', async function(e) {
+                e.stopPropagation();
+                const idx = parseInt($(this).attr('data-eidx'));
+                if (isNaN(idx)) return;
+                events.splice(idx, 1);
                 await self.lm.updateLocation(locId, { events });
                 self._updEventsList(locId);
             });
             list.append(item);
         });
+
+        // 3개 초과 시 "전체 기억 보기" 버튼
+        if (events.length > 3) {
+            const btn = $(`<button style="width:100%;margin-top:6px;padding:8px;background:transparent;border:1.5px dashed #D8D4C8;border-radius:8px;font-size:12px;color:#9A8A7A;cursor:pointer;font-family:inherit">📖 전체 기억 보기 (${events.length}건)</button>`);
+            btn.on('click', () => this._showEventPanel(locId));
+            list.append(btn);
+        }
     }
 
     async _addEvent() {
@@ -1322,47 +1843,405 @@ export class UIManager {
         const loc = this.lm.locations.find(l => l.id === locId);
         if (!loc) return;
         const events = loc.events || [];
-        const date = new Date().toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
-        events.push({ text, date, timestamp: Date.now() });
+
+        // title 자동 생성
+        let title = text.length <= 15 ? text : text.substring(0, 15) + '...';
+
+        // 긴 텍스트면 LLM으로 title 생성
+        if (text.length > 20) {
+            try {
+                const ctx = getContext();
+                const gen = ctx?.generateQuietPrompt;
+                if (gen) {
+                    const prompt = `Create a short, witty title (max 15 chars) for this event that emphasizes the place's meaning. Write like "OO한 곳". Respond with ONLY the title text, nothing else.\n\nEvent: ${text.substring(0, 300)}`;
+                    const result = await runWithoutAutoDetect(() => gen(prompt));
+                    if (result?.trim()) title = result.trim().substring(0, 20);
+                }
+            } catch(e) {}
+        }
+
+        events.push({ text, title, mood: '📝', timestamp: Date.now(), source: 'manual' });
         await this.lm.updateLocation(locId, { events });
         $('#wt-pop-event-input').val('');
         this._updEventsList(locId);
         toastSuccess('📝 이벤트 추가!');
     }
 
-    // 자동 이벤트 기록 — AI 응답에서 키워드 추출 후 플로팅 알림
-    showEventNotify(locName, summary, locId) {
-        // 채팅 화면이 아니면 알림 안 띄움
-        const sendBtn = document.querySelector('#send_but');
-        if (!sendBtn || sendBtn.offsetParent === null) return;
-        $('#wt-event-overlay').remove();
-        const overlay = $(`<div id="wt-event-overlay" style="position:fixed;bottom:100px;left:50%;transform:translateX(-50%);width:300px;max-width:90vw;background:rgba(245,244,237,0.98);border:2px solid #5E84E2;border-radius:14px;padding:10px 12px;z-index:2147483646;box-shadow:0 6px 24px rgba(0,0,0,0.2);backdrop-filter:blur(8px);font-family:-apple-system,'Noto Sans KR',sans-serif">
-            <div style="font-size:12px;font-weight:700;color:#775537;margin-bottom:4px">📝 이벤트 감지 — ${locName}</div>
-            <input type="text" id="wt-event-edit" value="${summary}" style="width:100%;border:1px solid #E8E4D8;border-radius:6px;padding:5px 8px;font-size:12px;font-family:inherit;box-sizing:border-box"/>
-            <div style="display:flex;gap:6px;margin-top:6px">
-                <button id="wt-event-save" style="flex:1;padding:6px;background:#5E84E2;border:none;border-radius:6px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">💾 저장</button>
-                <button id="wt-event-skip" style="flex:1;padding:6px;background:transparent;border:1px solid #E8E4D8;border-radius:6px;font-size:12px;color:#9A8A7A;cursor:pointer">무시</button>
+    // ========== ⭐ 랜덤 리뷰 생성 (구글맵 스타일) ==========
+    _getReviewContainer(source) {
+        if (source === 'bottomsheet') return $('#wt-bs-review-list');
+        if (source === 'popover') return $('#wt-pop-review-list');
+        if ($('#wt-bs-review-list').length && $('#wt-bottomsheet').is(':visible')) return $('#wt-bs-review-list');
+        return $('#wt-pop-review-list');
+    }
+
+    _renderCachedReviews(locId, selector) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        const stored = Array.isArray(loc?.generatedReviews) && loc.generatedReviews.length
+            ? { reviews: loc.generatedReviews, summary: loc.reviewSummary || '' }
+            : null;
+        const cached = this._reviewCache.get(locId) || stored;
+        const container = $(selector);
+        if (!cached || !container.length) return;
+        if (!this._reviewCache.has(locId)) this._reviewCache.set(locId, cached);
+        // ★ 캐시 리뷰 있으면 독립 생성 버튼 숨기기 (renderReviews 안에 재생성 버튼 있음)
+        container.siblings().find('#wt-bs-gen-review,#wt-pop-review-gen').closest('div').hide();
+        this._renderReviews(container, cached.reviews, cached.summary);
+    }
+
+    async _generateReviews(locId, source = 'auto') {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        if (this._reviewPending.has(locId)) return;
+        if (this._isGeneratingReview) return; // 이미 생성 중
+
+        const list = this._getReviewContainer(source);
+        if (!list.length) return;
+        this._reviewPending.add(locId);
+        this._isGeneratingReview = true; // ★ 플래그 ON (scanMessage 차단)
+        list.html('<div style="text-align:center;padding:12px;font-size:12px;color:#9A8A7A">🔄 리뷰 생성 중...</div>');
+
+        try {
+            const ctx = getContext();
+            const gen = ctx?.generateQuietPrompt;
+            if (!gen) { list.html('<div style="font-size:11px;color:#F5A8A8;padding:8px">LLM 연결 필요</div>'); return; }
+
+            const userName = ctx.name1 || 'User';
+            const charName = ctx.name2 || 'Character';
+            const s = extension_settings[EXTENSION_NAME];
+            const eLang = s?.eventLang || 'auto';
+            const langInst = eLang === 'ko' ? 'Write ALL reviews in Korean.' : eLang === 'en' ? 'Write ALL reviews in English.' : 'Write in the same language as the RP.';
+
+            // 이벤트 요약 (최근 5개)
+            const evSummary = (loc.events || []).slice(-5).map(e => `${e.mood||'📝'} ${e.title||e.text||''}`).join(', ') || '아직 이벤트 없음';
+
+            const reviewCount = 1 + Math.floor(Math.random() * 3);
+            const prompt = `Generate ${reviewCount} Google Maps-style reviews for an RP location. Each reviewer is a CHARACTER from the story with a distinct voice.
+
+Place: "${loc.name}" | Memo: "${loc.memo || ''}" | Notes: "${loc.aiNotes || ''}" | Visits: ${loc.visitCount || 0}
+Events: ${evSummary}
+User="${userName}", Character="${charName}"
+${langInst}
+
+REVIEWER POOL (pick ${reviewCount} randomly, can repeat types):
+• "${charName}" — main character, write in their personality. Reference events. Show relationship with ${userName}.
+• "${userName}" — protagonist, personal emotional reaction to this place.
+• Pet/Animal — a pet, stray cat, military dog, bird, etc. Write from animal POV (smells, food, warmth, territory).
+• NPC — barista, neighbor, soldier, ghost, street vendor, etc. Quirky and unexpected.
+• Wild creature — crow watching from rooftop, alley cat, stray dog. Pure instinct-based review.
+
+VOICE RULES:
+• Tough character → blunt, short, reluctant praise
+• Gentle character → emotional, poetic, nostalgic
+• Animal → sensory (smell, warmth, food, nap spots). No human logic.
+• NPC → unique quirk that reveals something about the place
+
+Also generate a 1-sentence poetic SUMMARY that captures the emotional contrast of this place (combine the warmest and coldest memories).
+
+JSON ONLY, no markdown:
+{"summary":"poetic 1-sentence place summary","reviews":[{"name":"name","role":"role","avatar":"emoji","stars":1-5,"text":"1-2 sentences","daysAgo":1-30}]}`;
+
+            const result = await runWithoutAutoDetect(() => gen(prompt), 2500);
+            if (!result) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">생성 실패 — 다시 시도해주세요</div>'); return; }
+
+            // JSON 파싱
+            const jsonMatch = result.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">파싱 실패 — 다시 시도해주세요</div>'); return; }
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            const reviews = parsed.reviews || parsed;
+            const aiSummary = parsed.summary || '';
+            if (!Array.isArray(reviews) || !reviews.length) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">리뷰 없음</div>'); return; }
+
+            this._reviewCache.set(locId, { reviews, summary: aiSummary });
+            await this.lm.updateLocation(locId, {
+                generatedReviews: reviews,
+                reviewSummary: aiSummary,
+                reviewUpdatedAt: Date.now(),
+            });
+            this._renderReviews(list, reviews, aiSummary);
+            this._renderCachedReviews(locId, '#wt-pop-review-list');
+            this._renderCachedReviews(locId, '#wt-bs-review-list');
+
+        } catch(e) {
+            console.error('[wt] Review gen error:', e);
+            list.html('<div style="font-size:11px;color:#F5A8A8;padding:8px">오류: ' + e.message + '</div>');
+        } finally {
+            this._reviewPending.delete(locId);
+            setTimeout(() => { this._isGeneratingReview = false; }, 1000); // ★ 1초 후 해제 (안전 마진)
+        }
+    }
+
+    _renderReviews(container, reviews, aiSummary) {
+        container.empty();
+
+        // 1. AI 요약 (블루박스)
+        if (aiSummary) {
+            container.append(`<div style="padding:10px 12px;background:rgba(94,132,226,.06);border-radius:8px;border:1px solid rgba(94,132,226,.1);margin-bottom:10px">
+                <div style="font-size:10px;color:#5E84E2;font-weight:600;margin-bottom:3px">🤖 AI 리뷰 요약</div>
+                <div style="font-size:12px;color:#5E84E2;line-height:1.6;font-style:italic">"${aiSummary}"</div>
+            </div>`);
+        }
+
+        // 2. 별점 바 그래프 (구글맵 스타일)
+        const avgStars = (reviews.reduce((s, r) => s + (r.stars || 3), 0) / reviews.length).toFixed(1);
+        const starsFull = '★'.repeat(Math.round(avgStars)) + '☆'.repeat(5 - Math.round(avgStars));
+        const starCounts = [0,0,0,0,0];
+        reviews.forEach(r => { const s = Math.min(5, Math.max(1, r.stars||3)); starCounts[s-1]++; });
+        const maxCount = Math.max(...starCounts, 1);
+
+        let barsHtml = '';
+        for (let i = 5; i >= 1; i--) {
+            const pct = Math.round((starCounts[i-1] / maxCount) * 100);
+            barsHtml += `<div style="display:flex;align-items:center;gap:4px"><span style="font-size:10px;color:#70757A;width:8px">${i}</span><div style="flex:1;height:8px;background:#EAE6DC;border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:#F6A93A;border-radius:4px"></div></div></div>`;
+        }
+
+        container.append(`<div style="display:flex;align-items:center;gap:12px;padding:8px 0;margin-bottom:6px">
+            <div style="text-align:center">
+                <div style="font-size:32px;font-weight:800;color:#202124;line-height:1">${avgStars}</div>
+                <div style="color:#F6A93A;font-size:12px;letter-spacing:1px;margin-top:2px">${starsFull}</div>
+                <div style="font-size:10px;color:#70757A;margin-top:1px">(리뷰 ${reviews.length}건)</div>
             </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:3px">${barsHtml}</div>
+        </div>`);
+
+        // 3. 감정 키워드 칩
+        const keywords = {};
+        reviews.forEach(r => {
+            const t = (r.text || '').toLowerCase();
+            const kw = [['💕','로맨틱'],['⚡','긴장'],['☕','커피'],['🌧️','비'],['😢','슬픔'],['😊','평온'],['🔥','분노'],['🍺','술']];
+            kw.forEach(([emoji, word]) => { if (t.includes(word) || t.includes(emoji)) keywords[`${emoji} ${word}`] = (keywords[`${emoji} ${word}`]||0)+1; });
+        });
+        if (Object.keys(keywords).length) {
+            container.append(`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #F0EDE5">${
+                Object.entries(keywords).map(([k,v]) => `<span style="padding:4px 10px;background:#F1F3F4;border-radius:14px;font-size:11px;color:#3C4043;font-weight:500">${k} ${v}</span>`).join('')
+            }</div>`);
+        }
+
+        // 4. 캐릭터 리뷰 헤더 + 재생성 버튼
+        container.append(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:14px;font-weight:700;color:#202124">캐릭터 리뷰</span>
+            <button class="wt-rv-regen" style="font-size:11px;color:#1A73E8;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:500;padding:4px 8px">🔄 새 리뷰 생성</button>
+        </div>`);
+
+        // 재생성 버튼 이벤트
+        container.find('.wt-rv-regen').on('click', (e) => {
+            e.stopPropagation();
+            const locId = $('#wt-bottomsheet').attr('data-id') || $('#wt-popover').attr('data-id');
+            if (locId) this._generateReviews(locId);
+        });
+
+        // 5. 개별 리뷰 카드
+        reviews.forEach(rv => {
+            const stars = '★'.repeat(rv.stars || 3) + '☆'.repeat(5 - (rv.stars || 3));
+            const daysText = rv.daysAgo === 1 ? '어제' : rv.daysAgo <= 7 ? `${rv.daysAgo}일 전` : `${Math.ceil(rv.daysAgo / 7)}주 전`;
+
+            container.append(`<div style="padding:10px 0;border-bottom:1px solid #F1F3F4">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                    <div style="width:32px;height:32px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:16px">${rv.avatar || '👤'}</div>
+                    <div>
+                        <div style="font-size:13px;font-weight:700;color:#202124">${rv.name || 'Unknown'}</div>
+                        <div style="font-size:10px;color:#70757A">${rv.role || ''}</div>
+                    </div>
+                </div>
+                <div style="font-size:10px;color:#F6A93A;margin-bottom:4px">${stars} · ${daysText}</div>
+                <div style="font-size:13px;line-height:1.7;color:#3C4043">${rv.text || ''}</div>
+            </div>`);
+        });
+    }
+
+    // ========== 이벤트 전체 보기 (패널 뷰 전환) ==========
+    _showEventPanel(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        const events = loc.events || [];
+        const ps = this._pinStyle ? this._pinStyle(loc.name) : { emoji: '📍', color: '#5E84E2' };
+
+        // 현재 패널 내용 저장
+        const body = $('#wt-panel-body');
+        if (!this._savedPanelHTML) this._savedPanelHTML = body.html();
+
+        // 이벤트 패널 HTML
+        let evHTML = `
+        <div id="wt-event-panel" style="padding:8px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <button id="wt-ev-back" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px">←</button>
+                <div style="flex:1">
+                    <div style="font-size:16px;font-weight:800;color:var(--wt-brown,#775537)">${loc.name}</div>
+                    <div style="font-size:11px;color:#9A8A7A">📖 기억 ${events.length}건</div>
+                </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;padding-right:4px">`;
+
+        if (!events.length) {
+            evHTML += `<div style="text-align:center;padding:24px;color:#B0A898;font-style:italic">아직 기억이 없어요</div>`;
+        } else {
+            [...events].reverse().forEach((ev, i) => {
+                const realIdx = events.length - 1 - i;
+                const mood = ev.mood || '📝';
+                const title = ev.title || (ev.text?.length > 15 ? ev.text.substring(0, 15) + '...' : ev.text || '');
+                const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : '');
+                const cardId = `wt-ev-${realIdx}`;
+
+                evHTML += `
+                <div class="wt-ev-card" style="background:var(--wt-surface,#FAFAF5);border-radius:10px;border:1px solid #EAE6DC;overflow:hidden">
+                    <div class="wt-ev-header" data-card="${cardId}" style="display:flex;align-items:center;gap:6px;padding:10px 12px;cursor:pointer">
+                        <span style="font-size:14px">${mood}</span>
+                        <span style="flex:1;font-size:13px;font-weight:600;color:var(--wt-text,#5A4030)">${title}</span>
+                        <span style="font-size:10px;color:#B0A898;white-space:nowrap">${dateStr}</span>
+                        <span class="wt-ev-arrow" style="font-size:10px;color:#B0A898;transition:transform 0.2s">▼</span>
+                        <button class="wt-ev-del" data-eidx="${realIdx}" style="background:none;border:none;font-size:14px;color:#D4A0A0;cursor:pointer;padding:4px 6px;min-width:28px;min-height:28px;display:flex;align-items:center;justify-content:center">✕</button>
+                    </div>
+                    <div id="${cardId}" style="display:none;padding:0 12px 10px;font-size:12px;line-height:1.6;color:#7A7060;white-space:pre-wrap;border-top:1px dashed #EAE6DC">${ev.text || ''}</div>
+                </div>`;
+            });
+        }
+
+        evHTML += `</div></div>`;
+
+        body.html(evHTML);
+
+        // 뒤로가기
+        const self = this;
+        $('#wt-ev-back').on('click', () => {
+            if (self._savedPanelHTML) {
+                body.html(self._savedPanelHTML);
+                self._savedPanelHTML = null;
+                self._rebindPanel();
+                self.refresh();
+            }
+        });
+
+        // 아코디언 토글
+        $('.wt-ev-header').on('click', function(e) {
+            if ($(e.target).hasClass('wt-ev-del')) return; // 삭제 버튼 제외
+            const cardId = $(this).attr('data-card');
+            const content = $(`#${cardId}`);
+            const arrow = $(this).find('.wt-ev-arrow');
+            if (content.is(':visible')) {
+                content.slideUp(200);
+                arrow.css('transform', 'rotate(0deg)');
+            } else {
+                content.slideDown(200);
+                arrow.css('transform', 'rotate(180deg)');
+            }
+        });
+
+        // 삭제 버튼
+        $('.wt-ev-del').on('click', async function(e) {
+            e.stopPropagation();
+            const idx = parseInt($(this).attr('data-eidx'));
+            events.splice(idx, 1);
+            await self.lm.updateLocation(locId, { events });
+            self._showEventPanel(locId); // 새로고침
+        });
+    }
+
+    // 패널 복귀 시 이벤트 리바인드
+    _rebindPanel() {
+        try {
+            // 핵심 이벤트 리스너 재등록
+            const self = this;
+            $('.wt-loc-item').off('click').on('click', function() { self.showPop($(this).attr('data-id')); });
+            $('#wt-add-name').off('keydown').on('keydown', (e) => { if (e.key === 'Enter') this._addLoc(); });
+            $('#wt-add-btn').off('click').on('click', () => this._addLoc());
+        } catch(e) { console.log('[wt] rebind:', e); }
+    }
+
+    // ========== 전체 이벤트 패널 뷰 ==========
+    _showEventPanel(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        const events = loc.events || [];
+        const ps = { emoji: '📍' }; // 기본 이모지
+
+        // 현재 패널 바디 저장
+        const body = $('#wt-panel-body');
+        if (!this._savedPanelHTML) this._savedPanelHTML = body.html();
+
+        // 헤더
+        let html = `<div style="padding:8px 12px">`;
+        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">`;
+        html += `<button id="wt-event-back" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px;color:#775537">←</button>`;
+        html += `<div style="flex:1">`;
+        html += `<div style="font-size:16px;font-weight:800;color:#2D2418">${loc.name}</div>`;
+        html += `<div style="font-size:11px;color:#B0A898">📖 기억 ${events.length}건</div>`;
+        html += `</div></div>`;
+
+        // 이벤트 없음
+        if (!events.length) {
+            html += `<div style="text-align:center;padding:40px 20px;color:#B0A898;font-size:13px;font-style:italic">`;
+            html += `아직 이 장소에 기억이 없어요<br>RP를 진행하면 자동으로 쌓여요 🐶`;
+            html += `</div>`;
+        } else {
+            // 이벤트 리스트 (역순 = 최신 먼저)
+            html += `<div style="display:flex;flex-direction:column;gap:8px">`;
+            [...events].reverse().forEach((ev, i) => {
+                const realIdx = events.length - 1 - i;
+                const mood = ev.mood || '📝';
+                const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { year:'numeric', month:'short', day:'numeric' }) : (ev.date || ''));
+                const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' }) : '';
+                const src = ev.source === 'USER' ? '✍️' : '🤖';
+
+                html += `<div class="wt-event-card" data-eidx="${realIdx}" style="background:#FAFAF5;border:1px solid #EAE6DC;border-radius:12px;padding:10px 12px;position:relative">`;
+                html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">`;
+                html += `<span style="font-size:14px">${mood}</span>`;
+                html += `<div style="display:flex;align-items:center;gap:6px">`;
+                html += `<span style="font-size:9px;color:#B0A898">${src}</span>`;
+                html += `<span style="font-size:10px;color:#B0A898">${dateStr} ${timeStr}</span>`;
+                html += `<button class="wt-event-del" data-eidx="${realIdx}" style="background:none;border:none;font-size:11px;color:#D4A0A0;cursor:pointer;padding:2px 4px">✕</button>`;
+                html += `</div></div>`;
+                html += `<div style="font-size:12.5px;color:#3D3028;line-height:1.5">${ev.text}</div>`;
+                html += `</div>`;
+            });
+            html += `</div>`;
+        }
+
+        html += `</div>`;
+        body.html(html);
+
+        // 뒤로가기
+        const self = this;
+        $('#wt-event-back').on('click', () => self._closeEventPanel());
+
+        // 이벤트 삭제
+        $('.wt-event-del').on('click', async function() {
+            const idx = parseInt($(this).attr('data-eidx'));
+            events.splice(idx, 1);
+            await self.lm.updateLocation(locId, { events });
+            self._showEventPanel(locId); // 새로고침
+        });
+    }
+
+    _closeEventPanel() {
+        if (this._savedPanelHTML) {
+            $('#wt-panel-body').html(this._savedPanelHTML);
+            this._savedPanelHTML = null;
+            this.refresh();
+        }
+    }
+
+    // 자동 이벤트 기록 — AI 응답에서 키워드 추출 후 플로팅 알림
+    showEventNotify(locName, ev, locId) {
+        $('#wt-event-overlay').remove();
+
+        const evText = typeof ev === 'string' ? ev : ev.text;
+        const evTag = typeof ev === 'object' ? (ev.tag || '📝') : '📝';
+        const preview = evText.length > 80 ? evText.substring(0, 80) + '...' : evText;
+
+        const overlay = $(`<div id="wt-event-overlay" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);width:320px;max-width:90vw;background:rgba(245,244,237,0.98);border:2px solid #5E84E2;border-radius:14px;padding:10px 14px;z-index:2147483646;box-shadow:0 6px 24px rgba(0,0,0,0.2);backdrop-filter:blur(8px);font-family:-apple-system,'Noto Sans KR',sans-serif">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                <span style="font-size:16px">${evTag}</span>
+                <strong style="font-size:14px;color:#775537">${locName}</strong>
+                <span style="font-size:12px;color:#9A8A7A">기억 등록!</span>
+            </div>
+            <div style="font-size:11.5px;color:#5A4030;line-height:1.5;padding:6px 8px;background:rgba(0,0,0,0.03);border-radius:8px;margin-bottom:8px;white-space:pre-wrap">${preview}</div>
+            <button id="wt-event-ok" style="width:100%;padding:7px;background:#F7EC8D;border:1.5px solid #F6A93A;border-radius:8px;font-size:12px;font-weight:600;color:#775537;cursor:pointer;font-family:inherit">✅ 확인</button>
         </div>`);
 
         $('body').append(overlay);
-        const self = this;
-        overlay.find('#wt-event-save').on('click', async () => {
-            const text = overlay.find('#wt-event-edit').val().trim();
-            if (text && locId) {
-                const loc = self.lm.locations.find(l => l.id === locId);
-                if (loc) {
-                    const events = loc.events || [];
-                    const date = new Date().toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
-                    events.push({ text, date, timestamp: Date.now() });
-                    await self.lm.updateLocation(locId, { events });
-                    toastSuccess('📝 이벤트 저장!');
-                }
-            }
-            overlay.remove();
-        });
-        overlay.find('#wt-event-skip').on('click', () => overlay.remove());
-        setTimeout(() => overlay.remove(), 12000);
+        overlay.find('#wt-event-ok').on('click', () => overlay.remove());
+        setTimeout(() => overlay.remove(), 6000);
     }
 
     async _addDist() {
@@ -1377,8 +2256,135 @@ export class UIManager {
         $('#wt-pop-dist-value').val(''); $('#wt-pop-dist-level').val(5); $('#wt-pop-dist-lvl-val').text('5');
         this._updDistSection(locId);
         this.pi?.inject();
+        // ★ 맵 리렌더 (점선+pill 즉시 표시)
+        if (this.mapRenderer) this.mapRenderer.render();
         toastSuccess(`📏 거리 저장!`);
     }
 
     _fmt(ts) { return new Date(ts).toLocaleDateString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+
+    // ========== 드래그 요약 (텍스트 선택 → 📝 → LLM 요약 → 이벤트 저장) ==========
+    registerDragSummary() {
+        // 📝 플로팅 버튼 생성
+        const btn = document.createElement('div');
+        btn.id = 'wt-drag-btn';
+        btn.innerHTML = '📝';
+        btn.style.cssText = 'display:none;position:fixed;bottom:80px;right:16px;width:44px;height:44px;border-radius:50%;background:#F7EC8D;border:2px solid #F6A93A;box-shadow:0 4px 12px rgba(0,0,0,0.2);font-size:20px;text-align:center;line-height:44px;cursor:pointer;z-index:2147483645;transition:transform 0.2s;user-select:none';
+        document.body.appendChild(btn);
+
+        let selectedText = '';
+        const self = this;
+
+        // 텍스트 선택 감지 (PC: selectionchange, 모바일: touchend 백업)
+        document.addEventListener('selectionchange', () => {
+            const sel = window.getSelection();
+            const text = sel?.toString().trim() || '';
+            // 채팅 영역에서 선택된 텍스트만 (20자 이상)
+            if (text.length >= 20) {
+                selectedText = text;
+                btn.style.display = 'block';
+                btn.style.transform = 'scale(1.1)';
+                setTimeout(() => btn.style.transform = 'scale(1)', 150);
+            } else {
+                selectedText = '';
+                btn.style.display = 'none';
+            }
+        });
+
+        // 📱 모바일 백업: touchend 후 선택 확인 (selectionchange 미발동 대비)
+        document.addEventListener('touchend', () => {
+            setTimeout(() => {
+                const sel = window.getSelection();
+                const text = sel?.toString().trim() || '';
+                if (text.length >= 20 && btn.style.display === 'none') {
+                    selectedText = text;
+                    btn.style.display = 'block';
+                    btn.style.transform = 'scale(1.1)';
+                    setTimeout(() => btn.style.transform = 'scale(1)', 150);
+                }
+            }, 300); // 모바일 선택 확정 대기
+        });
+
+        // 📝 클릭 → LLM 요약 → 이벤트 저장
+        btn.addEventListener('click', async () => {
+            if (!selectedText || !self.lm.currentLocationId) {
+                btn.style.display = 'none';
+                return;
+            }
+
+            const loc = self.lm.locations.find(l => l.id === self.lm.currentLocationId);
+            if (!loc) { btn.style.display = 'none'; return; }
+
+            // 로딩 표시
+            btn.innerHTML = '⏳';
+            btn.style.pointerEvents = 'none';
+
+            try {
+                const ctx = getContext();
+                const generateQuietPrompt = ctx?.generateQuietPrompt;
+                const userName = ctx?.name1 || 'User';
+                const charName = ctx?.name2 || 'Character';
+                const s = extension_settings[EXTENSION_NAME];
+                const eLang = s?.eventLang || 'auto';
+                const langInst = eLang === 'ko' ? 'Write in Korean.'
+                               : eLang === 'en' ? 'Write in English.'
+                               : 'Write in the same language as the text.';
+
+                let evTitle = null, evText = null, evMood = '📝';
+                const trimmed = selectedText.substring(0, 1500);
+
+                if (generateQuietPrompt) {
+                    const prompt = `Summarize this RP scene excerpt as a place-event memory. ${langInst}
+Character info: protagonist="${userName}", main character="${charName}".
+Respond with ONLY JSON: {"mood":"💕 or 📅 or ⚡","title":"place-meaning hook max 15chars","summary":"detailed 2-sentence summary"}
+If mundane: {"mood":null}
+
+Text: ${trimmed}`;
+
+                    const result = await runWithoutAutoDetect(() => generateQuietPrompt(prompt), 2500);
+                    if (result) {
+                        const m = result.match(/\{[\s\S]*?\}/);
+                        if (m) {
+                            const p = JSON.parse(m[0]);
+                            if (p.mood && p.summary) {
+                                evTitle = p.title || p.summary.substring(0, 15) + '...';
+                                evText = p.summary;
+                                evMood = p.mood;
+                            }
+                        }
+                    }
+                }
+
+                // LLM 실패 시 선택 텍스트 그대로
+                if (!evText) {
+                    evText = trimmed.length > 60 ? trimmed.substring(0, 60) + '...' : trimmed;
+                    evTitle = trimmed.length > 15 ? trimmed.substring(0, 15) + '...' : trimmed;
+                }
+
+                // 저장
+                if (!loc.events) loc.events = [];
+                loc.events.push({ text: evText, title: evTitle, mood: evMood, timestamp: Date.now(), source: 'drag' });
+                if (loc.events.length > 20) loc.events = loc.events.slice(-20);
+                await self.lm.updateLocation(loc.id, { events: loc.events });
+
+                // 알림
+                self.showEventNotify(loc.name, { text: evText, tag: evMood }, loc.id);
+                // ★ 팝오버 열려있으면 이벤트 목록 자동 갱신
+                const openId = $('#wt-popover').attr('data-id');
+                if (openId === loc.id && $('#wt-popover').is(':visible')) {
+                    self._updEventsList(loc.id);
+                }
+                window.getSelection()?.removeAllRanges();
+
+            } catch(e) {
+                console.error('[wt] Drag summary error:', e);
+                toastr?.warning?.('요약 실패');
+            }
+
+            btn.innerHTML = '📝';
+            btn.style.pointerEvents = 'auto';
+            btn.style.display = 'none';
+            selectedText = '';
+        });
+    }
 }
