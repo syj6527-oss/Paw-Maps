@@ -10,10 +10,17 @@ export class MapRenderer {
         this._pinch = null; this._pan = null;
         this._cityBgEl = null;       // Hub별 배경 캐시
         this._cityHubKey = null;     // 현재 생성된 Hub 식별자
+        this._regenCounter = 0;       // 재생성 카운터 (매번 다른 맵)
         this._init();
     }
     _srand(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};}
     _hashStr(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return Math.abs(h);}
+
+    // ★ localStorage 핀 좌표 저장/로드
+    _pinKey(locId) { return `wt_pin_${this.lm.currentChatId||'x'}_${locId}`; }
+    _savePinPos(locId, x, y) { try { localStorage.setItem(this._pinKey(locId), JSON.stringify({x,y})); } catch(_){} }
+    _loadPinPos(locId) { try { const v = localStorage.getItem(this._pinKey(locId)); return v ? JSON.parse(v) : null; } catch(_){ return null; } }
+    _clearPinPos(locId) { try { localStorage.removeItem(this._pinKey(locId)); } catch(_){} }
 
     _init() {
         if (!this.container) return;
@@ -37,22 +44,38 @@ export class MapRenderer {
     }
     _applyVB() { this.svg.setAttribute('viewBox', `${this.vb.x} ${this.vb.y} ${this.vb.w} ${this.vb.h}`); }
 
-    invalidateCity() { this._cityBgEl = null; this._cityHubKey = null; }
+    invalidateCity() { this._cityBgEl = null; this._cityHubKey = null; this._regenCounter = (this._regenCounter || 0) + 1; }
 
-    // 핀 클릭 → ViewBox만 이동 (배경 재생성 X)
+    // 핀 클릭 → ViewBox만 이동 + 팝업 카드
     recenterOn(locId) {
         const loc = this.lm.locations.find(l => l.id === locId);
         if (!loc) return;
+        // 같은 핀 → 토글, 다른 핀 → 교체
+        this._popupLocId = (this._popupLocId === locId) ? null : locId;
         this.vb.x = loc.x - this.vb.w / 2;
         this.vb.y = loc.y - this.vb.h / 2;
         this._vbManual = true;
         this.render();
     }
 
+    // 팝업 카드 닫기
+    closePopup() { this._popupLocId = null; this._removePopup(); }
+
     // ================================================================
-    //  RENDER
+    //  RENDER (B8: debounce 적용)
     // ================================================================
+    _renderTimer = null;
+    _rendering = false;
     render() {
+        if (this._rendering) return;
+        if (this._renderTimer) clearTimeout(this._renderTimer);
+        this._renderTimer = setTimeout(() => this._doRender(), 16);
+    }
+    _doRender() {
+        this._rendering = true;
+        try { this._renderInner(); } finally { this._rendering = false; }
+    }
+    _renderInner() {
         if (!this.svg) return;
         if (this.container) {
             const h = this.container.offsetHeight || this.container.clientHeight || 320;
@@ -68,16 +91,29 @@ export class MapRenderer {
 
         const { locations, movements, currentLocationId } = this.lm;
 
-        // Hub 핀 분류 (level ≤ 6 = 같은 동네)
+        // Hub 핀 분류 (level ≤ 6 = 같은 동네, B4: 필터 강화)
         const curLoc = locations.find(l => l.id === currentLocationId) || locations[0];
         const dists = this.lm.distances || [];
         const hubPins = curLoc ? locations.filter(l => {
             if (l.id === curLoc.id) return true;
-            const d = dists.find(dd => (dd.fromId === curLoc.id && dd.toId === l.id) || (dd.toId === curLoc.id && dd.fromId === l.id));
-            return !d || (d.level || 5) <= 6;
+            const d = dists.find(dd =>
+                (dd.fromId === curLoc.id && dd.toId === l.id) ||
+                (dd.toId === curLoc.id && dd.fromId === l.id) ||
+                (dd.fromId === l.id && dd.toId === curLoc.id) ||
+                (dd.toId === l.id && dd.fromId === curLoc.id)
+            );
+            if (!d) return true; // 거리 미설정 → 표시 (신규 장소)
+            const lvl = typeof d.level === 'number' ? d.level : 5;
+            return lvl <= 6;
         }) : locations;
 
-        // 레이아웃
+        // ★ localStorage 저장 좌표 최우선 적용 (레이아웃보다 먼저!)
+        for (const loc of hubPins) {
+            const saved = this._loadPinPos(loc.id);
+            if (saved) { loc.x = saved.x; loc.y = saved.y; loc._manualXY = true; }
+        }
+
+        // 레이아웃 (localStorage에 없는 핀만 자동 배치)
         if (hubPins.length >= 2) this._autoLayout(hubPins, curLoc);
         if (curLoc && curLoc.x === 0 && curLoc.y === 0) {
             curLoc.x = 300; curLoc.y = 280;
@@ -118,7 +154,7 @@ export class MapRenderer {
         // ★ ViewBox 영역 기반으로 도시 생성
         const hubKey = curLoc ? curLoc.id : 'empty';
         const chatId = this.lm.currentChatId || 'default';
-        const seed = this._hashStr(chatId + hubKey) % 10000 + 1;
+        const seed = this._hashStr(chatId + hubKey + (this._regenCounter || 0)) % 10000 + 1;
         if (!this._cityBgEl || this._cityHubKey !== hubKey) {
             this._buildHubCity(this.vb, seed);
             this._cityHubKey = hubKey;
@@ -131,6 +167,9 @@ export class MapRenderer {
         this._drawDistLines(hubPins, movements);
         this._drawPins(hubPins, currentLocationId);
         this._drawCompass(this.vb);
+
+        // ★ 팝업 카드 (핀 클릭 시)
+        if (this._popupLocId) this._drawPopupCard(this._popupLocId, hubPins);
 
         if (!locations.length) {
             this.svg.appendChild(this._el('text', { x: 300, y: 280, class: 'wt-empty-text' }, 'RP를 시작해보세요! 🐶'));
@@ -328,12 +367,14 @@ export class MapRenderer {
             if (drawn.has(k)) continue; drawn.add(k);
             const lvl = d.level || 5;
             this.svg.appendChild(this._el('line', { x1: f.x, y1: f.y, x2: t.x, y2: t.y, stroke: '#A09888', 'stroke-width': 2, 'stroke-dasharray': '6 4', 'stroke-linecap': 'round', opacity: 0.45 }));
-            if (d.distanceText) {
+            if (d.distanceText || d.level) {
                 const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2;
-                const tl = d.distanceText.length * 5 + 10;
+                const labels = {1:'바로 옆',2:'매우 가까움',3:'가까움',4:'도보 5분',5:'도보권',6:'도보 15분'};
+                const txt = d.distanceText || labels[d.level] || `Lv.${d.level}`;
+                const tl = txt.length * 5.5 + 12;
                 const pill = this._el('g', { transform: `translate(${mx},${my - 8})` });
                 pill.appendChild(this._el('rect', { x: -tl / 2, y: -7, width: tl, height: 14, rx: 7, fill: '#fff', stroke: '#E8E4D8', 'stroke-width': 0.6, filter: 'url(#wt-sh)' }));
-                pill.appendChild(this._el('text', { x: 0, y: 3, 'text-anchor': 'middle', fill: '#5E84E2', 'font-size': '7.5', 'font-weight': '600' }, d.distanceText));
+                pill.appendChild(this._el('text', { x: 0, y: 3, 'text-anchor': 'middle', fill: '#5E84E2', 'font-size': '7.5', 'font-weight': '600' }, txt));
                 this.svg.appendChild(pill);
             }
         }
@@ -394,13 +435,145 @@ export class MapRenderer {
     }
 
     // ================================================================
+    //  팝업 카드 (말풍선 — 핀 위에 표시)
+    // ================================================================
+    _removePopup() { this.svg?.querySelector('#wt-popup-card')?.remove(); }
+
+    _drawPopupCard(locId, hubPins) {
+        this._removePopup();
+        const loc = (hubPins || this.lm.locations).find(l => l.id === locId);
+        if (!loc) return;
+
+        const ps = this._pinStyle(loc.name);
+        const g = this._el('g', { id: 'wt-popup-card', transform: `translate(${loc.x},${loc.y})` });
+
+        // 데이터
+        const visits = loc.visitCount || 0;
+        const visitText = visits === 0 ? 'New' : visits === 1 ? '1st' : `${visits}th`;
+
+        // 가까운 장소
+        let nearName = '';
+        let nearLevel = 99;
+        for (const d of (this.lm.distances || [])) {
+            const otherId = d.fromId === locId ? d.toId : d.toId === locId ? d.fromId : null;
+            if (!otherId) continue;
+            if ((d.level || 5) < nearLevel) {
+                nearLevel = d.level || 5;
+                const other = this.lm.locations.find(l => l.id === otherId);
+                if (other) nearName = other.name;
+            }
+        }
+
+        // 메모/이벤트 (팝업 카드 = title 우선, 짧은 훅)
+        let memoText = '';
+        if (loc.events?.length) {
+            const latest = loc.events[loc.events.length - 1];
+            memoText = latest.title || latest.text || '';
+        } else if (loc.memo) {
+            memoText = loc.memo;
+        }
+        if (memoText.length > 18) memoText = memoText.substring(0, 18) + '...';
+        const hasMemo = memoText.length > 0;
+
+        // 카드 사이즈
+        const cardW = 190;
+        const cardH = 78;
+        const cardY = -148;
+
+        const card = this._el('g', { transform: `translate(0,${cardY})`, filter: 'url(#wt-shp)' });
+
+        // 꼬리
+        card.appendChild(this._el('path', { d: `M-5,${cardH} L0,${cardH + 9} L5,${cardH}`, fill: '#fff' }));
+        // 카드 배경
+        card.appendChild(this._el('rect', { x: -cardW / 2, y: 0, width: cardW, height: cardH, rx: 12, fill: '#fff' }));
+
+        const lx = -cardW / 2 + 14; // 왼쪽 시작
+        const rx = cardW / 2 - 14;  // 오른쪽 끝
+
+        // 1행: 이름 (굵게) + 방문횟수 (오른쪽, 작고 회색)
+        card.appendChild(this._el('text', {
+            x: lx, y: 22,
+            fill: '#2D2418', 'font-size': '14', 'font-weight': '800',
+            'font-family': "'Noto Sans KR',sans-serif",
+        }, loc.name));
+        card.appendChild(this._el('text', {
+            x: rx, y: 22, 'text-anchor': 'end',
+            fill: '#B5AD9E', 'font-size': '9', 'font-weight': '500',
+            'font-family': "Inter,'Noto Sans KR',sans-serif",
+        }, visitText));
+
+        // 2행: 근처 장소 (작고 회색)
+        card.appendChild(this._el('text', {
+            x: lx, y: 38,
+            fill: '#A8A090', 'font-size': '9', 'font-weight': '400',
+            'font-family': "'Noto Sans KR',sans-serif",
+        }, nearName ? `Near ${nearName}` : ''));
+
+        // 점선 구분 (항상 표시)
+        card.appendChild(this._el('line', {
+            x1: lx, y1: 46, x2: rx, y2: 46,
+            stroke: '#EAE6DC', 'stroke-width': 1, 'stroke-dasharray': '4 3',
+        }));
+
+        // 메모 or placeholder
+        if (hasMemo) {
+            card.appendChild(this._el('text', {
+                x: lx, y: 62,
+                fill: '#8B9A78', 'font-size': '9.5', 'font-weight': '400',
+                'font-style': 'italic', 'letter-spacing': '0.2',
+                'font-family': "'Noto Sans KR',sans-serif",
+            }, `"${memoText}"`));
+        } else {
+            card.appendChild(this._el('text', {
+                x: lx, y: 62,
+                fill: '#C5BFB5', 'font-size': '9', 'font-weight': '400',
+                'font-family': "'Noto Sans KR',sans-serif",
+            }, '📝 아직 기록이 없습니다'));
+        }
+
+        g.appendChild(card);
+
+        // ★ 카드 클릭 영역 (투명 rect + 커서)
+        const hitArea = this._el('rect', {
+            x: -cardW / 2, y: cardY, width: cardW, height: cardH + 12,
+            fill: 'transparent', style: 'cursor:pointer',
+        });
+        g.appendChild(hitArea);
+
+        // 카드 터치/클릭 → 팝오버 열기
+        const self = this;
+        const cardLocId = locId;
+        // mousedown/mouseup 전파 차단 (팝업 닫힘 방지)
+        g.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        g.addEventListener('mouseup', (e) => { e.stopPropagation(); });
+        g.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (self.onPopupCardClick) self.onPopupCardClick(cardLocId);
+        });
+        g.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
+        g.addEventListener('touchend', (e) => {
+            if (self._wasDrag) return;
+            e.stopPropagation();
+            if (self.onPopupCardClick) self.onPopupCardClick(cardLocId);
+        });
+
+        this.svg.appendChild(g);
+    }
+
+    // ================================================================
     //  AUTO LAYOUT (Hub 핀만, centerX 강제 없음)
     // ================================================================
     _autoLayout(hubPins, curLoc) {
         if (this._skipLayout) { this._skipLayout = false; return; }
-        const needsInit = hubPins.some(l => l.x === 0 && l.y === 0);
-        if (!needsInit && !this._layoutDirty && this._layoutDone === true) return;
-        this._layoutDirty = false; this._layoutDone = true;
+        const needsInit = hubPins.some(l => !l._manualXY && l.x === 0 && l.y === 0);
+        if (!needsInit && !this._layoutDirty) return;
+        this._layoutDirty = false;
+
+        // ★ _manualXY 핀 좌표 백업 (무슨 일이 있어도 복원)
+        const manualBackup = new Map();
+        for (const loc of hubPins) {
+            if (loc._manualXY) manualBackup.set(loc.id, { x: loc.x, y: loc.y });
+        }
 
         const dists = this.lm.distances || [];
         const geoLocs = hubPins.filter(l => l.lat != null && l.lng != null);
@@ -411,19 +584,30 @@ export class MapRenderer {
             this._circularLayout(hubPins, dists, curLoc);
         }
 
-        // 겹침 방지 (_manualXY 보존)
+        // 겹침 방지 (_manualXY 핀은 절대 안 움직임)
         for (let iter = 0; iter < 3; iter++) {
             for (let i = 0; i < hubPins.length; i++) for (let j = i + 1; j < hubPins.length; j++) {
                 const a = hubPins[i], b = hubPins[j];
+                if (a._manualXY && b._manualXY) continue;
                 const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy);
                 if (d < 70) {
                     const push = (70 - d) / 2, nx = dx / (d || 1), ny = dy / (d || 1);
-                    if (a.id !== curLoc.id && !a._manualXY) { a.x -= Math.round(push * nx); a.y -= Math.round(push * ny); }
-                    if (b.id !== curLoc.id && !b._manualXY) { b.x += Math.round(push * nx); b.y += Math.round(push * ny); }
+                    if (!a._manualXY && a.id !== curLoc.id) { a.x -= Math.round(push * nx); a.y -= Math.round(push * ny); }
+                    if (!b._manualXY && b.id !== curLoc.id) { b.x += Math.round(push * nx); b.y += Math.round(push * ny); }
                 }
             }
         }
-        for (const loc of hubPins) this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
+
+        // ★ _manualXY 핀 좌표 강제 복원
+        for (const [id, pos] of manualBackup) {
+            const loc = hubPins.find(l => l.id === id);
+            if (loc) { loc.x = pos.x; loc.y = pos.y; }
+        }
+
+        // 비수동 핀만 DB 저장
+        for (const loc of hubPins) {
+            if (!loc._manualXY) this.lm.updateLocation(loc.id, { x: loc.x, y: loc.y });
+        }
     }
 
     _geoAwareLayout(locs, geoLocs, curLoc) {
@@ -482,12 +666,12 @@ export class MapRenderer {
     // ================================================================
     //  TOUCH / MOUSE
     // ================================================================
-    _touchStart(e){if(e.touches.length===2){e.preventDefault();this._pinch=this._pinchDist(e);this._pan=null;this._longPress=null;return;}if(e.touches.length===1){const t=e.touches[0],pt=this._svgPt(t),hitId=this._hitTest(pt);this._touchInfo={x:t.clientX,y:t.clientY,time:Date.now(),nodeId:hitId,pt};this._wasDrag=false;if(hitId&&!this._movingNodeId){e.preventDefault();this._longPress=setTimeout(()=>{this._movingNodeId=hitId;const loc=this.lm.locations.find(l=>l.id===hitId);if(loc&&this.onMoveRequest)this.onMoveRequest(hitId,loc.name);this._longPress=null;},500);}else if(this._movingNodeId){e.preventDefault();const loc=this.lm.locations.find(l=>l.id===this._movingNodeId);if(loc){loc.x=Math.round(pt.x);loc.y=Math.round(pt.y);loc._manualXY=true;this.lm.updateLocation(loc.id,{x:loc.x,y:loc.y,_manualXY:true});this._vbManual=true;this._skipLayout=true;this.render();}this._movingNodeId=null;}else{this._pan={sx:t.clientX,sy:t.clientY,vx:this.vb.x,vy:this.vb.y};}}}
+    _touchStart(e){if(e.touches.length===2){e.preventDefault();this._pinch=this._pinchDist(e);this._pan=null;this._longPress=null;return;}if(e.touches.length===1){const t=e.touches[0],pt=this._svgPt(t),hitId=this._hitTest(pt);this._touchInfo={x:t.clientX,y:t.clientY,time:Date.now(),nodeId:hitId,pt};this._wasDrag=false;if(hitId&&!this._movingNodeId){e.preventDefault();this._longPress=setTimeout(()=>{this._movingNodeId=hitId;const loc=this.lm.locations.find(l=>l.id===hitId);if(loc&&this.onMoveRequest)this.onMoveRequest(hitId,loc.name);this._longPress=null;},500);}else if(this._movingNodeId){e.preventDefault();const loc=this.lm.locations.find(l=>l.id===this._movingNodeId);if(loc){loc.x=Math.round(pt.x);loc.y=Math.round(pt.y);loc._manualXY=true;this.lm.updateLocation(loc.id,{x:loc.x,y:loc.y,_manualXY:true});this._savePinPos(loc.id,loc.x,loc.y);this._vbManual=true;this._skipLayout=true;this.render();}this._movingNodeId=null;}else{/* 팬 비활성화 */}}}
     _touchMove(e){if(e.touches.length===2&&this._pinch){e.preventDefault();const d=this._pinchDist(e),s=this._pinch/d;const cxv=this.vb.x+this.vb.w/2,cyv=this.vb.y+this.vb.h/2;const nw=Math.max(200,Math.min(2000,this.vb.w*s));const nh=nw*(this.vb.h/this.vb.w);this.vb={x:cxv-nw/2,y:cyv-nh/2,w:nw,h:nh};this._applyVB();this._pinch=d;return;}if(e.touches.length===1){const t=e.touches[0];if(this._longPress&&this._touchInfo){if(Math.abs(t.clientX-this._touchInfo.x)>10||Math.abs(t.clientY-this._touchInfo.y)>10){clearTimeout(this._longPress);this._longPress=null;}}if(this._pan){e.preventDefault();const dx=(t.clientX-this._pan.sx)*(this.vb.w/this.svg.getBoundingClientRect().width);const dy=(t.clientY-this._pan.sy)*(this.vb.h/this.svg.getBoundingClientRect().height);this.vb.x=this._pan.vx-dx;this.vb.y=this._pan.vy-dy;this._applyVB();this._wasDrag=true;}}}
-    _touchEnd(){clearTimeout(this._longPress);this._longPress=null;if(this._touchInfo&&!this._wasDrag&&this._touchInfo.nodeId&&!this._movingNodeId){if(Date.now()-this._touchInfo.time<400)this.onLocationClick?.(this._touchInfo.nodeId);}this._pinch=null;this._pan=null;this._touchInfo=null;}
-    _onDown(e){const pt=this._svgPt(e),hitId=this._hitTest(pt);this._wasDrag=false;if(this._movingNodeId){e.preventDefault();const loc=this.lm.locations.find(l=>l.id===this._movingNodeId);if(loc){loc.x=Math.round(pt.x);loc.y=Math.round(pt.y);loc._manualXY=true;this.lm.updateLocation(loc.id,{x:loc.x,y:loc.y,_manualXY:true});this._vbManual=true;this._skipLayout=true;this.render();}this._movingNodeId=null;return;}if(hitId){e.preventDefault();this._mouseClickId=hitId;}if(!hitId){this._pan={sx:e.clientX,sy:e.clientY,vx:this.vb.x,vy:this.vb.y};}}
+    _touchEnd(){clearTimeout(this._longPress);this._longPress=null;const wasPinch=!!this._pinch;if(this._touchInfo&&!this._wasDrag&&!wasPinch&&this._touchInfo.nodeId&&!this._movingNodeId){if(Date.now()-this._touchInfo.time<400)this.onLocationClick?.(this._touchInfo.nodeId);}else if(this._touchInfo&&!this._wasDrag&&!wasPinch&&!this._touchInfo.nodeId&&this._popupLocId){this._popupLocId=null;this._removePopup();}this._pinch=null;this._pan=null;this._touchInfo=null;}
+    _onDown(e){const pt=this._svgPt(e),hitId=this._hitTest(pt);this._wasDrag=false;if(this._movingNodeId){e.preventDefault();const loc=this.lm.locations.find(l=>l.id===this._movingNodeId);if(loc){loc.x=Math.round(pt.x);loc.y=Math.round(pt.y);loc._manualXY=true;this.lm.updateLocation(loc.id,{x:loc.x,y:loc.y,_manualXY:true});this._savePinPos(loc.id,loc.x,loc.y);this._vbManual=true;this._skipLayout=true;this.render();}this._movingNodeId=null;return;}if(hitId){e.preventDefault();this._mouseClickId=hitId;}/* 팬 비활성화 */}
     _onMove(e){if(this._pan){const dx=(e.clientX-this._pan.sx)*(this.vb.w/this.svg.getBoundingClientRect().width);const dy=(e.clientY-this._pan.sy)*(this.vb.h/this.svg.getBoundingClientRect().height);this.vb.x=this._pan.vx-dx;this.vb.y=this._pan.vy-dy;this._applyVB();this._wasDrag=true;this._mouseClickId=null;}}
-    _onUp(){this._pan=null;if(this._mouseClickId&&!this._wasDrag)this.onLocationClick?.(this._mouseClickId);this._mouseClickId=null;}
+    _onUp(){this._pan=null;if(this._mouseClickId&&!this._wasDrag){this.onLocationClick?.(this._mouseClickId);}else if(!this._wasDrag&&this._popupLocId){this._popupLocId=null;this._removePopup();}this._mouseClickId=null;}
     _zoom(f,e){const r=this.svg.getBoundingClientRect();const mx=(e.clientX-r.left)/r.width,my=(e.clientY-r.top)/r.height;const nw=Math.max(200,Math.min(2000,this.vb.w*f));const nh=nw*(this.vb.h/this.vb.w);this.vb.x+=(this.vb.w-nw)*mx;this.vb.y+=(this.vb.h-nh)*my;this.vb.w=nw;this.vb.h=nh;this._applyVB();}
     _el(tag,attrs,text){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs||{}))el.setAttribute(k,v);if(text!==undefined)el.textContent=text;return el;}
     _svgPt(e){const r=this.svg.getBoundingClientRect();return{x:this.vb.x+(e.clientX-r.left)/r.width*this.vb.w,y:this.vb.y+(e.clientY-r.top)/r.height*this.vb.h};}

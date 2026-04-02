@@ -1,6 +1,6 @@
-// 🐶 World Tracker — location-manager.js (Single Scene)
+// 🐶 월드맵 — location-manager.js (Single Scene)
 
-import { getContext } from '../../../extensions.js';
+import { getContext, extension_settings } from '../../../extensions.js';
 import { EXTENSION_NAME } from './index.js';
 
 export class LocationManager {
@@ -14,20 +14,76 @@ export class LocationManager {
     }
 
     getChatId() { const ctx = getContext(); return ctx?.chatId ? String(ctx.chatId) : null; }
+    getCharacterId() { const ctx = getContext(); return ctx?.characterId != null ? `char_${ctx.characterId}` : null; }
     generateId() { return `loc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`; }
 
+    // ★ 세계관 이어가기: 설정에 따라 characterId 또는 chatId 반환
+    getDataKey() {
+        const s = extension_settings[EXTENSION_NAME];
+        if (s?.worldContinuity) {
+            const charKey = this.getCharacterId();
+            if (charKey) return charKey;
+        }
+        return this.getChatId();
+    }
+
     async loadChat() {
-        this.currentChatId = this.getChatId();
+        this.currentChatId = this.getDataKey();
         if (!this.currentChatId) { this.locations=[]; this.movements=[]; this.distances=[]; this.currentLocationId=null; return; }
         this.locations = await this.db.getLocationsByChatId(this.currentChatId) || [];
         this.movements = await this.db.getMovementsByChatId(this.currentChatId) || [];
         this.distances = await this.db.getDistancesByChatId(this.currentChatId) || [];
         const cfg = await this.db.getMapConfig(this.currentChatId);
         if (cfg) this.currentLocationId = cfg.currentLocationId || null;
-        console.log(`[${EXTENSION_NAME}] Loaded: ${this.locations.length} locs, ${this.movements.length} moves`);
+        console.log(`[${EXTENSION_NAME}] Loaded (key=${this.currentChatId}): ${this.locations.length} locs, ${this.movements.length} moves`);
+    }
+
+    // ★ 마이그레이션: 현재 chatId 데이터를 characterId 키로 복사
+    async migrateToCharacter() {
+        const chatId = this.getChatId();
+        const charKey = this.getCharacterId();
+        if (!chatId || !charKey || chatId === charKey) return false;
+
+        // 이미 캐릭터 키에 데이터가 있는지 확인
+        const existing = await this.db.getLocationsByChatId(charKey);
+        if (existing && existing.length > 0) {
+            console.log(`[${EXTENSION_NAME}] Character key already has ${existing.length} locations, skip migration`);
+            return true; // 이미 있으면 마이그레이션 불필요
+        }
+
+        // chatId 데이터를 charKey로 복사
+        const locs = await this.db.getLocationsByChatId(chatId) || [];
+        const movs = await this.db.getMovementsByChatId(chatId) || [];
+        const dists = await this.db.getDistancesByChatId(chatId) || [];
+        const cfg = await this.db.getMapConfig(chatId);
+
+        for (const l of locs) { l.chatId = charKey; await this.db.putLocation(l); }
+        for (const m of movs) { m.chatId = charKey; try { await this.db.putLocation(m); } catch(_) { try { await this.db._p(this.db._tx('movements','readwrite').put(m), m); } catch(_){} } }
+        for (const d of dists) { d.chatId = charKey; await this.db.saveDistance(d); }
+        if (cfg) { cfg.chatId = charKey; await this.db.saveMapConfig(cfg); }
+
+        console.log(`[${EXTENSION_NAME}] Migrated ${locs.length} locs from ${chatId} → ${charKey}`);
+        return true;
     }
 
     async addLocation(name, memo = '', aliases = []) {
+        if (!this.currentChatId) return null;
+        // B6: 이동경로 분리 — "카페→집" 또는 "카페 -> 집" 등
+        const arrowPat = /\s*(?:→|->|➡|⟶|=>)\s*/;
+        if (arrowPat.test(name)) {
+            const parts = name.split(arrowPat).map(p => p.trim()).filter(p => p.length >= 1);
+            let lastLoc = null;
+            for (const part of parts) {
+                const existing = this.findByName(part);
+                if (existing) { lastLoc = existing; continue; }
+                lastLoc = await this._createSingleLocation(part, memo, aliases);
+            }
+            return lastLoc; // 마지막 장소(도착지) 반환
+        }
+        return this._createSingleLocation(name, memo, aliases);
+    }
+
+    async _createSingleLocation(name, memo = '', aliases = []) {
         if (!this.currentChatId) return null;
         const loc = {
             id: this.generateId(), chatId: this.currentChatId,
@@ -83,12 +139,14 @@ export class LocationManager {
         return null;
     }
 
-    async moveTo(locationId) {
+    async moveTo(locationId, rpDate) {
         const loc = this.locations.find(l => l.id === locationId); if (!loc) return;
         const prevId = this.currentLocationId;
         loc.visitCount = (loc.visitCount || 0) + 1;
         loc.lastVisited = Date.now();
+        if (rpDate) loc.rpLastVisited = rpDate;
         if (!loc.firstVisited) loc.firstVisited = Date.now();
+        if (!loc.rpFirstVisited && rpDate) loc.rpFirstVisited = rpDate;
         await this.db.putLocation(loc);
         if (prevId && prevId !== locationId) {
             const d = this.getDistanceBetween(prevId, locationId);
@@ -104,7 +162,7 @@ export class LocationManager {
         this.movements = this.movements.filter(m => m.id !== movId);
     }
 
-    async setDistance(a, b, text, walk = null, level = 5) {
+    async setDistance(a, b, text, walk = null, level = 3) {
         if (!this.currentChatId) return null;
         const id = [a, b].sort().join('_');
         const d = { id, chatId: this.currentChatId, fromId: a, toId: b, distanceText: text, walkTime: walk, level: level, updatedAt: Date.now() };
@@ -122,9 +180,11 @@ export class LocationManager {
     }
 
     _autoPos() {
-        const n = this.locations.length; if (n === 0) return { x: 300, y: 250 };
+        // 월드 좌표 중심 (고정 월드 3000×2400 기준)
+        const WCX = 1500, WCY = 1200;
+        const n = this.locations.length; if (n === 0) return { x: WCX, y: WCY };
         const a = n * 0.8, r = 80 + n * 25;
-        return { x: Math.round(300 + r * Math.cos(a)), y: Math.round(250 + r * Math.sin(a)) };
+        return { x: Math.round(WCX + r * Math.cos(a)), y: Math.round(WCY + r * Math.sin(a)) };
     }
 
     _rndColor() {

@@ -54,10 +54,13 @@ export class LocationDetector {
             // 신체
             '어깨','허벅지','팔뚝','손목','발목','머리카락','뒷덜미','손가락','발가락',
             '이마','볼','턱','목','허리','가슴','등','배','무릎','팔','다리',
+            '심장','입술','혀','뺨','눈썹','콧날','귓불',
             // 추상/일반
             '마음','기분','느낌','감정','표정','눈빛','시선','한숨','말투','목소리',
             '생각','기억','추억','습관','버릇','성격','태도','분위기','인상','냄새',
             '모습','모양','형태','크기','색깔','소리','맛','온기','냉기','향기',
+            '체온','정적','숨결','속삭임','윙크','두근','설레임','떨림','긴장','흥분',
+            '고요','침묵','적막','여운','감촉','촉감',
             // 가구/가전/생활용품
             '소파','의자','테이블','책상','침대','탁자','선반','서랍','거울','커튼',
             '카펫','러그','쿠션','이불','베개','장롱','옷장','냉장고','세탁기','건조기',
@@ -85,7 +88,7 @@ export class LocationDetector {
             'park','garden','forest','beach','lake',
             'plaza','square','palace','manor','mansion','apartment','building',
             'kitchen','bedroom','bathroom','basement','attic','garage','living room',
-            'gym','arena','stadium','court','field','ground','range',
+            'gym','arena','stadium','court','field','ground',
             'base','camp','bunker','barracks','armory','quarters','dormitory','dorm',
             'lab','laboratory','workshop','warehouse','prison','dungeon','cave',
             'dock','port','harbor','airport','terminal',
@@ -263,7 +266,7 @@ export class LocationDetector {
             const hasM = this.engMoveVerbs.some(v => lo.includes(v)) || /\b(?:into|toward|towards)\b/.test(lo);
             if (moveOnly && !hasM) continue;
             if (!moveOnly && hasM) continue;
-            if (!moveOnly && !/\b(?:in|inside|within|at|of|around)\s+(?:the|a)\b/.test(lo) && !/\bthe\s+/.test(lo)) continue;
+            if (!moveOnly && !/\b(?:in|inside|within|at|of|around)\s+(?:the|a|his|her|my|your|their|our)\b/.test(lo) && !/\bthe\s+/.test(lo) && !/\b(?:in|inside|at)\s+\w+'s\b/.test(lo)) continue;
 
             for (const pw of this.placeWords) {
                 if (this.transitEn.includes(pw)) continue;

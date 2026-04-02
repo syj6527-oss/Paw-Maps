@@ -1,4 +1,6 @@
 // 🐶 World Tracker — ui-manager.js (Inline Toast + Popover)
+// ★ BUILD: 2026-04-02 v0.3.0 RELEASE
+console.log('[wt] ui-manager v0.3.0 loaded');
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -31,7 +33,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version">v0.3.0-beta</span></b>
+                <b>🐶 World Tracker <span class="wt-version">v0.3.0</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -56,6 +58,9 @@ export class UIManager {
                     <label style="white-space:nowrap">🌐 요약 언어</label>
                     <select id="wt-s-eventlang" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="auto">🔄 자동 (RP 언어)</option><option value="ko">🇰🇷 한국어</option><option value="en">🇺🇸 English</option></select>
                 </div>
+                <div class="wt-divider"></div>
+                <div class="wt-s-row"><label><input type="checkbox" id="wt-s-worldcont"/> 🌍 세계관 이어가기</label></div>
+                <span id="wt-s-worldcont-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:1px;margin-bottom:4px">새 채팅에서도 같은 캐릭터의 세계관 유지</span>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>📦 전체 데이터 관리</label></div>
                 <div class="wt-s-row" style="display:flex;gap:4px">
@@ -91,7 +96,45 @@ export class UIManager {
             toastSuccess(`🧠 감지 모델: ${name}`);
             setTimeout(() => $('#wt-s-profile-status').text(''), 3000);
         });
-        // 전체 데이터 관리 (설정 패널)
+        // 🌍 세계관 이어가기
+        $('#wt-s-worldcont').prop('checked', s?.worldContinuity ?? false).on('change', async () => {
+            const enabled = $('#wt-s-worldcont').is(':checked');
+            if (enabled) {
+                // 마이그레이션 확인 팝업
+                const charKey = this.lm.getCharacterId();
+                if (!charKey) {
+                    toastWarn('캐릭터를 먼저 선택해주세요');
+                    $('#wt-s-worldcont').prop('checked', false);
+                    return;
+                }
+                const existing = await this.lm.db.getLocationsByChatId(charKey);
+                let msg = '현재 채팅의 세계관을 이 캐릭터에 연결할까요?\n새 채팅을 만들어도 세계관이 유지됩니다.';
+                if (existing?.length) {
+                    msg = `이 캐릭터에 이미 세계관 데이터가 있어요 (${existing.length}곳).\n연결하면 기존 데이터를 이어서 사용합니다.`;
+                }
+                if (!confirm(msg)) {
+                    $('#wt-s-worldcont').prop('checked', false);
+                    return;
+                }
+                s.worldContinuity = true;
+                saveSettingsDebounced();
+                // 데이터 마이그레이션
+                await this.lm.migrateToCharacter();
+                await this.lm.loadChat();
+                this.pi?.inject();
+                if (this.panelVisible) this.refresh();
+                $('#wt-s-worldcont-status').text('✅ 캐릭터 세계관 연결됨').css('color', '#2B8A6E');
+                toastSuccess('🌍 세계관 이어가기 ON!');
+            } else {
+                s.worldContinuity = false;
+                saveSettingsDebounced();
+                await this.lm.loadChat();
+                this.pi?.inject();
+                if (this.panelVisible) this.refresh();
+                $('#wt-s-worldcont-status').text('새 채팅에서도 같은 캐릭터의 세계관 유지').css('color', '#9A8A7A');
+                toastSuccess('🌍 세계관 이어가기 OFF');
+            }
+        });
         $('#wt-s-export-all').on('click', () => this._exportAllData());
         $('#wt-s-import-all').on('click', () => $('#wt-s-import-file').click());
         $('#wt-s-import-file').on('change', (e) => this._importAllData(e));
@@ -161,15 +204,16 @@ export class UIManager {
                 <div id="wt-map-section" style="display:none">
                     <div class="wt-map-mode-bar">
                         <button id="wt-mode-node" class="wt-mode-btn wt-mode-active">🗺️ 약도</button>
-                        <button id="wt-mode-leaflet" class="wt-mode-btn">🐾 Paw Map</button>
+                        <button id="wt-mode-leaflet" class="wt-mode-btn">🐾 Paw Maps</button>
                         <button id="wt-mode-fantasy" class="wt-mode-btn" style="display:none">🏰 지도</button>
                     </div>
-                    <div id="wt-search-bar" class="wt-search-bar">
+                    <div id="wt-search-bar" class="wt-search-bar" style="position:relative">
+                        <button class="wt-back-btn" style="display:none" onclick="window.__wtBackToMap&&window.__wtBackToMap()">←</button>
                         <div id="wt-search-tabs" style="display:none;gap:2px;margin-bottom:3px">
                             <button id="wt-search-tab-loc" class="wt-mode-btn wt-mode-active" style="flex:1;padding:4px;font-size:11px">🔍 장소</button>
                             <button id="wt-search-tab-addr" class="wt-mode-btn" style="flex:1;padding:4px;font-size:11px">📍 주소</button>
                         </div>
-                        <input type="search" id="wt-search-input" class="wt-input" placeholder="🔍 등록된 장소 검색..." autocomplete="off" inputmode="search"/>
+                        <input type="search" id="wt-search-input" class="wt-input" placeholder="🔍 주소 검색..." autocomplete="off" inputmode="search"/>
                         <button id="wt-btn-refresh" style="border:none;background:none;font-size:16px;cursor:pointer;opacity:.5;padding:2px 4px" title="약도 재배치">🔄</button>
                         <div id="wt-search-results" class="wt-search-results" style="display:none"></div>
                     </div>
@@ -245,13 +289,6 @@ export class UIManager {
                                 <input type="text" id="wt-pop-event-input" class="wt-input" placeholder="이벤트 추가..." style="flex:1;font-size:12px;padding:5px 8px"/>
                                 <button id="wt-pop-event-add" class="wt-btn-accent wt-btn-s">+</button>
                             </div>
-                        </div>
-                        <div id="wt-pop-review-section" style="margin-top:6px">
-                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                                <span style="font-size:12px;color:#9A8A7A">⭐ 랜덤 리뷰</span>
-                                <button id="wt-pop-review-gen" style="font-size:10px;color:#1A73E8;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:500">🔄 새 리뷰 생성</button>
-                            </div>
-                            <div id="wt-pop-review-list" style="display:flex;flex-direction:column;gap:6px"></div>
                         </div>
                         <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
                         <div style="font-size:12px;color:#9A8A7A;margin-top:2px">🏷️ 별칭 (쉼표 구분)</div>
@@ -390,7 +427,7 @@ export class UIManager {
         $('#wt-search-tab-loc').on('click', () => {
             this._searchMode = 'loc';
             $('#wt-search-tab-loc').addClass('wt-mode-active'); $('#wt-search-tab-addr').removeClass('wt-mode-active');
-            $('#wt-search-input').attr('placeholder', '🔍 등록된 장소 검색...').val('');
+            $('#wt-search-input').attr('placeholder', '🔍 장소 검색...').val('');
             $('#wt-search-results').hide();
         });
         $('#wt-search-tab-addr').on('click', () => {
@@ -527,6 +564,12 @@ export class UIManager {
                 $('#wt-mode-fantasy').hide();
             }
             this.refresh();
+            // B5: 약도 모드일 때 지도 섹션 자동 표시 + 렌더 트리거
+            const curMode = s?.mapMode || 'node';
+            if (curMode === 'node' || curMode === 'fantasy') {
+                $('#wt-map-section').show();
+                $('#wt-map-toggle').text('🗺️ 지도 ▴');
+            }
             setTimeout(() => {
                 if (this.mapRenderer) this.mapRenderer.render();
                 if (this.leafletRenderer?.map) this.leafletRenderer.invalidateSize();
@@ -637,6 +680,7 @@ export class UIManager {
         // ★ Leaflet 풀스크린이면 장소목록/이동히스토리 숨김 유지
         if (this._isLeafletFull) {
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
+            $('.wt-panel-header,.wt-map-mode-bar').hide(); // ★ refresh마다 강제 숨김
             $('#wt-paw-nav').show();
         } else {
             this._updLocList(); this._updMoveList();
@@ -660,6 +704,8 @@ export class UIManager {
             $('#wt-loc-toggle,#wt-move-toggle,#wt-add-toggle,.wt-scene-loc').show();
             $('#wt-map-toggle').show();
             $('#wt-btn-refresh').show();
+            $('.wt-panel-header').show(); // ★ 헤더 복원
+            $('.wt-map-mode-bar').show(); // ★ 모드바 복원
             $('#wt-paw-nav').hide();
             // ★ 바텀시트 + 내페이지 완전 정리
             this._hideBottomSheet();
@@ -695,7 +741,9 @@ export class UIManager {
             this._isLeafletFull = true;
             $('#wt-panel-body').addClass('wt-leaflet-full');
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
-            $('#wt-map-section').show(); // 지도 섹션은 보여야 함
+            $('.wt-map-mode-bar').hide(); // ★ 약도/Paw Map 탭 숨김
+            $('.wt-panel-header').hide(); // ★ 헤더 숨김
+            $('#wt-map-section').show();
             $('#wt-map-toggle').hide(); // 접기 버튼 숨김
             $('#wt-btn-refresh').hide(); // 약도 재생성 숨김
             $('#wt-paw-nav').show(); // 하단 탭 표시
@@ -706,7 +754,7 @@ export class UIManager {
             if (lContainer) { lContainer.style.flex = '1'; lContainer.style.height = 'auto'; lContainer.style.minHeight = '0'; }
             // 3. Paw Map 태그 (좌하단)
             if (!$('#wt-pawmap-tag').length) {
-                $('#wt-leaflet-wrap').append('<div id="wt-pawmap-tag" style="position:absolute;bottom:8px;left:8px;z-index:20;font-size:11px;font-weight:600;color:rgba(0,0,0,.35);font-family:Outfit,sans-serif;pointer-events:none">🐾 Paw Map</div>');
+                $('#wt-leaflet-wrap').append('<div id="wt-pawmap-tag" style="position:absolute;bottom:8px;left:8px;z-index:20;font-size:11px;font-weight:600;color:rgba(0,0,0,.35);font-family:Outfit,sans-serif;pointer-events:none">🐾 Paw Maps</div>');
             }
             if (!this.leafletRenderer) {
                 const ok = await loadLeaflet();
@@ -913,6 +961,183 @@ export class UIManager {
         }
     }
 
+    // ========== 분위기 카드 (이모지 기반 자동 생성) ==========
+    _moodCardPool = {
+        mart: { main: '🏪', pool: ['🛒','🍜','🍺','🍪','🍫','🧃','💰','🥤','🍱','🧻','🐱','🐾'], colors: ['#E8F5E9','#FFF8E1'] },
+        cafe: { main: '☕', pool: ['🐱','🧁','🍰','🫧','✨','🍪','🎵','📖','🪴','💕','🌆'], colors: ['#FCE4EC','#FFF3E0'] },
+        home: { main: '🏠', pool: ['🐶','🛋️','📺','🍿','😴','💤','🧸','🕯️','🌙','💕'], colors: ['#E8EAF6','#E3F2FD'] },
+        school: { main: '🎓', pool: ['📚','✏️','🎒','📝','🔬','💻','⏰','🏫','📐','🎯'], colors: ['#F3E5F5','#E8EAF6'] },
+        park: { main: '🌳', pool: ['🐕','🦆','🌸','🍃','☀️','🧺','🎈','🦋','⛲','🌻'], colors: ['#E8F5E9','#F1F8E9'] },
+        gym: { main: '💪', pool: ['🏋️','🥊','💦','🎯','🔥','🥤','🧊','⚡','🏃','🎽'], colors: ['#E3F2FD','#E1F5FE'] },
+        bar: { main: '🍺', pool: ['🥃','🍷','🎵','🎤','🌙','🥜','🍻','💫','🎶','🎲'], colors: ['#FFF3E0','#FBE9E7'] },
+        restaurant: { main: '🍽️', pool: ['🥘','🍕','🍝','🥗','🍖','🧑‍🍳','🥂','🌶️','🫕','🍜'], colors: ['#FFF8E1','#FBE9E7'] },
+        hospital: { main: '🏥', pool: ['💊','🩺','🩹','💉','🌡️','❤️‍🩹','🚑','🧴','🩻','🫀'], colors: ['#E8F5E9','#E1F5FE'] },
+        library: { main: '📚', pool: ['📖','🔍','📝','🤓','☕','🪴','💡','🔖','📑','🧐'], colors: ['#EDE7F6','#E8EAF6'] },
+        station: { main: '🚉', pool: ['🚃','🎫','⏰','👥','📱','🧳','🚶','🗺️','☕','🎧'], colors: ['#ECEFF1','#E3F2FD'] },
+        alley: { main: '🌧️', pool: ['🏚️','🔦','🐈‍⬛','📱','👀','💨','🌫️','🚶','🔒','⚡'], colors: ['#78909C','#546E7A'] },
+        default: { main: '📍', pool: ['🗺️','👣','🐾','✨','🌟','📌','🎯','🏷️','🔖','💫'], colors: ['#F5F5F5','#EEEEEE'] },
+    };
+
+    _getMoodCard(loc) {
+        const name = (loc.name || '').toLowerCase();
+        const memo = (loc.memo || '').toLowerCase();
+        const events = loc.events || [];
+        const style = this.leafletRenderer?._locStyle?.(loc.name) || { emoji: '📍' };
+
+        // 장소 타입 매칭
+        let type = 'default';
+        if (/마트|mart|편의|convenience|가게|shop|store|grocery|supermarket/i.test(name)) type = 'mart';
+        else if (/카페|cafe|coffee|커피/i.test(name)) type = 'cafe';
+        else if (/집|home|house|숙소|기숙/i.test(name)) type = 'home';
+        else if (/학교|school|학원/i.test(name)) type = 'school';
+        else if (/공원|park|정원|garden/i.test(name)) type = 'park';
+        else if (/체육|gym|운동|fitness/i.test(name)) type = 'gym';
+        else if (/술집|bar|pub|tavern|주점/i.test(name)) type = 'bar';
+        else if (/식당|restaurant|음식|레스토랑/i.test(name)) type = 'restaurant';
+        else if (/병원|hospital|의원/i.test(name)) type = 'hospital';
+        else if (/도서|library|서점/i.test(name)) type = 'library';
+        else if (/역|station|지하철/i.test(name)) type = 'station';
+        else if (/골목|alley|뒷길/i.test(name)) type = 'alley';
+
+        const pool = this._moodCardPool[type] || this._moodCardPool.default;
+        const mainEmoji = style.emoji !== '📍' ? style.emoji : pool.main;
+
+        // 시드 기반 랜덤 (장소별 고정)
+        const seed = (loc.id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+        const rng = (i) => ((seed * 9301 + 49297 + i * 31) % 233280) / 233280;
+
+        // 이모지 셔플 후 3~5개 선택
+        const shuffled = [...pool.pool].sort((a, b) => rng(a.codePointAt(0)) - rng(b.codePointAt(0)));
+        const subs = shuffled.slice(0, 4);
+
+        // 이벤트 무드에서 추가 이모지
+        const lastEvent = events[events.length - 1];
+        let eventEmoji = null;
+        if (lastEvent?.mood === '💕') eventEmoji = '💕';
+        else if (lastEvent?.mood === '⚡') eventEmoji = '⚡';
+        else if (lastEvent?.mood === '📅') eventEmoji = '📅';
+
+        // 시간대
+        const hour = new Date().getHours();
+        let timeLabel, timeIcon;
+        if (hour >= 5 && hour < 12) { timeLabel = '아침'; timeIcon = '☀️'; }
+        else if (hour >= 12 && hour < 17) { timeLabel = '오후'; timeIcon = '🌤️'; }
+        else if (hour >= 17 && hour < 20) { timeLabel = '저녁'; timeIcon = '🌆'; }
+        else { timeLabel = '밤'; timeIcon = '🌙'; }
+
+        // 밤 장소는 어두운 배경
+        const isDark = hour >= 20 || hour < 5 || type === 'alley';
+        const colors = isDark
+            ? ['#1a1a2e', '#16213e', '#0f3460']
+            : pool.colors;
+        const tagBg = isDark ? 'rgba(255,255,255,.15)' : 'rgba(255,255,255,.85)';
+        const tagColor = isDark ? '#e0e0e0' : '#5D4037';
+
+        return { mainEmoji, subs, eventEmoji, colors, isDark, timeLabel, timeIcon, tagBg, tagColor, small1: subs[0], small1deco: subs[1], small2: subs[2] || eventEmoji || '✨', small2deco: subs[3] || '🐾' };
+    }
+
+    // ========== 분위기 카드 이모지 시스템 ==========
+    _getMoodCard(loc) {
+        const name = (loc.name || '').toLowerCase();
+        const memo = (loc.memo || '').toLowerCase();
+        const events = loc.events || [];
+        const lastEvent = events[events.length - 1];
+        const hour = new Date().getHours();
+
+        // 시간대 + 날씨
+        let timeLabel, colors;
+        if (hour >= 5 && hour < 12) { timeLabel = '아침 · 맑음'; colors = ['#E3F2FD','#E1F5FE','#B3E5FC']; }
+        else if (hour >= 12 && hour < 17) { timeLabel = '오후 · 맑음'; colors = ['#E8F5E9','#FFF8E1','#FFECB3']; }
+        else if (hour >= 17 && hour < 20) { timeLabel = '저녁 · 노을'; colors = ['#FCE4EC','#FFF3E0','#FFE0B2']; }
+        else { timeLabel = '밤 · 맑음'; colors = ['#1a1a2e','#16213e','#0f3460']; }
+        const isDark = hour >= 20 || hour < 5;
+        const tagStyle = isDark ? 'background:rgba(255,255,255,.15);color:#e0e0e0' : 'background:rgba(255,255,255,.85);color:#5D4037';
+
+        // 장소 타입별 이모지 풀
+        const pools = {
+            mart: { main: '🏪', subs: ['🛒','🍜','🍺','💰','🧃','🍫','🧻'], s1: ['🍪','🍫','🥤'], s2: ['🐱','🐾','🧊'] },
+            cafe: { main: '☕', subs: ['🐱','🧁','🍰','🫧','✨','🍪'], s1: ['🌆','✨','🫧'], s2: ['💕','🍰','🧁'] },
+            home: { main: '🏠', subs: ['🐶','🛋️','📺','🍿','😴','💤','🧸'], s1: ['🍿','📺','🧸'], s2: ['😴','💤','🐶'] },
+            school: { main: '🎓', subs: ['📚','✏️','🎒','📝','🏫'], s1: ['📚','✏️','📝'], s2: ['🎒','🏫','📖'] },
+            gym: { main: '💪', subs: ['🏋️','🥊','💦','🎯','🔥'], s1: ['🥤','🧊','💦'], s2: ['🔥','⚡','🎯'] },
+            park: { main: '🌳', subs: ['🌸','🐦','🦋','🍃','🌷','🐿️'], s1: ['🌸','🦋','🌷'], s2: ['🐦','🐿️','🍃'] },
+            bar: { main: '🍺', subs: ['🥂','🎵','🎶','🌙','🍸','🎤'], s1: ['🥂','🍸','🎵'], s2: ['🎶','🎤','🌙'] },
+            restaurant: { main: '🍽️', subs: ['🍝','🥘','🍖','🥗','🧑‍🍳'], s1: ['🍝','🥘','🍖'], s2: ['🥗','🍷','🧑‍🍳'] },
+            hospital: { main: '🏥', subs: ['💊','🩺','🩹','💉','🧴'], s1: ['💊','🩺','🩹'], s2: ['💉','🧴','🤒'] },
+            library: { main: '📚', subs: ['📖','📝','🔖','💡','🤓'], s1: ['📖','🔖','📝'], s2: ['💡','🤓','☕'] },
+            station: { main: '🚉', subs: ['🚆','🎫','🕐','👥','🛤️'], s1: ['🚆','🎫','🕐'], s2: ['👥','🛤️','📱'] },
+            street: { main: '🏚️', subs: ['🔦','🐈‍⬛','📱','👀','🌧️'], s1: ['⚡','🔦','👀'], s2: ['🐈‍⬛','📱','🌧️'] },
+        };
+
+        // 장소 이름으로 타입 매칭
+        let type = 'default';
+        if (/마트|mart|편의|convenience|가게|shop|store|grocery/i.test(name)) type = 'mart';
+        else if (/카페|cafe|coffee|커피/i.test(name)) type = 'cafe';
+        else if (/집|home|house|숙소|기숙/i.test(name)) type = 'home';
+        else if (/학교|school|학원|academy/i.test(name)) type = 'school';
+        else if (/체육|gym|운동|fitness|arena|훈련/i.test(name)) type = 'gym';
+        else if (/공원|park|정원|garden/i.test(name)) type = 'park';
+        else if (/술집|bar|pub|tavern|주점/i.test(name)) type = 'bar';
+        else if (/식당|restaurant|음식|레스토랑/i.test(name)) type = 'restaurant';
+        else if (/병원|hospital|의원|clinic/i.test(name)) type = 'hospital';
+        else if (/도서|library|서점|서재/i.test(name)) type = 'library';
+        else if (/역|station|지하철|버스/i.test(name)) type = 'station';
+        else if (/골목|거리|길|street|alley/i.test(name)) type = 'street';
+
+        const pool = pools[type] || { main: '📍', subs: ['🗺️','🐾','✨','📌','🏷️'], s1: ['🗺️','✨','📌'], s2: ['🐾','🏷️','🔖'] };
+
+        // 랜덤하게 서브 이모지 선택 (seed: loc.id 해시)
+        const hash = (loc.id || '').split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+        const pick = (arr, n) => { const r = [...arr]; const res = []; for (let i = 0; i < n && r.length; i++) { const idx = Math.abs((hash + i * 7) % r.length); res.push(r.splice(idx, 1)[0]); } return res; };
+
+        const mainSubs = pick(pool.subs, 4);
+        const s1Emoji = pick(pool.s1, 2);
+        const s2Emoji = pick(pool.s2, 2);
+
+        // 이벤트 기반 오버라이드
+        if (lastEvent?.mood === '💕') { mainSubs.push('💕'); s2Emoji[0] = '💕'; }
+        if (lastEvent?.mood === '⚡') { mainSubs.push('⚡'); s1Emoji[0] = '⚡'; }
+
+        return { main: pool.main, subs: mainSubs, s1: s1Emoji, s2: s2Emoji, colors, timeLabel, tagStyle, isDark };
+    }
+
+    _buildMoodCardHtml(loc, style) {
+        const mc = this._getMoodCard(loc);
+        const grad = mc.isDark
+            ? `linear-gradient(160deg,${mc.colors[0]},${mc.colors[1]},${mc.colors[2]})`
+            : `linear-gradient(135deg,${mc.colors[0]},${mc.colors[1]})`;
+        const opMain = mc.isDark ? '0.9' : '0.9';
+        const opSub = mc.isDark ? '0.4' : '0.45';
+        const opDeco = mc.isDark ? '0.3' : '0.35';
+        // 서브 이모지 위치 (최대 4개, 절대 위치)
+        const positions = [
+            'top:12px;left:14px', 'bottom:10px;right:16px',
+            'top:40px;right:12px', 'bottom:34px;left:18px'
+        ];
+        const subsHtml = mc.subs.slice(0, 4).map((e, i) =>
+            `<span style="position:absolute;${positions[i]};font-size:${16 - i}px;opacity:${opSub - i * 0.05};pointer-events:none">${e}</span>`
+        ).join('');
+
+        const s1Bg = mc.isDark ? mc.colors[1] : '#FFF3E0';
+        const s2Bg = mc.isDark ? mc.colors[2] : '#E8F5E9';
+
+        return `<div style="display:grid;grid-template-columns:2fr 1fr;grid-template-rows:80px 80px;gap:3px;border-radius:10px;overflow:hidden;margin-bottom:8px">
+            <div style="grid-row:1/3;background:${grad};display:flex;align-items:center;justify-content:center;position:relative">
+                <span style="font-size:44px;opacity:${opMain}">${mc.main}</span>
+                ${subsHtml}
+                <span style="position:absolute;top:8px;left:10px;font-size:10px;padding:3px 8px;border-radius:14px;${mc.tagStyle};pointer-events:none">${mc.timeLabel}</span>
+            </div>
+            <div style="background:${s1Bg};display:flex;align-items:center;justify-content:center;position:relative">
+                <span style="font-size:24px;opacity:.7">${mc.s1[0] || '✨'}</span>
+                ${mc.s1[1] ? `<span style="position:absolute;bottom:5px;right:7px;font-size:12px;opacity:${opDeco}">${mc.s1[1]}</span>` : ''}
+            </div>
+            <div style="background:${s2Bg};display:flex;align-items:center;justify-content:center;position:relative">
+                <span style="font-size:22px;opacity:.65">${mc.s2[0] || '🐾'}</span>
+                ${mc.s2[1] ? `<span style="position:absolute;top:5px;left:7px;font-size:11px;opacity:${opDeco}">${mc.s2[1]}</span>` : ''}
+            </div>
+        </div>`;
+    }
+
     // ========== 구글맵 스타일 바텀시트 ==========
     _showBottomSheet(locId) {
         const loc = this.lm.locations.find(l => l.id === locId);
@@ -990,13 +1215,35 @@ export class UIManager {
                 <div class="wt-bs-tab" data-tab="events" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">이벤트</div>
                 <div class="wt-bs-tab" data-tab="review" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">리뷰</div>
             </div>
-            <div id="wt-bs-tab-overview" style="padding:10px 14px;max-height:200px;overflow-y:auto">
+            <div id="wt-bs-tab-overview" style="padding:10px 14px;overflow-y:auto">
+                <!-- 분위기 카드 갤러리 -->
+                ${this._buildMoodCardHtml(loc, style)}
                 ${loc.address ? `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📍</span><div>${loc.address}</div></div>` : ''}
                 <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📊</span><div>방문 ${v}회<div style="font-size:9px;color:#B0A898">첫 ${loc.rpFirstVisited || (loc.firstVisited ? this._fmt(loc.firstVisited) : '—')} · 최근 ${loc.rpLastVisited || (loc.lastVisited ? this._fmt(loc.lastVisited) : '—')}</div></div></div>
                 ${specialHtml}
                 ${nearbyHtml}
+                <!-- T3: 리뷰 미리보기 (개요 안) -->
+                <div id="wt-bs-rv-preview" style="margin-top:10px;padding-top:8px;border-top:1px solid #F0EDE5">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <span style="font-size:18px;font-weight:800;color:#202124" id="wt-bs-rv-score">—</span>
+                        <div><div id="wt-bs-rv-stars" style="font-size:11px;color:#F6A93A">☆☆☆☆☆</div><div id="wt-bs-rv-count" style="font-size:9px;color:#70757A">(0건)</div></div>
+                    </div>
+                    <div id="wt-bs-rv-cards"></div>
+                    <button id="wt-bs-rv-more" style="margin-top:6px;padding:9px;background:#F8F9FA;border:1px solid #E8EAED;border-radius:24px;font-size:11px;font-weight:500;color:#3C4043;text-align:center;cursor:pointer;width:100%;font-family:inherit">모든 리뷰 보기 ›</button>
+                </div>
+                <!-- T4: 최근 방문 기록 + 기억 링크 -->
+                <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #F0EDE5;margin-top:8px;cursor:pointer;font-size:12px;color:#3C4043;font-weight:500" class="wt-bs-mem-link" data-action="visits">
+                    <span>🕐</span>
+                    <div style="flex:1">최근 방문 기록<div style="font-size:10px;color:#9AA0A6;font-weight:400;margin-top:1px">${loc.lastVisited ? this._fmt(loc.lastVisited) : '—'}</div></div>
+                    <span style="color:#9AA0A6;font-size:14px">›</span>
+                </div>
+                ${events.length ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #F0EDE5;cursor:pointer;font-size:12px;color:#3C4043;font-weight:500" class="wt-bs-mem-link" data-action="memories">
+                    <span>💬</span>
+                    <div style="flex:1">이 장소에서의 기억<div style="font-size:10px;color:#9AA0A6;font-weight:400;margin-top:1px">${events[events.length-1]?.title || events[events.length-1]?.text?.substring(0,20) || '—'}</div></div>
+                    <span style="color:#9AA0A6;font-size:14px">›</span>
+                </div>` : ''}
             </div>
-            <div id="wt-bs-tab-events" style="display:none;padding:10px 14px;max-height:200px;overflow-y:auto">
+            <div id="wt-bs-tab-events" style="display:none;padding:10px 14px;overflow-y:auto">
                 <div style="margin-bottom:8px;padding:8px 10px;background:#FAFAF5;border-radius:8px;border:1px solid #EAE6DC">
                     <div style="font-size:10px;font-weight:600;color:#5A4030;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">🌡️ 분위기 지수 <span style="font-size:9px;color:#9AA0A6;font-weight:400">최근 7일</span></div>
                     <div style="display:flex;align-items:flex-end;gap:3px;height:36px">
@@ -1006,7 +1253,7 @@ export class UIManager {
                 </div>
                 ${eventsHtml}
             </div>
-            <div id="wt-bs-tab-review" style="display:none;padding:10px 14px;max-height:200px;overflow-y:auto">
+            <div id="wt-bs-tab-review" style="display:none;padding:10px 14px;overflow-y:auto">
                 <div style="text-align:center;padding:8px">
                     <button id="wt-bs-gen-review" style="padding:8px 16px;background:#E8F0FE;border:1.5px solid #1A73E8;border-radius:18px;font-size:11px;font-weight:600;color:#1A73E8;cursor:pointer;font-family:inherit">🔄 랜덤 리뷰 생성</button>
                 </div>
@@ -1054,11 +1301,35 @@ export class UIManager {
             self._generateReviews(locId, 'bottomsheet');
         });
         this._renderCachedReviews(locId, '#wt-bs-review-list');
+        // T3: 개요 탭 리뷰 미리보기 렌더 + "모든 리뷰 보기" 클릭
+        this._renderReviewPreview(locId);
+        bs.find('#wt-bs-rv-more').on('click', (e) => {
+            e.stopPropagation();
+            // 리뷰 탭으로 전환
+            bs.find('.wt-bs-tab').css({ color: '#B0A898', borderBottomColor: 'transparent' });
+            bs.find('.wt-bs-tab[data-tab="review"]').css({ color: '#2B8A6E', borderBottomColor: '#2B8A6E' });
+            bs.find('[id^="wt-bs-tab-"]').hide();
+            bs.find('#wt-bs-tab-review').show();
+            if (self._bsStage < 3) self._applyBsStage(3);
+        });
+        // T4: 기억 링크 클릭 → 이벤트 탭으로 전환
+        bs.find('.wt-bs-mem-link').on('click', function(e) {
+            e.stopPropagation();
+            bs.find('.wt-bs-tab').css({ color: '#B0A898', borderBottomColor: 'transparent' });
+            bs.find('.wt-bs-tab[data-tab="events"]').css({ color: '#2B8A6E', borderBottomColor: '#2B8A6E' });
+            bs.find('[id^="wt-bs-tab-"]').hide();
+            bs.find('#wt-bs-tab-events').show();
+            if (self._bsStage < 3) self._applyBsStage(3);
+        });
     }
 
     _hideBottomSheet() {
+        // B1: 검색창 자동포커스 방지
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) activeEl.blur();
         const bs = document.getElementById('wt-bottomsheet');
-        if (bs) { bs.style.display = 'none'; bs.innerHTML = ''; }
+        if (bs) { bs.style.cssText = 'display:none'; bs.innerHTML = ''; }
+        setTimeout(() => this.leafletRenderer?.invalidateSize(), 200);
         this._bsStage = 0;
     }
 
@@ -1072,74 +1343,146 @@ export class UIManager {
         const bs = document.getElementById('wt-bottomsheet');
         if (!bs || bs.style.display === 'none') return;
         this._bsStage = stage;
-        bs.style.transition = 'max-height 0.3s cubic-bezier(0.4,0,0.2,1)';
-        const pH = bs.parentElement?.offsetHeight || window.innerHeight;
+
+        // #5: 모든 단계 전환 시 포커스 해제 (키보드 튀어나옴 방지)
+        try { const ae = document.activeElement; if (ae && ae !== document.body) ae.blur(); } catch(_){}
+
+        // #8: 단계 전환 후 400ms 클릭 차단 (내페이지 장소 클릭 방지)
+        this._bsTransitioning = true;
+        clearTimeout(this._bsTransTimer);
+        this._bsTransTimer = setTimeout(() => { this._bsTransitioning = false; }, 400);
+
+        // ★ 인라인 스타일 완전 초기화
+        bs.style.cssText = 'display:block;background:#fff;position:absolute;bottom:0;left:0;right:0;z-index:2000;border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.12);';
+
         if (stage === 0) { this._hideBottomSheet(); return; }
-        if (stage === 1) { bs.style.maxHeight = '185px'; bs.style.overflowY = 'hidden'; }
-        if (stage === 2) { bs.style.maxHeight = Math.round(pH * 0.55) + 'px'; bs.style.overflowY = 'auto'; }
-        if (stage === 3) { bs.style.maxHeight = Math.round(pH - 10) + 'px'; bs.style.overflowY = 'auto'; }
+
+        // Stage 1/2: 검색바 보이게 (Full에서 내려올 때)
+        if (stage !== 3) {
+            bs.style.zIndex = '2000';
+        }
+
+        bs.style.transition = 'max-height 0.3s ease, top 0.3s ease';
+
+        if (stage === 1) {
+            bs.style.maxHeight = '80px';
+            bs.style.overflowY = 'hidden';
+        }
+        if (stage === 2) {
+            bs.style.maxHeight = '50vh';
+            bs.style.overflowY = 'auto';
+        }
+        if (stage === 3) {
+            // ★ FULL: top:0으로 늘려서 전체 덮기
+            bs.style.top = '0';
+            bs.style.maxHeight = 'none';
+            bs.style.overflowY = 'auto';
+            bs.style.borderRadius = '16px 16px 0 0'; // T1: Full에서도 radius 유지
+            bs.style.zIndex = '9999';
+        }
     }
 
     _toggleBsStage() {
         const bs = document.getElementById('wt-bottomsheet');
         if (!bs || bs.style.display === 'none') return;
-        // ★ peek→half→full→닫기
-        if (this._bsStage >= 3) {
-            this._hideBottomSheet(); // full에서 클릭 → 완전 닫기
-        } else {
-            this._applyBsStage(this._bsStage + 1);
-        }
+        // ★ 순환: peek(1)→half(2)→full(3)→peek(1)
+        const next = this._bsStage >= 3 ? 1 : this._bsStage + 1;
+        this._applyBsStage(next);
     }
 
-    // ★ 터치 드래그 바인딩 (바텀시트 열릴 때마다 호출)
+    // ★ 터치 드래그 전용 (클릭 이벤트 없음)
+    _bsTransitioning = false;
+    _bsTransTimer = null;
     _bindBsDrag(bsEl) {
         const self = this;
         const handle = bsEl.querySelector('.wt-bs-handle');
         if (!handle) return;
+        let startY = 0, startH = 0, dragged = false, totalDelta = 0;
+        const DRAG_THRESHOLD = 8;
 
-        // 핸들 터치 시작
+        // #8: 핸들 클릭 이벤트 차단
+        handle.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); });
+
         handle.addEventListener('touchstart', (e) => {
-            self._bsDragging = true;
-            self._bsDragStartY = e.touches[0].clientY;
-            self._bsDragStartH = bsEl.offsetHeight;
+            e.stopPropagation();
+            startY = e.touches[0].clientY;
+            startH = bsEl.offsetHeight;
+            dragged = false;
+            totalDelta = 0;
             bsEl.style.transition = 'none';
+            // ★ Full 상태면 top:0 → maxHeight 모드로 전환
+            if (self._bsStage === 3) {
+                const wrapEl = bsEl.closest('#wt-leaflet-wrap') || bsEl.parentElement;
+                const wrapH = wrapEl?.offsetHeight || window.innerHeight;
+                bsEl.style.top = 'auto';
+                bsEl.style.maxHeight = wrapH + 'px';
+                startH = wrapH;
+                bsEl.style.zIndex = '2000';
+            }
         }, { passive: true });
 
-        // ★ 핸들에서만 touchmove (콘텐츠 스크롤 충돌 방지)
         handle.addEventListener('touchmove', (e) => {
-            if (!self._bsDragging) return;
             e.preventDefault();
-            const deltaY = self._bsDragStartY - e.touches[0].clientY;
-            const parentH = bsEl.parentElement?.offsetHeight || window.innerHeight;
-            const newH = Math.max(80, Math.min(parentH - 10, self._bsDragStartH + deltaY));
+            const curY = e.touches[0].clientY;
+            const delta = startY - curY;
+            totalDelta = delta;
+            // B3: threshold 미만이면 시각적 변경 없음
+            if (Math.abs(delta) < DRAG_THRESHOLD) return;
+            dragged = true;
+            const newH = Math.max(40, startH + delta);
             bsEl.style.maxHeight = newH + 'px';
-            bsEl.style.overflowY = newH > 200 ? 'auto' : 'hidden';
+            bsEl.style.top = 'auto';
+            bsEl.style.overflowY = newH > 100 ? 'auto' : 'hidden';
         }, { passive: false });
 
-        // 터치 끝 → 스냅
-        const onEnd = () => {
-            if (!self._bsDragging) return;
-            self._bsDragging = false;
-            const h = bsEl.offsetHeight;
-            const pH = bsEl.parentElement?.offsetHeight || window.innerHeight;
-
-            if (h < 80) {
-                self._hideBottomSheet();
-            } else if (h < pH * 0.3) {
-                self._applyBsStage(1);
-            } else if (h < pH * 0.7) {
-                self._applyBsStage(2);
-            } else {
-                self._applyBsStage(3);
+        handle.addEventListener('touchend', () => {
+            if (!dragged) {
+                // 터치만 하고 안 움직임 → 다음 단계
+                bsEl.style.transition = 'max-height 0.3s ease, top 0.3s ease';
+                // B2: 핸들 탭 시 peek→half→full→half 반복 (HANDOFF 스펙)
+                let next;
+                if (self._bsStage === 1) next = 2;
+                else if (self._bsStage === 2) next = 3;
+                else if (self._bsStage === 3) next = 2;
+                else next = 1;
+                self._applyBsStage(next);
+                return;
             }
-        };
-        handle.addEventListener('touchend', onEnd, { passive: true });
-        handle.addEventListener('touchcancel', onEnd, { passive: true });
+            // 드래그 끝 → 스냅
+            const h = bsEl.offsetHeight;
+            const wrapEl = bsEl.closest('#wt-leaflet-wrap') || bsEl.parentElement;
+            const wrapH = wrapEl?.offsetHeight || window.innerHeight;
+            bsEl.style.transition = 'max-height 0.3s ease, top 0.3s ease';
 
-        // 핸들 클릭 (PC 폴백)
-        handle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!self._bsDragging) self._toggleBsStage();
+            // B2: 스와이프 방향 고려한 스냅
+            const velocity = totalDelta; // 양수=위로, 음수=아래로
+            const s1 = 80, s2 = wrapH * 0.5, s3 = wrapH;
+
+            if (h < 40) { self._applyBsStage(0); return; } // 닫기
+
+            // 강한 스와이프 → 방향에 따라 바로 이동
+            if (Math.abs(velocity) > 80) {
+                if (velocity > 0) {
+                    // 위로 강하게 → 한 단계 위
+                    if (self._bsStage === 1) self._applyBsStage(2);
+                    else self._applyBsStage(3);
+                } else {
+                    // 아래로 강하게 → 한 단계 아래
+                    if (self._bsStage === 3) self._applyBsStage(2);
+                    else if (self._bsStage === 2) self._applyBsStage(1);
+                    else self._applyBsStage(0);
+                }
+                return;
+            }
+
+            // 약한 드래그 → 가장 가까운 스냅포인트
+            const d1 = Math.abs(h - s1);
+            const d2 = Math.abs(h - s2);
+            const d3 = Math.abs(h - s3);
+
+            if (d1 <= d2 && d1 <= d3) { self._applyBsStage(1); }
+            else if (d2 <= d3) { self._applyBsStage(2); }
+            else { self._applyBsStage(3); }
         });
     }
 
@@ -1170,25 +1513,28 @@ export class UIManager {
             } else if (tab === 'mypage') {
                 self._showMyPageBS();
             } else if (tab === 'timeline') {
-                if (bs) {
-                    bs.innerHTML = '<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;cursor:pointer;min-height:44px;position:sticky;top:0;z-index:10;background:#fff"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div><div style="padding:20px;text-align:center;color:#9AA0A6;font-size:14px">🕐 타임라인 — 다음 업데이트!</div>';
-                    bs.style.display = 'block';
-                    bs.style.background = '#fff';
-                    self._applyBsStage(2);
-                    self._bindBsDrag(bs);
-                }
+                self._showTimelineBS();
             }
         };
 
         window.__wtBsHandle = () => {
-            console.log('[wt] Handle toggle, stage:', self._bsStage);
             self._toggleBsStage();
         };
 
-        // 지도 클릭 → 바텀시트 닫기
+        // ★ 뒤로가기 → 약도로 전환
+        window.__wtBackToMap = () => {
+            self._hideBottomSheet();
+            self._setMapMode('node');
+        };
+
+        // 지도 클릭 → 바텀시트 peek 복귀 (T1: 닫기 대신 peek)
         $(document).off('click.wtMap', '#wt-leaflet-container').on('click.wtMap', '#wt-leaflet-container', (e) => {
             if ($(e.target).closest('.wt-bs, .wt-bs-handle, .wt-gmap-pin, .leaflet-marker-icon, .leaflet-popup').length) return;
-            self._hideBottomSheet();
+            if (self._bsStage > 1) {
+                self._applyBsStage(1); // peek으로 복귀
+            } else if (self._bsStage === 1) {
+                self._hideBottomSheet(); // peek 상태에서 한번 더 누르면 닫기
+            }
         });
     }
 
@@ -1227,19 +1573,173 @@ export class UIManager {
 
         const bs = $('#wt-bottomsheet');
         bs.html(html).show().css({ background: '#fff' });
-        this._applyBsStage(2); // half (50vh)
+        this._applyBsStage(1); // peek (350px) — 전체 바텀시트 동일
         this._bindBsDrag(bs[0]);
 
         // 핸들바 sticky
         bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
 
         const self = this;
-        bs.find('.wt-mp-loc').on('click', function() {
+        bs.find('.wt-mp-loc').on('click', function(e) {
+            // #8: 단계 전환 중 클릭 차단
+            if (self._bsTransitioning) { e.stopPropagation(); return; }
             const id = $(this).data('id');
             self._hideBottomSheet();
             $('.wt-paw-tab[data-tab="explore"]').click();
             setTimeout(() => self._showBottomSheet(id), 300);
         });
+    }
+
+    // ========== 🕐 타임라인 (아코디언 — 오늘 펼침, 과거 접힘) ==========
+    _showTimelineBS() {
+        const bs = $('#wt-bottomsheet');
+        const movements = [...(this.lm.movements || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        const locs = this.lm.locations;
+        const dists = this.lm.distances || [];
+        const curLocId = this.lm.currentLocationId;
+
+        // 날짜별 그룹핑 (키: 정렬용 timestamp, 값: { label, items })
+        const groups = new Map();
+        const _dayKey = (ts) => {
+            const d = new Date(ts);
+            return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`;
+        };
+        const _dayLabel = (ts) => {
+            const d = new Date(ts);
+            const wk = ['일','월','화','수','목','금','토'][d.getDay()];
+            return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} (${wk})`;
+        };
+
+        for (const mov of movements) {
+            const key = _dayKey(mov.timestamp);
+            if (!groups.has(key)) groups.set(key, { label: _dayLabel(mov.timestamp), items: [], ts: mov.timestamp });
+            groups.get(key).items.push(mov);
+        }
+
+        // 현재 위치도 타임라인에 추가
+        const curLoc = locs.find(l => l.id === curLocId);
+        const todayKey = _dayKey(Date.now());
+        if (curLoc) {
+            if (!groups.has(todayKey)) groups.set(todayKey, { label: _dayLabel(Date.now()), items: [], ts: Date.now() });
+            const g = groups.get(todayKey);
+            if (!g.items.some(m => m._isCurrent)) {
+                g.items.unshift({ toId: curLocId, timestamp: Date.now(), _isCurrent: true });
+            }
+        }
+
+        // 날짜 내림차순 정렬
+        const sorted = [...groups.entries()].sort((a, b) => b[1].ts - a[1].ts);
+
+        // 통계
+        let totalPlaces = 0, totalEvents = 0;
+
+        // 날짜별 HTML 빌드
+        let timelineHtml = '';
+        let dayIdx = 0;
+        for (const [dayKey, group] of sorted) {
+            const isToday = dayKey === todayKey;
+            const items = group.items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            // 이 날의 통계
+            const dayLocIds = new Set();
+            let dayEventCount = 0;
+            for (const mov of items) {
+                if (mov.toId) dayLocIds.add(mov.toId);
+                const toLoc = locs.find(l => l.id === mov.toId);
+                if (toLoc?.events) {
+                    dayEventCount += toLoc.events.filter(e => e.timestamp && Math.abs(e.timestamp - mov.timestamp) < 3600000).length;
+                }
+            }
+            totalPlaces += dayLocIds.size;
+            totalEvents += dayEventCount;
+
+            const summaryText = `${dayLocIds.size}곳${dayEventCount ? ' · 이벤트 ' + dayEventCount : ''}`;
+            const dayId = 'wt-tl-' + dayIdx;
+
+            // 날짜 헤더
+            timelineHtml += `<div style="border-top:${dayIdx > 0 ? '1px solid #F0EDE5' : 'none'}">
+                <div onclick="window.__wtTlToggle&&window.__wtTlToggle('${dayId}')" style="display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                    <span style="font-size:14px">📅</span>
+                    <span style="font-size:13px;font-weight:800;color:#202124">${group.label}</span>
+                    ${isToday ? '<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:#E8F5E9;color:#2E7D32;font-weight:500">오늘</span>' : ''}
+                    <span style="font-size:11px;color:#9AA0A6;margin-left:auto;display:flex;align-items:center;gap:6px">
+                        <span>${summaryText}</span>
+                        <span id="${dayId}-arr" style="font-size:12px;color:#B0A898">${isToday ? '▾' : '▸'}</span>
+                    </span>
+                </div>
+                <div id="${dayId}-body" style="${isToday ? '' : 'height:0;overflow:hidden'}">`;
+
+            // 아이템들
+            for (let i = 0; i < items.length; i++) {
+                const mov = items[i];
+                const toLoc = locs.find(l => l.id === mov.toId);
+                if (!toLoc) continue;
+
+                const fromLoc = mov.fromId ? locs.find(l => l.id === mov.fromId) : null;
+                const st = this.leafletRenderer?._locStyle?.(toLoc.name) || { emoji: '📍' };
+                const time = new Date(mov.timestamp);
+                const timeStr = time.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                const isCurrent = mov._isCurrent;
+
+                const locEvents = (toLoc.events || []).filter(e => e.timestamp && Math.abs(e.timestamp - mov.timestamp) < 3600000);
+                const dotColor = isCurrent ? '#EA4335' : locEvents.length ? '#F6A93A' : '#2B8A6E';
+
+                timelineHtml += `<div style="display:flex;gap:12px;padding:6px 16px;position:relative">
+                    <div style="width:2px;background:#E0E0E0;position:absolute;left:27px;top:0;bottom:0"></div>
+                    <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};flex-shrink:0;margin-top:4px;z-index:1;border:2px solid #fff;box-shadow:0 0 0 2px ${dotColor}"></div>
+                    <div style="flex:1">
+                        <div style="font-size:10px;color:#9AA0A6;font-weight:500">${timeStr}${isCurrent ? ' — 현재' : ''}</div>
+                        <div style="font-size:13px;font-weight:600;color:#202124;margin-top:1px">${st.emoji} ${toLoc.name}</div>
+                        ${toLoc.memo ? `<div style="font-size:11px;color:#70757A;margin-top:2px">${toLoc.memo}</div>` : ''}
+                        ${locEvents.map(ev => `<div style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:#FFF8E1;border-radius:12px;font-size:10px;color:#F57F17;font-weight:500;margin-top:4px">${ev.mood || '📝'} ${ev.title || (ev.text?.substring(0,20) || '')}</div>`).join('')}
+                    </div>
+                </div>`;
+
+                // 이동 거리 표시
+                if (i < items.length - 1 && fromLoc) {
+                    const dist = dists.find(d =>
+                        (d.fromId === mov.fromId && d.toId === mov.toId) ||
+                        (d.toId === mov.fromId && d.fromId === mov.toId)
+                    );
+                    if (dist?.distanceText) {
+                        timelineHtml += `<div style="display:flex;align-items:center;gap:6px;padding:2px 16px 2px 22px;font-size:10px;color:#9AA0A6"><span style="font-size:12px">↑</span> ${dist.distanceText}</div>`;
+                    }
+                }
+            }
+
+            timelineHtml += '</div></div>'; // close body + day wrapper
+            dayIdx++;
+        }
+
+        if (!sorted.length) {
+            timelineHtml = '<div style="padding:30px;text-align:center;color:#9AA0A6;font-size:13px">🕐 아직 이동 기록이 없어요<br><span style="font-size:11px;margin-top:4px;display:inline-block">RP를 진행하면 자동으로 기록돼요!</span></div>';
+        } else {
+            timelineHtml += `<div style="padding:16px;text-align:center;color:#9AA0A6;font-size:11px">— ${sorted.length}일간 ${totalPlaces}곳 방문 · 이벤트 ${totalEvents}건 —</div>`;
+        }
+
+        const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:18px 0 12px;cursor:pointer;min-height:48px;position:sticky;top:0;z-index:10;background:#fff;border-radius:16px 16px 0 0;-webkit-tap-highlight-color:transparent"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="padding:2px 0 0"><div style="font-size:16px;font-weight:800;color:#202124;padding:0 16px 6px">타임라인</div></div>
+            ${timelineHtml}`;
+
+        bs.html(html).show().css({ background: '#fff' });
+        this._applyBsStage(2);
+        this._bindBsDrag(bs[0]);
+
+        // 아코디언 토글 전역 함수
+        window.__wtTlToggle = (dayId) => {
+            const body = document.getElementById(dayId + '-body');
+            const arrow = document.getElementById(dayId + '-arr');
+            if (!body || !arrow) return;
+            if (body.style.height === '0px') {
+                body.style.height = 'auto';
+                body.style.overflow = 'visible';
+                arrow.textContent = '▾';
+            } else {
+                body.style.height = '0px';
+                body.style.overflow = 'hidden';
+                arrow.textContent = '▸';
+            }
+        };
     }
 
     async _popSave() {
@@ -1889,6 +2389,51 @@ export class UIManager {
         this._renderReviews(container, cached.reviews, cached.summary);
     }
 
+    // T3: 개요 탭 리뷰 미리보기 (별점 + 카드 2개 + "모든 리뷰 보기")
+    _renderReviewPreview(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        const stored = Array.isArray(loc?.generatedReviews) && loc.generatedReviews.length
+            ? { reviews: loc.generatedReviews, summary: loc.reviewSummary || '' }
+            : null;
+        const cached = this._reviewCache.get(locId) || stored;
+        if (!cached || !cached.reviews?.length) {
+            // 리뷰 없으면 "리뷰 생성" 버튼만 표시
+            $('#wt-bs-rv-score').text('—');
+            $('#wt-bs-rv-stars').text('☆☆☆☆☆');
+            $('#wt-bs-rv-count').text('(0건)');
+            $('#wt-bs-rv-cards').html('<div style="font-size:11px;color:#9AA0A6;padding:8px;text-align:center;font-style:italic">리뷰를 생성해보세요</div>');
+            $('#wt-bs-rv-more').hide();
+            return;
+        }
+        const reviews = cached.reviews;
+        // 평균 별점 계산
+        const avgRating = (reviews.reduce((s, r) => s + (r.rating || 3), 0) / reviews.length).toFixed(1);
+        const fullStars = Math.floor(avgRating);
+        const stars = '★'.repeat(fullStars) + '☆'.repeat(5 - fullStars);
+        $('#wt-bs-rv-score').text(avgRating);
+        $('#wt-bs-rv-stars').text(stars);
+        $('#wt-bs-rv-count').text(`(${reviews.length}건)`);
+        // 카드 최대 2개 미리보기
+        const previewCards = reviews.slice(0, 2).map(r => {
+            const avatarBg = r.rating >= 4 ? '#F1F3F4' : '#1a1a2e';
+            const avatarColor = r.rating >= 4 ? '' : 'color:#fff';
+            const rvStars = '★'.repeat(r.rating || 3) + '☆'.repeat(5 - (r.rating || 3));
+            const text = (r.text || '').length > 60 ? r.text.substring(0, 60) + '...' : r.text || '';
+            return `<div style="padding:6px 0;border-bottom:1px solid #F1F3F4">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+                    <div style="width:24px;height:24px;border-radius:50%;background:${avatarBg};display:flex;align-items:center;justify-content:center;font-size:11px;${avatarColor}">${r.avatar || '👤'}</div>
+                    <span style="font-size:11px;font-weight:700;color:#202124">${r.author || '익명'}</span>
+                    <span style="font-size:9px;color:#70757A">· ${rvStars}</span>
+                </div>
+                <div style="font-size:11px;line-height:1.5;color:#3C4043">${text}</div>
+            </div>`;
+        }).join('');
+        $('#wt-bs-rv-cards').html(previewCards);
+        if (reviews.length > 2) {
+            $('#wt-bs-rv-more').show();
+        }
+    }
+
     async _generateReviews(locId, source = 'auto') {
         const loc = this.lm.locations.find(l => l.id === locId);
         if (!loc) return;
@@ -1915,7 +2460,27 @@ export class UIManager {
             // 이벤트 요약 (최근 5개)
             const evSummary = (loc.events || []).slice(-5).map(e => `${e.mood||'📝'} ${e.title||e.text||''}`).join(', ') || '아직 이벤트 없음';
 
-            const reviewCount = 1 + Math.floor(Math.random() * 3);
+            // 방문횟수 보정 리뷰 수 (최대 10개, 수 많을수록 확률 급감 → 토큰 절약)
+            const visits = loc.visitCount || 0;
+            let maxReviews, weights;
+            if (visits <= 2) {
+                maxReviews = 3;
+                weights = [0.50, 0.85, 1.0]; // 1(50%) 2(35%) 3(15%)
+            } else if (visits <= 5) {
+                maxReviews = 5;
+                weights = [0.30, 0.60, 0.80, 0.92, 1.0]; // 1(30%) 2(30%) 3(20%) 4(12%) 5(8%)
+            } else if (visits <= 9) {
+                maxReviews = 8;
+                weights = [0.20, 0.45, 0.70, 0.85, 0.93, 0.97, 0.99, 1.0]; // 1~8
+            } else {
+                maxReviews = 10;
+                weights = [0.15, 0.35, 0.60, 0.78, 0.88, 0.93, 0.96, 0.98, 0.99, 1.0]; // 1~10
+            }
+            const rnd = Math.random();
+            let reviewCount = 1;
+            for (let i = 0; i < weights.length; i++) {
+                if (rnd < weights[i]) { reviewCount = i + 1; break; }
+            }
             const prompt = `Generate ${reviewCount} Google Maps-style reviews for an RP location. Each reviewer is a CHARACTER from the story with a distinct voice.
 
 Place: "${loc.name}" | Memo: "${loc.memo || ''}" | Notes: "${loc.aiNotes || ''}" | Visits: ${loc.visitCount || 0}
@@ -1962,6 +2527,8 @@ JSON ONLY, no markdown:
             this._renderReviews(list, reviews, aiSummary);
             this._renderCachedReviews(locId, '#wt-pop-review-list');
             this._renderCachedReviews(locId, '#wt-bs-review-list');
+            // T3: 개요 탭 미리보기도 갱신
+            this._renderReviewPreview(locId);
 
         } catch(e) {
             console.error('[wt] Review gen error:', e);
@@ -2031,12 +2598,15 @@ JSON ONLY, no markdown:
             if (locId) this._generateReviews(locId);
         });
 
-        // 5. 개별 리뷰 카드
-        reviews.forEach(rv => {
+        // 5. 개별 리뷰 카드 (3개 이상이면 2개만 미리보기)
+        const showAll = reviews.length < 3;
+        const previewReviews = showAll ? reviews : reviews.slice(0, 2);
+
+        previewReviews.forEach(rv => {
             const stars = '★'.repeat(rv.stars || 3) + '☆'.repeat(5 - (rv.stars || 3));
             const daysText = rv.daysAgo === 1 ? '어제' : rv.daysAgo <= 7 ? `${rv.daysAgo}일 전` : `${Math.ceil(rv.daysAgo / 7)}주 전`;
 
-            container.append(`<div style="padding:10px 0;border-bottom:1px solid #F1F3F4">
+            container.append(`<div class="wt-rv-card-item" style="padding:10px 0;border-bottom:1px solid #F1F3F4">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
                     <div style="width:32px;height:32px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:16px">${rv.avatar || '👤'}</div>
                     <div>
@@ -2048,6 +2618,33 @@ JSON ONLY, no markdown:
                 <div style="font-size:13px;line-height:1.7;color:#3C4043">${rv.text || ''}</div>
             </div>`);
         });
+
+        // ★ 3개 이상이면 "모든 리뷰 보기" 버튼
+        if (!showAll) {
+            const hiddenCards = reviews.slice(2);
+            const moreBtn = $(`<div style="display:flex;justify-content:center;padding:12px;margin-top:4px">
+                <button class="wt-rv-showmore" style="padding:10px 0;width:100%;background:#F8F9FA;border:1px solid #E8EAED;border-radius:24px;font-size:13px;font-weight:500;color:#3C4043;cursor:pointer;text-align:center;font-family:inherit">모든 리뷰 보기 ›</button>
+            </div>`);
+            container.append(moreBtn);
+
+            moreBtn.find('.wt-rv-showmore').on('click', function(e) {
+                e.stopPropagation();
+                // 나머지 리뷰 펼치기
+                hiddenCards.forEach(rv => {
+                    const stars = '★'.repeat(rv.stars || 3) + '☆'.repeat(5 - (rv.stars || 3));
+                    const daysText = rv.daysAgo === 1 ? '어제' : rv.daysAgo <= 7 ? `${rv.daysAgo}일 전` : `${Math.ceil(rv.daysAgo / 7)}주 전`;
+                    moreBtn.before(`<div style="padding:10px 0;border-bottom:1px solid #F1F3F4">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                            <div style="width:32px;height:32px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:16px">${rv.avatar || '👤'}</div>
+                            <div><div style="font-size:13px;font-weight:700;color:#202124">${rv.name || 'Unknown'}</div><div style="font-size:10px;color:#70757A">${rv.role || ''}</div></div>
+                        </div>
+                        <div style="font-size:10px;color:#F6A93A;margin-bottom:4px">${stars} · ${daysText}</div>
+                        <div style="font-size:13px;line-height:1.7;color:#3C4043">${rv.text || ''}</div>
+                    </div>`);
+                });
+                moreBtn.remove(); // 버튼 제거
+            });
+        }
     }
 
     // ========== 이벤트 전체 보기 (패널 뷰 전환) ==========
