@@ -7,10 +7,77 @@ export class LocationManager {
     constructor(db) {
         this.db = db;
         this.currentChatId = null;
-        this.currentLocationId = null; // 현재 씬 위치
+        this.currentLocationId = null;
+        this.currentSubLocationId = null; // ★ 현재 서브로케이션 엔티티 ID
         this.locations = [];
         this.movements = [];
         this.distances = [];
+    }
+
+    // ★ 서브로케이션 키워드
+    static SUB_LOCATIONS = [
+        '거실','부엌','주방','방','침실','안방','작은방','큰방','화장실','욕실','샤워실',
+        '베란다','발코니','옥상','지하실','다락','서재','창고','세탁실','드레스룸',
+        '복도','현관','로비','계단','엘리베이터',
+        '마당','뒤뜰','앞마당','정원','차고','테라스',
+        '사무실','회의실','휴게실','탕비실','대기실','접수처',
+        '교실','강당','운동장','도서실','급식실','보건실',
+        '과자 코너','음료 코너','계산대','진열대','매대',
+        'room','bedroom','kitchen','bathroom','living room','restroom','washroom',
+        'balcony','rooftop','basement','attic','study','garage','closet','pantry',
+        'hallway','corridor','lobby','stairs','staircase','elevator',
+        'yard','backyard','front yard','garden','terrace','porch',
+        'office','meeting room','break room','waiting room','reception',
+        'classroom','auditorium','gym','library','cafeteria',
+        'aisle','counter','checkout','shelf',
+    ];
+
+    isSubLocation(name) {
+        if (!name) return false;
+        const lo = name.toLowerCase().trim();
+        return LocationManager.SUB_LOCATIONS.some(s => lo === s.toLowerCase() || lo.endsWith(s.toLowerCase()));
+    }
+
+    // ★ 서브 장소 찾기/생성
+    async findOrCreateSub(parentId, subName) {
+        const lo = subName.toLowerCase().trim();
+        // 기존 서브 찾기
+        const existing = this.locations.find(l =>
+            l.parentId === parentId && (l.name.toLowerCase() === lo || (l.aliases||[]).some(a => a.toLowerCase() === lo))
+        );
+        if (existing) return existing;
+        // 새로 생성 (좌표 없음, 지도에 안 찍힘)
+        const loc = {
+            id: this.generateId(), chatId: this.currentChatId,
+            name: subName.trim(), aliases: [], parentId: parentId,
+            x: 0, y: 0, lat: null, lng: null,
+            visitCount: 0, firstVisited: null, lastVisited: null,
+            memo: '', status: '', color: this._rndColor(), createdAt: Date.now(),
+        };
+        await this.db.putLocation(loc); this.locations.push(loc);
+        console.log(`[${EXTENSION_NAME}] 🔧 sub-loc created: "${subName}" under "${this.locations.find(l=>l.id===parentId)?.name}"`);
+        return loc;
+    }
+
+    // ★ 서브 장소로 이동 (부모 이동 아님, visitCount만 업데이트)
+    async moveToSub(subId) {
+        const sub = this.locations.find(l => l.id === subId);
+        if (!sub) return;
+        sub.visitCount = (sub.visitCount || 0) + 1;
+        sub.lastVisited = Date.now();
+        if (!sub.firstVisited) sub.firstVisited = Date.now();
+        await this.db.putLocation(sub);
+        this.currentSubLocationId = subId;
+    }
+
+    // ★ 부모 장소의 서브 목록
+    getSubLocations(parentId) {
+        return this.locations.filter(l => l.parentId === parentId);
+    }
+
+    // ★ 최상위 장소만 (서브 제외)
+    getTopLocations() {
+        return this.locations.filter(l => !l.parentId);
     }
 
     getChatId() { const ctx = getContext(); return ctx?.chatId ? String(ctx.chatId) : null; }
@@ -29,7 +96,7 @@ export class LocationManager {
 
     async loadChat() {
         this.currentChatId = this.getDataKey();
-        if (!this.currentChatId) { this.locations=[]; this.movements=[]; this.distances=[]; this.currentLocationId=null; return; }
+        if (!this.currentChatId) { this.locations=[]; this.movements=[]; this.distances=[]; this.currentLocationId=null; this.currentSubLocationId=null; return; }
         this.locations = await this.db.getLocationsByChatId(this.currentChatId) || [];
         this.movements = await this.db.getMovementsByChatId(this.currentChatId) || [];
         this.distances = await this.db.getDistancesByChatId(this.currentChatId) || [];
@@ -38,30 +105,21 @@ export class LocationManager {
         console.log(`[${EXTENSION_NAME}] Loaded (key=${this.currentChatId}): ${this.locations.length} locs, ${this.movements.length} moves`);
     }
 
-    // ★ 마이그레이션: 현재 chatId 데이터를 characterId 키로 복사
+    // ★ 마이그레이션: chatId 데이터를 characterId 키로 복사
     async migrateToCharacter() {
         const chatId = this.getChatId();
         const charKey = this.getCharacterId();
         if (!chatId || !charKey || chatId === charKey) return false;
-
-        // 이미 캐릭터 키에 데이터가 있는지 확인
         const existing = await this.db.getLocationsByChatId(charKey);
-        if (existing && existing.length > 0) {
-            console.log(`[${EXTENSION_NAME}] Character key already has ${existing.length} locations, skip migration`);
-            return true; // 이미 있으면 마이그레이션 불필요
-        }
-
-        // chatId 데이터를 charKey로 복사
+        if (existing && existing.length > 0) return true;
         const locs = await this.db.getLocationsByChatId(chatId) || [];
         const movs = await this.db.getMovementsByChatId(chatId) || [];
         const dists = await this.db.getDistancesByChatId(chatId) || [];
         const cfg = await this.db.getMapConfig(chatId);
-
         for (const l of locs) { l.chatId = charKey; await this.db.putLocation(l); }
-        for (const m of movs) { m.chatId = charKey; try { await this.db.putLocation(m); } catch(_) { try { await this.db._p(this.db._tx('movements','readwrite').put(m), m); } catch(_){} } }
+        for (const m of movs) { m.chatId = charKey; try { await this.db._p(this.db._tx('movements','readwrite').put(m), m); } catch(_){} }
         for (const d of dists) { d.chatId = charKey; await this.db.saveDistance(d); }
         if (cfg) { cfg.chatId = charKey; await this.db.saveMapConfig(cfg); }
-
         console.log(`[${EXTENSION_NAME}] Migrated ${locs.length} locs from ${chatId} → ${charKey}`);
         return true;
     }
@@ -93,6 +151,19 @@ export class LocationManager {
             memo: memo.trim(), status: '', color: this._rndColor(), createdAt: Date.now(),
         };
         const p = this._autoPos(); loc.x = p.x; loc.y = p.y;
+
+        // ★ 자동 좌표 배치: 기존에 GPS 좌표 있는 장소가 있으면 근처에 배치
+        const geoLocs = this.locations.filter(l => l.lat != null && l.lng != null);
+        if (geoLocs.length > 0) {
+            // 현재 위치 또는 가장 최근 방문 장소 기준
+            const anchor = geoLocs.find(l => l.id === this.currentLocationId) || geoLocs[0];
+            const dist = 30 + Math.random() * 120; // 30~150m
+            const angle = Math.random() * 2 * Math.PI;
+            loc.lat = anchor.lat + (dist / 111320) * Math.cos(angle);
+            loc.lng = anchor.lng + (dist / (111320 * Math.cos(anchor.lat * Math.PI / 180))) * Math.sin(angle);
+            console.log(`[${EXTENSION_NAME}] 🔧 autoCoord: "${name}" placed ${Math.round(dist)}m from "${anchor.name}" (${loc.lat.toFixed(6)},${loc.lng.toFixed(6)})`);
+        }
+
         await this.db.putLocation(loc); this.locations.push(loc); return loc;
     }
 
@@ -142,6 +213,8 @@ export class LocationManager {
     async moveTo(locationId, rpDate) {
         const loc = this.locations.find(l => l.id === locationId); if (!loc) return;
         const prevId = this.currentLocationId;
+        // ★ 다른 장소로 이동하면 서브로케이션 클리어
+        if (prevId !== locationId) this.currentSubLocationId = null;
         loc.visitCount = (loc.visitCount || 0) + 1;
         loc.lastVisited = Date.now();
         if (rpDate) loc.rpLastVisited = rpDate;
@@ -190,5 +263,96 @@ export class LocationManager {
     _rndColor() {
         const c = ['#F5A8A8','#FCE7AE','#A8E6CF','#A8D8EA','#C3B1E1','#F5C6AA','#B5EAD7','#FFD3B6'];
         return c[Math.floor(Math.random() * c.length)];
+    }
+
+    // ========== 위치 기반 자동 확장 ==========
+
+    // Haversine 공식 (두 좌표 간 직선 거리, 미터)
+    _haversine(lat1, lng1, lat2, lng2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // 거리(m) → 레벨(1~10)
+    _metersToLevel(m) {
+        if (m < 50) return 1;      // 바로 옆
+        if (m < 150) return 2;     // 매우 가까움
+        if (m < 300) return 3;     // 가까움
+        if (m < 500) return 4;     // 도보 5분
+        if (m < 1000) return 5;    // 도보권
+        if (m < 2000) return 6;    // 도보 15분+
+        if (m < 5000) return 7;    // 대중교통
+        if (m < 15000) return 8;   // 차량 필요
+        if (m < 50000) return 9;   // 먼 거리
+        return 10;                  // 다른 지역
+    }
+
+    // 거리(m) → 텍스트 (x1.4 도보 보정)
+    _metersToText(m) {
+        const walk = m * 1.4; // 직선→도보 보정
+        if (m < 50) return '바로 옆';
+        if (walk < 1200) return `도보 ${Math.round(walk / 80)}분`;
+        if (m < 5000) return `${(m/1000).toFixed(1)}km`;
+        return `${Math.round(m/1000)}km`;
+    }
+
+    // 좌표 있는 장소 → 주소 자동 저장 (역지오코딩)
+    async autoReverseGeocode() {
+        const targets = this.locations.filter(l => l.lat != null && l.lng != null && !l.address);
+        console.log(`[${EXTENSION_NAME}] 🔧 autoGeo: ${targets.length} locations need address (total ${this.locations.length}, with coords ${this.locations.filter(l=>l.lat!=null).length})`);
+        if (!targets.length) return;
+
+        for (const loc of targets) {
+            try {
+                // Nominatim 요청 간격 (1초)
+                await new Promise(r => setTimeout(r, 1100));
+                console.log(`[${EXTENSION_NAME}] 🔧 autoGeo: fetching address for "${loc.name}" (${loc.lat.toFixed(4)},${loc.lng.toFixed(4)})`);
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}&accept-language=ko`, { headers: { 'User-Agent': 'RP-World-Tracker/0.3' } });
+                if (!res.ok) { console.warn(`[${EXTENSION_NAME}] 🔧 autoGeo: HTTP ${res.status} for "${loc.name}"`); continue; }
+                const d = await res.json();
+                const addr = d.display_name?.split(',').slice(0, 3).join(', ') || '';
+                if (addr) {
+                    await this.updateLocation(loc.id, { address: addr });
+                    console.log(`[${EXTENSION_NAME}] 🔧 autoGeo: "${loc.name}" → ${addr}`);
+                }
+            } catch(e) { console.warn(`[${EXTENSION_NAME}] 🔧 autoGeo error for "${loc.name}":`, e.message); }
+        }
+    }
+
+    // 좌표 있는 장소 쌍 → 거리 자동 계산
+    async autoCalcDistances() {
+        const geoLocs = this.locations.filter(l => l.lat != null && l.lng != null && !l.parentId); // ★ 서브 제외
+        if (geoLocs.length < 2) return;
+        let added = 0;
+
+        for (let i = 0; i < geoLocs.length; i++) {
+            for (let j = i + 1; j < geoLocs.length; j++) {
+                const a = geoLocs[i], b = geoLocs[j];
+                const meters = this._haversine(a.lat, a.lng, b.lat, b.lng);
+                const level = this._metersToLevel(meters);
+                const text = this._metersToText(meters);
+
+                // 항상 좌표 로그 (디버그)
+                console.log(`[${EXTENSION_NAME}] 🔧 autoDist: "${a.name}" (${a.lat?.toFixed(6)},${a.lng?.toFixed(6)}) ↔ "${b.name}" (${b.lat?.toFixed(6)},${b.lng?.toFixed(6)}) = ${text} (${Math.round(meters)}m, lv${level})`);
+
+                // 이미 거리 설정되어 있으면 업데이트
+                const existing = this.getDistanceBetween(a.id, b.id);
+                if (existing) {
+                    // 수동 설정이면 스킵, 자동이면 업데이트
+                    if (existing._manual) continue;
+                    existing.distanceText = text;
+                    existing.level = level;
+                    await this.db.saveDistance(existing);
+                    continue;
+                }
+
+                await this.setDistance(a.id, b.id, text, null, level);
+                added++;
+            }
+        }
+        if (added) console.log(`[${EXTENSION_NAME}] 🔧 autoDist: ${added} new distances added`);
     }
 }

@@ -1,6 +1,6 @@
 // 🐶 World Tracker — ui-manager.js (Inline Toast + Popover)
-// ★ BUILD: 2026-04-02 v0.3.0 RELEASE
-console.log('[wt] ui-manager v0.3.0 loaded');
+// ★ BUILD: 2026-04-02 hotfix16 (session5 FINAL — mood cards + accordion timeline)
+console.log('[wt] ui-manager hotfix16 loaded');
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -33,7 +33,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version">v0.3.0</span></b>
+                <b>🐶 World Tracker <span class="wt-version">v0.4.0</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -55,7 +55,7 @@ export class UIManager {
                 <span id="wt-s-profile-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px"></span>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row" style="display:flex;align-items:center;gap:6px">
-                    <label style="white-space:nowrap">🌐 요약 언어</label>
+                    <label style="white-space:nowrap">🌐 AI 언어</label>
                     <select id="wt-s-eventlang" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="auto">🔄 자동 (RP 언어)</option><option value="ko">🇰🇷 한국어</option><option value="en">🇺🇸 English</option></select>
                 </div>
                 <div class="wt-divider"></div>
@@ -100,7 +100,6 @@ export class UIManager {
         $('#wt-s-worldcont').prop('checked', s?.worldContinuity ?? false).on('change', async () => {
             const enabled = $('#wt-s-worldcont').is(':checked');
             if (enabled) {
-                // 마이그레이션 확인 팝업
                 const charKey = this.lm.getCharacterId();
                 if (!charKey) {
                     toastWarn('캐릭터를 먼저 선택해주세요');
@@ -118,7 +117,6 @@ export class UIManager {
                 }
                 s.worldContinuity = true;
                 saveSettingsDebounced();
-                // 데이터 마이그레이션
                 await this.lm.migrateToCharacter();
                 await this.lm.loadChat();
                 this.pi?.inject();
@@ -135,6 +133,7 @@ export class UIManager {
                 toastSuccess('🌍 세계관 이어가기 OFF');
             }
         });
+        // 전체 데이터 관리 (설정 패널)
         $('#wt-s-export-all').on('click', () => this._exportAllData());
         $('#wt-s-import-all').on('click', () => $('#wt-s-import-file').click());
         $('#wt-s-import-file').on('change', (e) => this._importAllData(e));
@@ -293,6 +292,14 @@ export class UIManager {
                         <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
                         <div style="font-size:12px;color:#9A8A7A;margin-top:2px">🏷️ 별칭 (쉼표 구분)</div>
                         <input type="text" id="wt-pop-aliases" class="wt-input" placeholder="예: 사격장, Shooting range" style="font-size:12px"/>
+                        <div id="wt-pop-sub-section" style="margin-top:6px;display:none">
+                            <div style="font-size:12px;font-weight:700;color:#5A4030;margin-bottom:4px">🏠 내부 장소</div>
+                            <div id="wt-pop-sub-list"></div>
+                            <div style="display:flex;gap:4px;margin-top:4px">
+                                <input type="text" id="wt-pop-sub-input" class="wt-input" placeholder="장소 이름 (EX. 거실)" style="flex:1;font-size:11px;padding:5px 8px"/>
+                                <button id="wt-pop-sub-add" class="wt-btn-accent wt-btn-s" style="font-size:14px;padding:4px 8px">+</button>
+                            </div>
+                        </div>
                         <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
                         <button id="wt-pop-move" class="wt-btn-ghost wt-btn-sm">📍 위치 수정</button>
                         <button id="wt-pop-moveto" class="wt-btn-accent wt-btn-sm" style="opacity:1;font-size:12px">🐾 여기로 이동</button>
@@ -367,6 +374,17 @@ export class UIManager {
         $('#wt-move-toggle').on('click', () => { $('#wt-move-wrap').slideToggle(200); const a=$('#wt-move-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-pop-save').on('click', () => this._popSave());
         $('#wt-pop-del').on('click', () => this._popDel());
+        // ★ 내부 장소 추가
+        $('#wt-pop-sub-add').on('click', async () => {
+            const locId = $('#wt-popover').attr('data-id');
+            const name = $('#wt-pop-sub-input').val().trim();
+            if (!name || !locId) return;
+            await this.lm.findOrCreateSub(locId, name);
+            $('#wt-pop-sub-input').val('');
+            this._renderPopSubList(locId);
+            toastSuccess(`🏠 "${name}" 추가!`);
+        });
+        $('#wt-pop-sub-input').on('keydown', (e) => { if (e.key === 'Enter') $('#wt-pop-sub-add').click(); });
         $('#wt-pop-move').on('click', () => this._popMove());
         $('#wt-pop-moveto').on('click', async () => {
             const locId = $('#wt-popover').attr('data-id');
@@ -676,7 +694,8 @@ export class UIManager {
         }
 
         const cur = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
-        $('#wt-scene-name').text(cur?.name || '—').css('color', cur?.color || '');
+        const subLoc = this.lm.currentSubLocationId ? this.lm.locations.find(l => l.id === this.lm.currentSubLocationId) : null;
+        $('#wt-scene-name').text(cur ? (cur.name + (subLoc ? ' > ' + subLoc.name : '')) : '—').css('color', cur?.color || '');
         // ★ Leaflet 풀스크린이면 장소목록/이동히스토리 숨김 유지
         if (this._isLeafletFull) {
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
@@ -795,6 +814,28 @@ export class UIManager {
                         } else { toastSuccess(`📍 "${loc.name}" 이동!`); }
                     } catch(_) { toastSuccess(`📍 "${loc.name}" 이동!`); }
                 };
+                // ★ 빈 곳 롱프레스 → 새 장소 등록
+                this.leafletRenderer.onLongPress = async (lat, lng) => {
+                    const name = prompt('📍 새 장소 이름:');
+                    if (!name?.trim()) return;
+                    const loc = await this.lm.addLocation(name.trim());
+                    if (loc) {
+                        await this.lm.updateLocation(loc.id, { lat, lng });
+                        // 역지오코딩
+                        try {
+                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ko`, { headers: { 'User-Agent': 'RP-World-Tracker/0.3' } });
+                            if (res.ok) {
+                                const d = await res.json();
+                                const addr = d.display_name?.split(',').slice(0, 3).join(', ') || '';
+                                if (addr) await this.lm.updateLocation(loc.id, { address: addr });
+                            }
+                        } catch(_) {}
+                        this.leafletRenderer.render();
+                        try { await this.lm.autoCalcDistances(); } catch(_){}
+                        toastSuccess(`📍 "${name.trim()}" 등록!`);
+                        console.log(`[${EXTENSION_NAME}] 🔧 longPress addLoc: "${name.trim()}" (${lat.toFixed(4)},${lng.toFixed(4)})`);
+                    }
+                };
             }
             this.leafletRenderer.render();
             // #46: 모바일 invalidateSize — 여러 타이밍에 반복
@@ -861,13 +902,15 @@ export class UIManager {
 
     // ========== 장소 목록 / 이동 히스토리 ==========
     _updLocList() {
-        const list=$('#wt-loc-list').empty(); $('#wt-loc-count').text(this.lm.locations.length);
-        if (!this.lm.locations.length) { list.html('<div class="wt-empty">RP를 시작하면 장소가 자동 추가돼요!</div>'); return; }
-        for (const loc of [...this.lm.locations].sort((a,b)=>(b.visitCount||0)-(a.visitCount||0))) {
+        const topLocs = this.lm.locations.filter(l => !l.parentId); // ★ 서브 장소 제외
+        const list=$('#wt-loc-list').empty(); $('#wt-loc-count').text(topLocs.length);
+        if (!topLocs.length) { list.html('<div class="wt-empty">RP를 시작하면 장소가 자동 추가돼요!</div>'); return; }
+        for (const loc of [...topLocs].sort((a,b)=>(b.visitCount||0)-(a.visitCount||0))) {
             const cur = loc.id === this.lm.currentLocationId;
+            const subCount = this.lm.getSubLocations(loc.id).length;
             const item = $(`<div class="wt-loc-item ${cur?'wt-loc-active':''}" data-id="${loc.id}">
                 <div class="wt-loc-dot" style="background:${loc.color}"></div>
-                <div class="wt-loc-info"><div class="wt-loc-name">${loc.name}${cur?' 🐾':''}</div></div>
+                <div class="wt-loc-info"><div class="wt-loc-name">${loc.name}${cur?' 🐾':''}${subCount?' <span style="font-size:9px;color:#9AA0A6">(+${subCount})</span>':''}</div></div>
                 <div class="wt-loc-visits">${loc.visitCount||0}회</div></div>`);
             item.on('click', () => this.showPop(loc.id));
             list.append(item);
@@ -917,6 +960,19 @@ export class UIManager {
     // ========== 팝오버 (장소 상세) ==========
     showPop(id) {
         const l = this.lm.locations.find(x=>x.id===id); if(!l) return;
+        // ★ 서브 장소면 부모 팝오버 열고 서브 수정창 오버레이
+        if (l.parentId) {
+            const parentExists = this.lm.locations.find(x => x.id === l.parentId);
+            if (parentExists) {
+                this.showPop(l.parentId); // 부모 먼저 열기
+                setTimeout(() => this._showSubPop(l.parentId, id), 50);
+                return;
+            }
+        }
+        // ★ 이전 서브 오버레이 정리 + 원래 body 표시
+        $('#wt-popover .wt-subpop-overlay').remove();
+        $('#wt-popover .wt-pop-body').show();
+        
         $('#wt-popover').attr('data-id', id);
         $('#wt-pop-title').val(l.name); $('#wt-pop-visits').text(l.visitCount||0);
         $('#wt-pop-first').text(l.rpFirstVisited || (l.firstVisited?this._fmt(l.firstVisited):'—'));
@@ -933,6 +989,15 @@ export class UIManager {
         if (!l.lat && !l.lng) { $('#wt-pop-geo-notice').show(); } else { $('#wt-pop-geo-notice').hide(); }
         // 현재 주소 표시
         if (l.address) { $('#wt-pop-cur-addr').show(); $('#wt-pop-addr-text').text(l.address); } else { $('#wt-pop-cur-addr').hide(); }
+        // ★ 내부 장소 섹션 (서브가 아닌 상위 장소만)
+        console.log(`[${EXTENSION_NAME}] 🔧 showPop sub-section: parentId=${l.parentId}, el=${$('#wt-pop-sub-section').length}`);
+        if (!l.parentId) {
+            $('#wt-pop-sub-section').css('display', 'block'); // .show() 대신 강제
+            this._renderPopSubList(id);
+            console.log(`[${EXTENSION_NAME}] 🔧 sub-section SHOWN for "${l.name}"`);
+        } else {
+            $('#wt-pop-sub-section').hide();
+        }
         this._updDistSection(id);
         this._updEventsList(id);
         this._renderCachedReviews(id, '#wt-pop-review-list');
@@ -959,6 +1024,153 @@ export class UIManager {
                 if (this.leafletRenderer?.map) this.leafletRenderer.invalidateSize();
             }, 100);
         }
+    }
+
+    // ★ 팝오버 내부 장소 리스트 렌더
+    _renderPopSubList(parentId) {
+        const subs = this.lm.getSubLocations(parentId);
+        const list = $('#wt-pop-sub-list');
+        if (!subs.length) {
+            list.html('<div style="font-size:11px;color:#9AA0A6;padding:4px 0">RP 중 자동 등록되거나 위에서 추가하세요</div>');
+            return;
+        }
+        const subEmojis = { '거실':'🛋', '부엌':'🍳', '주방':'🍳', '방':'🛏', '침실':'🛏', '화장실':'🚿', '욕실':'🚿', '서재':'📚', '마당':'🌳', 'kitchen':'🍳', 'bedroom':'🛏', 'bathroom':'🚿', 'living room':'🛋', 'room':'🛏' };
+        const html = subs.map(s => {
+            const emoji = subEmojis[s.name.toLowerCase()] || '🚪';
+            const evCount = (s.events || []).length;
+            const isCur = s.id === this.lm.currentSubLocationId;
+            return `<div class="wt-pop-sub-item" data-subid="${s.id}" style="display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:6px;margin-bottom:2px;background:${isCur ? '#F0FFF4' : '#FAFAF5'};font-size:11px;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                <span>${emoji}</span>
+                <span style="flex:1;font-weight:${isCur ? '700' : '400'};color:#3C3028">${s.name}${isCur ? ' 🐾' : ''}</span>
+                <span style="color:#9AA0A6;font-size:10px">${s.visitCount || 0}회${evCount ? ' · ' + evCount + '건' : ''}</span>
+                <span style="color:#9AA0A6;font-size:11px">></span>
+            </div>`;
+        }).join('');
+        list.html(html);
+        const self = this;
+        // 서브 장소 클릭 → 서브 수정창
+        list.find('.wt-pop-sub-item').on('click', function() {
+            const subId = $(this).attr('data-subid');
+            console.log(`[${EXTENSION_NAME}] 🔧 sub-item clicked: ${subId}`);
+            self._showSubPop(parentId, subId);
+        });
+        console.log(`[${EXTENSION_NAME}] 🔧 renderPopSubList: ${subs.length} items, handlers bound`);
+    }
+
+    // ★ 서브 장소 수정창 (팝오버 위에 오버레이)
+    _showSubPop(parentId, subId) {
+        const parent = this.lm.locations.find(l => l.id === parentId);
+        const sub = this.lm.locations.find(l => l.id === subId);
+        if (!parent || !sub) return;
+
+        const subEmojis = { '거실':'🛋', '부엌':'🍳', '주방':'🍳', '방':'🛏', '침실':'🛏', '화장실':'🚿', '욕실':'🚿', '서재':'📚', '마당':'🌳', 'kitchen':'🍳', 'bedroom':'🛏', 'bathroom':'🚿', 'living room':'🛋', 'room':'🛏' };
+        const emoji = subEmojis[sub.name.toLowerCase()] || '🚪';
+        const isCur = sub.id === this.lm.currentSubLocationId;
+        const events = sub.events || [];
+
+        const eventsHtml = events.length ? events.map((ev, i) => {
+            const date = ev.timestamp ? this._fmt(ev.timestamp) : '—';
+            return `<div style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border-bottom:1px solid #F1F3F4">
+                <span style="font-size:12px">${ev.mood || '📝'}</span>
+                <div style="flex:1">
+                    <div style="font-size:11px;font-weight:600;color:#202124">${ev.title || ev.text?.substring(0, 30) || '—'}</div>
+                    <div style="font-size:10px;color:#9AA0A6">${date}</div>
+                </div>
+                <span class="wt-subpop-ev-del" data-idx="${i}" style="cursor:pointer;color:#F5A8A8;font-size:11px">✕</span>
+            </div>`;
+        }).join('') : '<div style="padding:10px;text-align:center;color:#9AA0A6;font-size:11px">아직 이벤트가 없어요</div>';
+
+        // ★ 기존 팝오버 숨기고 오버레이 추가 (DOM 교체 안 함!)
+        const pop = $('#wt-popover');
+        pop.find('.wt-pop-body').hide();
+        pop.find('.wt-subpop-overlay').remove();
+
+        const overlay = $(`<div class="wt-subpop-overlay" style="padding:10px 14px;display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto">
+            <div style="display:flex;align-items:center;gap:8px">
+                <span id="wt-subpop-back" style="font-size:16px;color:#9A8A7A;cursor:pointer">←</span>
+                <span style="font-size:11px;color:#9AA0A6">${parent.name}</span>
+                <span id="wt-subpop-close" style="margin-left:auto;font-size:14px;color:#9A8A7A;cursor:pointer">✕</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:22px">${emoji}</span>
+                <div>
+                    <div style="font-size:17px;font-weight:800;color:#3C3028">${sub.name}</div>
+                    <div style="font-size:11px;color:#70757A">방문 ${sub.visitCount || 0}회${isCur ? ' · 현재 🐾' : ''}</div>
+                </div>
+            </div>
+            <div style="font-size:12px;color:#9A8A7A">💭 메모</div>
+            <textarea id="wt-subpop-memo" class="wt-input" placeholder="예: 소파가 편해서 맨날 잠" style="height:45px;resize:none;font-size:12px">${sub.memo || ''}</textarea>
+            <div style="font-size:12px;color:#9A8A7A">🤖 특이사항 (AI에게만 전달)</div>
+            <textarea id="wt-subpop-ainotes" class="wt-input" placeholder="예: 큰 TV가 있음, 창문이 남향" style="height:35px;resize:none;font-size:12px">${sub.aiNotes || ''}</textarea>
+            <div style="font-size:12px;color:#9A8A7A">📝 이벤트 기록</div>
+            <div id="wt-subpop-events" style="border:1px solid #E8E4D8;border-radius:8px;overflow:hidden;background:#fff">${eventsHtml}</div>
+            <div style="display:flex;gap:4px">
+                <input type="text" id="wt-subpop-ev-input" class="wt-input" placeholder="이벤트 추가..." style="flex:1;font-size:11px;padding:5px 8px"/>
+                <button id="wt-subpop-ev-add" class="wt-btn-accent wt-btn-s">+</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:4px">
+                <button id="wt-subpop-save" class="wt-btn-primary" style="flex:1">💾 저장</button>
+                <button id="wt-subpop-del" class="wt-btn-danger" style="width:40px">🗑️</button>
+            </div>
+        </div>`);
+
+        pop.append(overlay);
+        const self = this;
+
+        // ← 뒤로가기 (오버레이 제거 + 원래 팝오버 표시)
+        overlay.find('#wt-subpop-back').on('click', () => {
+            overlay.remove();
+            pop.find('.wt-pop-body').show();
+            // 내부 장소 리스트 리렌더 (삭제/추가 반영)
+            self._renderPopSubList(parentId);
+        });
+        overlay.find('#wt-subpop-close').on('click', () => { overlay.remove(); self.hidePop(); });
+        // 💾 저장
+        overlay.find('#wt-subpop-save').on('click', async () => {
+            await self.lm.updateLocation(subId, {
+                memo: overlay.find('#wt-subpop-memo').val().trim(),
+                aiNotes: overlay.find('#wt-subpop-ainotes').val().trim(),
+            });
+            toastSuccess('💾 저장!');
+            self.pi?.inject();
+        });
+        // 🗑 삭제
+        overlay.find('#wt-subpop-del').on('click', async () => {
+            if (!confirm(`"${sub.name}" 삭제?`)) return;
+            await self.lm.deleteLocation(subId);
+            if (self.lm.currentSubLocationId === subId) self.lm.currentSubLocationId = null;
+            overlay.remove();
+            pop.find('.wt-pop-body').show();
+            self._renderPopSubList(parentId);
+            toastSuccess('🗑️ 삭제됨');
+        });
+        // + 이벤트 추가
+        overlay.find('#wt-subpop-ev-add').on('click', () => {
+            const text = overlay.find('#wt-subpop-ev-input').val().trim();
+            if (!text) return;
+            if (!sub.events) sub.events = [];
+            sub.events.push({ text, title: text.substring(0, 20), mood: '📝', timestamp: Date.now(), source: 'manual' });
+            self.lm.updateLocation(subId, { events: sub.events });
+            toastSuccess('📝 이벤트 추가!');
+            // 리렌더
+            overlay.remove();
+            pop.find('.wt-pop-body').hide();
+            self._showSubPop(parentId, subId);
+        });
+        overlay.find('#wt-subpop-ev-input').on('keydown', (e) => { if (e.key === 'Enter') overlay.find('#wt-subpop-ev-add').click(); });
+        // ✕ 이벤트 삭제
+        overlay.find('.wt-subpop-ev-del').on('click', function(e) {
+            e.stopPropagation();
+            const idx = parseInt($(this).attr('data-idx'));
+            if (!confirm('이벤트 삭제?')) return;
+            sub.events.splice(idx, 1);
+            self.lm.updateLocation(subId, { events: sub.events });
+            overlay.remove();
+            pop.find('.wt-pop-body').hide();
+            self._showSubPop(parentId, subId);
+            toastSuccess('🗑️ 삭제!');
+        });
+        console.log(`[${EXTENSION_NAME}] 🔧 showSubPop: "${parent.name} > ${sub.name}"`);
     }
 
     // ========== 분위기 카드 (이모지 기반 자동 생성) ==========
@@ -1207,13 +1419,14 @@ export class UIManager {
             <div style="display:flex;gap:5px;padding:2px 14px 8px;overflow-x:auto">
                 <button class="wt-bs-pill-btn" data-action="move" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#2B8A6E;font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;font-family:inherit${cur ? ';opacity:.4' : ''}">🐾 이동</button>
                 <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
-                <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#E8F4F0;font-size:10.5px;font-weight:600;color:#2B8A6E;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 저장됨</button>
+                <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#E8F4F0;font-size:10.5px;font-weight:600;color:#2B8A6E;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 ${((loc.tags||[]).length ? (loc.tags||[]).map(t=>({favorites:'💜',starred:'⭐',wantToGo:'🚩',travel:'🧳'})[t]||'').join('') : '저장')}</button>
                 <button class="wt-bs-pill-btn" data-action="dist" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">📏 거리</button>
             </div>
             <div id="wt-bs-tabs" style="display:flex;border-bottom:2px solid #F0EDE5">
                 <div class="wt-bs-tab" data-tab="overview" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#2B8A6E;cursor:pointer;border-bottom:2.5px solid #2B8A6E;margin-bottom:-2px">개요</div>
                 <div class="wt-bs-tab" data-tab="events" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">이벤트</div>
                 <div class="wt-bs-tab" data-tab="review" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">리뷰</div>
+                <div class="wt-bs-tab" data-tab="rooms" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">내부</div>
             </div>
             <div id="wt-bs-tab-overview" style="padding:10px 14px;overflow-y:auto">
                 <!-- 분위기 카드 갤러리 -->
@@ -1258,6 +1471,27 @@ export class UIManager {
                     <button id="wt-bs-gen-review" style="padding:8px 16px;background:#E8F0FE;border:1.5px solid #1A73E8;border-radius:18px;font-size:11px;font-weight:600;color:#1A73E8;cursor:pointer;font-family:inherit">🔄 랜덤 리뷰 생성</button>
                 </div>
                 <div id="wt-bs-review-list"></div>
+            </div>
+            <div id="wt-bs-tab-rooms" style="display:none;padding:10px 14px;overflow-y:auto">
+                ${(() => {
+                    const subs = this.lm.getSubLocations(locId);
+                    const subEmojis = { '거실':'🛋', '부엌':'🍳', '주방':'🍳', '방':'🛏', '침실':'🛏', '안방':'🛏', '화장실':'🚿', '욕실':'🚿', '베란다':'🌅', '발코니':'🌅', '옥상':'🌤', '서재':'📚', '마당':'🌳', '차고':'🚗', 'kitchen':'🍳', 'bedroom':'🛏', 'bathroom':'🚿', 'living room':'🛋', 'room':'🛏', 'study':'📚', 'garage':'🚗', 'balcony':'🌅' };
+                    const getEmoji = n => subEmojis[n.toLowerCase()] || '🚪';
+                    if (!subs.length) return '<div style="text-align:center;padding:20px;color:#9AA0A6;font-size:12px">아직 내부 장소가 없어요<br><span style="font-size:11px">RP 중 거실, 부엌 등이 자동 등록돼요!</span></div>';
+                    return subs.map(s => {
+                        const isCur = s.id === this.lm.currentSubLocationId;
+                        const evCount = (s.events||[]).length;
+                        return `<div class="wt-bs-sub-item" data-subid="${s.id}" style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid ${isCur?'#2B8A6E':'#F0EDE5'};border-radius:10px;margin-bottom:6px;cursor:pointer;background:${isCur?'#F0FFF4':'#fff'};-webkit-tap-highlight-color:transparent">
+                            <span style="font-size:16px">${getEmoji(s.name)}</span>
+                            <div style="flex:1"><div style="font-size:12px;font-weight:600;color:#202124">${s.name}${isCur?' <span style="font-size:9px;color:#2B8A6E;background:#E8F5E9;padding:1px 5px;border-radius:6px">현재</span>':''}</div><div style="font-size:10px;color:#70757A">${s.visitCount||0}회${evCount?' · 이벤트 '+evCount+'건':''}</div></div>
+                            <span style="color:#9AA0A6;font-size:12px">></span>
+                        </div>`;
+                    }).join('');
+                })()}
+                <div style="display:flex;gap:4px;margin-top:8px">
+                    <input type="text" id="wt-bs-add-sub" placeholder="장소 이름 (EX. 거실)" style="flex:1;padding:7px 10px;border:1.5px solid #E8E4D8;border-radius:8px;font-size:12px;font-family:inherit"/>
+                    <button id="wt-bs-add-sub-btn" style="width:34px;height:34px;background:#5E84E2;border:none;border-radius:8px;color:#fff;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>
+                </div>
             </div>`;
 
         bs.html(html).show().css({ background: '#fff' });
@@ -1275,6 +1509,7 @@ export class UIManager {
             if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
             if (action === 'dist' && id) { self._hideBottomSheet(); self.showPop(id); }
+            if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
         });
         bs.find('.wt-bs-tab').on('click', function(e) {
             e.stopPropagation();
@@ -1321,6 +1556,25 @@ export class UIManager {
             bs.find('#wt-bs-tab-events').show();
             if (self._bsStage < 3) self._applyBsStage(3);
         });
+        // ★ 내부 장소 클릭 → 서브 상세 뷰
+        bs.find('.wt-bs-sub-item').on('click', function(e) {
+            e.stopPropagation();
+            const subId = $(this).data('subid');
+            self._showSubLocationDetail(locId, subId);
+        });
+        // ★ 내부 장소 추가 버튼
+        bs.find('#wt-bs-add-sub-btn').on('click', async (e) => {
+            e.stopPropagation();
+            const name = bs.find('#wt-bs-add-sub').val().trim();
+            if (!name) { bs.find('#wt-bs-add-sub').css('borderColor', '#F5A8A8'); return; }
+            await self.lm.findOrCreateSub(locId, name);
+            toastSuccess(`🏠 "${name}" 추가!`);
+            self._showBottomSheet(locId); // 리렌더
+            // 내부 탭 다시 열기
+            setTimeout(() => {
+                bs.find('.wt-bs-tab[data-tab="rooms"]').click();
+            }, 100);
+        });
     }
 
     _hideBottomSheet() {
@@ -1331,6 +1585,81 @@ export class UIManager {
         if (bs) { bs.style.cssText = 'display:none'; bs.innerHTML = ''; }
         setTimeout(() => this.leafletRenderer?.invalidateSize(), 200);
         this._bsStage = 0;
+    }
+
+    // ★ 서브 장소 상세 뷰
+    _showSubLocationDetail(parentId, subId) {
+        const parent = this.lm.locations.find(l => l.id === parentId);
+        const sub = this.lm.locations.find(l => l.id === subId);
+        if (!parent || !sub) return;
+        const bs = $('#wt-bottomsheet');
+        const isCur = sub.id === this.lm.currentSubLocationId;
+        const events = (sub.events || []).slice(-10);
+
+        const subEmojis = { '거실':'🛋', '부엌':'🍳', '주방':'🍳', '방':'🛏', '침실':'🛏', '안방':'🛏', '화장실':'🚿', '욕실':'🚿', '서재':'📚', '마당':'🌳', '차고':'🚗', 'kitchen':'🍳', 'bedroom':'🛏', 'bathroom':'🚿', 'living room':'🛋', 'room':'🛏', 'study':'📚' };
+        const emoji = subEmojis[sub.name.toLowerCase()] || '🚪';
+
+        let evHtml = '';
+        if (events.length) {
+            evHtml = events.map((ev, i) => {
+                const title = ev.title || ev.text?.substring(0, 40) || '—';
+                const fullText = ev.text || '';
+                const hasDetail = fullText.length > 0 && fullText !== title;
+                return `<div class="wt-sub-ev-card" style="padding:8px 0;border-bottom:1px solid #F1F3F4;cursor:${hasDetail ? 'pointer' : 'default'};-webkit-tap-highlight-color:transparent">
+                    <div style="display:flex;align-items:flex-start;gap:6px">
+                        <span style="font-size:12px;flex-shrink:0">${ev.mood || '📝'}</span>
+                        <div style="flex:1">
+                            <div style="font-size:12px;font-weight:600;color:#202124">${title}</div>
+                            <div style="font-size:10px;color:#9AA0A6">${ev.timestamp ? this._fmt(ev.timestamp) : '—'}${hasDetail ? ' · 탭하여 펼치기' : ''}</div>
+                        </div>
+                    </div>
+                    ${hasDetail ? `<div class="wt-sub-ev-detail" style="display:none;margin-top:6px;padding:6px 8px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#5A4030;line-height:1.6;margin-left:18px">${fullText}</div>` : ''}
+                </div>`;
+            }).join('');
+        } else {
+            evHtml = '<div style="text-align:center;padding:16px;color:#9AA0A6;font-size:11px">아직 이벤트가 없어요</div>';
+        }
+
+        const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;min-height:44px;cursor:pointer"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="padding:0 14px;overflow-y:auto">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    <span class="wt-sub-back" data-parentid="${parentId}" style="font-size:16px;color:#9AA0A6;cursor:pointer">←</span>
+                    <span style="font-size:11px;color:#9AA0A6">${parent.name}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    <span style="font-size:22px">${emoji}</span>
+                    <div>
+                        <div style="font-size:17px;font-weight:800;color:#202124">${sub.name}</div>
+                        <div style="font-size:11px;color:#70757A">방문 ${sub.visitCount||0}회${isCur ? ' · 현재 🐾' : ''}</div>
+                    </div>
+                </div>
+                ${sub.memo ? `<div style="padding:8px 0;border-top:1px solid #F0EDE5"><div style="font-size:11px;color:#5A4030;font-style:italic;border-left:3px solid #D4D0C8;padding-left:8px">"${sub.memo}"</div></div>` : ''}
+                <div style="padding:8px 0;border-top:1px solid #F0EDE5">
+                    <div style="font-size:12px;font-weight:700;color:#202124;margin-bottom:6px">이벤트</div>
+                    ${evHtml}
+                </div>
+            </div>`;
+
+        bs.html(html).show().css({ background: '#fff' });
+        this._applyBsStage(3); // full
+        this._bindBsDrag(bs[0]);
+        bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
+
+        const self = this;
+        bs.find('.wt-sub-back').on('click', (e) => {
+            e.stopPropagation();
+            const pid = $(e.currentTarget).data('parentid');
+            self._showBottomSheet(pid);
+            setTimeout(() => { bs.find('.wt-bs-tab[data-tab="rooms"]').click(); }, 100);
+        });
+        // ★ 이벤트 아코디언 토글
+        bs.find('.wt-sub-ev-card').on('click', function() {
+            const det = $(this).find('.wt-sub-ev-detail');
+            if (det.length) {
+                det.slideToggle(200);
+                const hint = $(this).find('.wt-sub-ev-hint');
+            }
+        });
     }
 
     // ★ 바텀시트 3단계 + 터치 드래그 (구글맵 스타일)
@@ -1545,14 +1874,41 @@ export class UIManager {
         const totalVisits = locs.reduce((s, l) => s + (l.visitCount || 0), 0);
         const mostVisited = locs.length ? [...locs].sort((a, b) => (b.visitCount || 0) - (a.visitCount || 0))[0] : null;
 
-        let recentHtml = locs.slice(0, 5).map(l => {
+        // 카테고리별 카운트
+        const tagCounts = {
+            favorites: locs.filter(l => (l.tags || []).includes('favorites')).length,
+            starred: locs.filter(l => (l.tags || []).includes('starred')).length,
+            wantToGo: locs.filter(l => (l.tags || []).includes('wantToGo')).length,
+            travel: locs.filter(l => (l.tags || []).includes('travel')).length,
+        };
+
+        let recentHtml = locs.filter(l => l.visitCount > 0).slice(0, 5).map(l => {
             const st = this.leafletRenderer?._locStyle?.(l.name) || { emoji: '📍' };
+            const tags = (l.tags || []).map(t => {
+                const icons = { favorites: '💜', starred: '⭐', wantToGo: '🚩', travel: '🧳' };
+                return icons[t] || '';
+            }).join('');
             return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F1F3F4;cursor:pointer" class="wt-mp-loc" data-id="${l.id}">
                 <div style="width:28px;height:28px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:14px">${st.emoji}</div>
-                <div style="flex:1"><div style="font-size:12px;font-weight:600;color:#202124">${l.name}</div><div style="font-size:10px;color:#70757A">방문 ${l.visitCount||0}회</div></div>
-                <span style="font-size:14px;color:#9AA0A6">🔖</span>
+                <div style="flex:1"><div style="font-size:12px;font-weight:600;color:#202124">${l.name}${tags ? ' ' + tags : ''}</div><div style="font-size:10px;color:#70757A">방문 ${l.visitCount||0}회</div></div>
+                <span style="font-size:14px;color:#9AA0A6">›</span>
             </div>`;
         }).join('');
+
+        // 미방문 장소 (미래 등록)
+        const unvisited = locs.filter(l => !l.visitCount || l.visitCount === 0);
+        let unvisitedHtml = '';
+        if (unvisited.length) {
+            unvisitedHtml = `<div style="font-size:12px;font-weight:700;color:#202124;margin:14px 0 4px">🔮 미방문 장소</div>` +
+                unvisited.map(l => {
+                    const st = this.leafletRenderer?._locStyle?.(l.name) || { emoji: '📍' };
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F1F3F4;cursor:pointer;opacity:.7" class="wt-mp-loc" data-id="${l.id}">
+                        <div style="width:28px;height:28px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:14px">${st.emoji}</div>
+                        <div style="flex:1"><div style="font-size:12px;font-weight:600;color:#202124">${l.name}</div><div style="font-size:10px;color:#9AA0A6">미방문</div></div>
+                        <span style="font-size:14px;color:#9AA0A6">›</span>
+                    </div>`;
+                }).join('');
+        }
 
         const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;min-height:44px;cursor:pointer"><div style="width:32px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
             <div style="padding:8px 14px;overflow-y:auto">
@@ -1560,34 +1916,242 @@ export class UIManager {
                 <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto">
                     <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center"><div style="font-size:16px;font-weight:800;color:#2B8A6E">${locs.length}</div><div style="font-size:8px;color:#70757A">총 장소</div></div>
                     <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center"><div style="font-size:16px;font-weight:800;color:#2B8A6E">${totalVisits}</div><div style="font-size:8px;color:#70757A">총 방문</div></div>
-                    <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center"><div style="font-size:16px;font-weight:800;color:#2B8A6E">${mostVisited?.name||'—'}</div><div style="font-size:8px;color:#70757A">최다 방문</div></div>
+                    <div style="padding:8px 12px;background:#F8F9FA;border-radius:10px;border:1px solid #E8EAED;white-space:nowrap;min-width:60px;text-align:center;overflow:hidden;text-overflow:ellipsis"><div style="font-size:14px;font-weight:800;color:#2B8A6E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mostVisited?.name||'—'}</div><div style="font-size:8px;color:#70757A">최다 방문</div></div>
                 </div>
                 <div style="font-size:12px;font-weight:700;color:#202124;margin-bottom:4px">최근 방문한 장소</div>
                 ${recentHtml || '<div style="padding:12px;text-align:center;color:#9AA0A6;font-size:11px">아직 없어요</div>'}
-                <div style="font-size:12px;font-weight:700;color:#202124;margin:14px 0 6px;display:flex;justify-content:space-between">내 목록 <span style="font-size:10px;color:#1A73E8;font-weight:500">+ 새 목록</span></div>
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4">💜<div style="flex:1"><div style="font-size:12px;font-weight:600">즐겨찾는 장소</div><div style="font-size:10px;color:#70757A">비공개 · ${locs.length}곳</div></div>⋮</div>
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4">⭐<div style="flex:1"><div style="font-size:12px;font-weight:600">별표표시된 장소</div><div style="font-size:10px;color:#70757A">비공개</div></div>⋮</div>
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4">🚩<div style="flex:1"><div style="font-size:12px;font-weight:600">가고 싶은 장소</div><div style="font-size:10px;color:#70757A">비공개</div></div>⋮</div>
-                <div style="display:flex;align-items:center;gap:10px;padding:10px 0">🧳<div style="flex:1"><div style="font-size:12px;font-weight:600">여행 계획</div><div style="font-size:10px;color:#70757A">비공개</div></div>⋮</div>
+                ${unvisitedHtml}
+                <div style="font-size:12px;font-weight:700;color:#202124;margin:14px 0 6px;display:flex;justify-content:space-between;align-items:center">
+                    내 목록
+                    <span class="wt-mp-addloc" style="font-size:10px;color:#1A73E8;font-weight:500;cursor:pointer">+ 장소 등록</span>
+                </div>
+                <div class="wt-mp-list-item" data-tag="favorites" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                    <span style="font-size:16px">💜</span>
+                    <div style="flex:1"><div style="font-size:12px;font-weight:600">즐겨찾는 장소</div><div style="font-size:10px;color:#70757A">${tagCounts.favorites}곳</div></div>
+                    <span style="color:#9AA0A6;font-size:14px">›</span>
+                </div>
+                <div class="wt-mp-list-item" data-tag="starred" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                    <span style="font-size:16px">⭐</span>
+                    <div style="flex:1"><div style="font-size:12px;font-weight:600">별표표시된 장소</div><div style="font-size:10px;color:#70757A">${tagCounts.starred}곳</div></div>
+                    <span style="color:#9AA0A6;font-size:14px">›</span>
+                </div>
+                <div class="wt-mp-list-item" data-tag="wantToGo" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F4;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                    <span style="font-size:16px">🚩</span>
+                    <div style="flex:1"><div style="font-size:12px;font-weight:600">가고 싶은 장소</div><div style="font-size:10px;color:#70757A">${tagCounts.wantToGo}곳</div></div>
+                    <span style="color:#9AA0A6;font-size:14px">›</span>
+                </div>
+                <div class="wt-mp-list-item" data-tag="travel" style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                    <span style="font-size:16px">🧳</span>
+                    <div style="flex:1"><div style="font-size:12px;font-weight:600">여행 계획</div><div style="font-size:10px;color:#70757A">${tagCounts.travel}곳</div></div>
+                    <span style="color:#9AA0A6;font-size:14px">›</span>
+                </div>
             </div>`;
 
         const bs = $('#wt-bottomsheet');
         bs.html(html).show().css({ background: '#fff' });
-        this._applyBsStage(1); // peek (350px) — 전체 바텀시트 동일
+        this._applyBsStage(1);
         this._bindBsDrag(bs[0]);
-
-        // 핸들바 sticky
         bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
 
         const self = this;
+        // 최근 방문 장소 클릭 → 바텀시트
         bs.find('.wt-mp-loc').on('click', function(e) {
-            // #8: 단계 전환 중 클릭 차단
             if (self._bsTransitioning) { e.stopPropagation(); return; }
             const id = $(this).data('id');
             self._hideBottomSheet();
             $('.wt-paw-tab[data-tab="explore"]').click();
             setTimeout(() => self._showBottomSheet(id), 300);
         });
+        // 카테고리 목록 클릭 → 해당 태그 장소 리스트
+        bs.find('.wt-mp-list-item').on('click', function(e) {
+            console.log(`[${EXTENSION_NAME}] 🔧 tag list clicked: transitioning=${self._bsTransitioning}`);
+            if (self._bsTransitioning) { e.stopPropagation(); return; }
+            const tag = $(this).data('tag');
+            console.log(`[${EXTENSION_NAME}] 🔧 opening tag list: ${tag}`);
+            self._showTagList(tag);
+        });
+        // + 장소 등록
+        bs.find('.wt-mp-addloc').on('click', (e) => {
+            e.stopPropagation();
+            this._showAddLocationPopup();
+        });
+    }
+
+    // ========== 태그별 장소 리스트 ==========
+    _showTagList(tag) {
+        const tagNames = { favorites: '💜 즐겨찾는 장소', starred: '⭐ 별표표시된 장소', wantToGo: '🚩 가고 싶은 장소', travel: '🧳 여행 계획' };
+        const tagged = this.lm.locations.filter(l => (l.tags || []).includes(tag));
+        const bs = $('#wt-bottomsheet');
+
+        let listHtml = '';
+        if (tagged.length) {
+            listHtml = tagged.map(l => {
+                const st = this.leafletRenderer?._locStyle?.(l.name) || { emoji: '📍' };
+                return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F1F3F4;cursor:pointer" class="wt-tl-loc" data-id="${l.id}">
+                    <div style="width:28px;height:28px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:14px">${st.emoji}</div>
+                    <div style="flex:1"><div style="font-size:12px;font-weight:600;color:#202124">${l.name}</div><div style="font-size:10px;color:#70757A">${l.visitCount ? '방문 ' + l.visitCount + '회' : '미방문'}</div></div>
+                    <button class="wt-tl-untag" data-id="${l.id}" data-tag="${tag}" style="border:none;background:#F5A8A8;border-radius:6px;padding:4px 8px;font-size:10px;color:#501313;cursor:pointer;font-family:inherit">삭제</button>
+                </div>`;
+            }).join('');
+        } else {
+            listHtml = '<div style="padding:24px;text-align:center;color:#9AA0A6;font-size:12px">아직 등록된 장소가 없어요<br><span style="font-size:11px">바텀시트에서 장소를 태그해보세요!</span></div>';
+        }
+
+        const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;min-height:44px;cursor:pointer"><div style="width:32px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="padding:8px 14px;overflow-y:auto">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                    <span onclick="window.__wtNavTab&&window.__wtNavTab('mypage',document.querySelector('.wt-paw-tab[data-tab=mypage]'))" style="font-size:18px;cursor:pointer;color:#9AA0A6">←</span>
+                    <div style="font-size:15px;font-weight:800;color:#202124">${tagNames[tag] || tag}</div>
+                    <span style="font-size:11px;color:#9AA0A6;margin-left:auto">${tagged.length}곳</span>
+                </div>
+                ${listHtml}
+            </div>`;
+
+        bs.html(html).show().css({ background: '#fff' });
+        this._applyBsStage(2);
+        this._bindBsDrag(bs[0]);
+        bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
+
+        const self = this;
+        bs.find('.wt-tl-loc').on('click', function(e) {
+            if ($(e.target).closest('.wt-tl-untag').length) return;
+            if (self._bsTransitioning) { e.stopPropagation(); return; }
+            const id = $(this).data('id');
+            self._hideBottomSheet();
+            $('.wt-paw-tab[data-tab="explore"]').click();
+            setTimeout(() => self._showBottomSheet(id), 300);
+        });
+        // 태그 삭제
+        bs.find('.wt-tl-untag').on('click', async function(e) {
+            e.stopPropagation();
+            const locId = $(this).data('id');
+            const t = $(this).data('tag');
+            const loc = self.lm.locations.find(l => l.id === locId);
+            if (loc) {
+                loc.tags = (loc.tags || []).filter(x => x !== t);
+                await self.lm.updateLocation(locId, { tags: loc.tags });
+                self._showTagList(t); // 리스트 리렌더
+                toastSuccess('🏷️ 태그 해제!');
+            }
+        });
+    }
+
+    // ========== 태그 토글 팝업 (바텀시트 "저장됨" 버튼) ==========
+    _showTagPopup(locId, btnEl) {
+        $('#wt-tag-popup').remove();
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        const tags = loc.tags || [];
+        const allTags = [
+            { key: 'favorites', icon: '💜', label: '즐겨찾기' },
+            { key: 'starred', icon: '⭐', label: '별표' },
+            { key: 'wantToGo', icon: '🚩', label: '가고싶은곳' },
+            { key: 'travel', icon: '🧳', label: '여행계획' },
+        ];
+
+        const items = allTags.map(t => {
+            const on = tags.includes(t.key);
+            return `<div class="wt-tag-item" data-key="${t.key}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-radius:8px;background:${on ? '#E8F4F0' : 'transparent'};-webkit-tap-highlight-color:transparent">
+                <span style="font-size:16px">${t.icon}</span>
+                <span style="font-size:12px;font-weight:${on ? '700' : '400'};color:${on ? '#2B8A6E' : '#5A4030'};flex:1">${t.label}</span>
+                <span style="font-size:14px">${on ? '✓' : ''}</span>
+            </div>`;
+        }).join('');
+
+        const popup = $(`<div id="wt-tag-popup" style="position:absolute;bottom:auto;top:120px;left:14px;right:14px;background:#fff;border:1.5px solid #E8E4D8;border-radius:12px;padding:6px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.15);font-family:-apple-system,'Noto Sans KR',sans-serif">
+            <div style="font-size:11px;color:#9A8A7A;padding:4px 10px 6px;font-weight:500">목록에 저장</div>
+            ${items}
+        </div>`);
+
+        $('#wt-bottomsheet').append(popup);
+        const self = this;
+
+        popup.find('.wt-tag-item').on('click', async function() {
+            const key = $(this).data('key');
+            let curTags = loc.tags || [];
+            if (curTags.includes(key)) {
+                curTags = curTags.filter(t => t !== key);
+            } else {
+                curTags.push(key);
+            }
+            loc.tags = curTags;
+            await self.lm.updateLocation(locId, { tags: curTags });
+            // 리렌더 팝업
+            popup.remove();
+            self._showTagPopup(locId, btnEl);
+            // 저장됨 버튼 텍스트 업데이트
+            const tagIcons = curTags.map(t => {
+                const icons = { favorites: '💜', starred: '⭐', wantToGo: '🚩', travel: '🧳' };
+                return icons[t] || '';
+            }).join('');
+            btnEl.html(tagIcons ? `🔖 ${tagIcons}` : '🔖 저장');
+            console.log(`[${EXTENSION_NAME}] 🔧 tag toggle: "${loc.name}" tags=${curTags}`);
+        });
+
+        // 바깥 클릭 → 닫기
+        setTimeout(() => {
+            $(document).one('click.wtTagPopup', (e) => {
+                if (!$(e.target).closest('#wt-tag-popup').length) popup.remove();
+            });
+        }, 100);
+    }
+
+    // ========== 장소 추가 팝업 (#7 미래 장소 등록) ==========
+    _showAddLocationPopup() {
+        $('#wt-addloc-popup').remove();
+        const popup = $(`<div id="wt-addloc-popup" style="position:absolute;top:60px;left:14px;right:14px;background:#fff;border:2px solid #F6A93A;border-radius:14px;padding:14px;z-index:9999;box-shadow:0 6px 24px rgba(0,0,0,.15);font-family:-apple-system,'Noto Sans KR',sans-serif">
+            <div style="font-size:14px;font-weight:700;color:#775537;margin-bottom:8px">📍 새 장소 등록</div>
+            <input type="text" id="wt-addloc-name" placeholder="장소 이름" style="width:100%;padding:8px 10px;border:1.5px solid #E8E4D8;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:6px;box-sizing:border-box"/>
+            <input type="text" id="wt-addloc-addr" placeholder="주소 (선택 — 비우면 자동 지정)" style="width:100%;padding:8px 10px;border:1.5px solid #E8E4D8;border-radius:8px;font-size:12px;font-family:inherit;margin-bottom:6px;box-sizing:border-box;color:#5A4030"/>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+                <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#5A4030;cursor:pointer"><input type="checkbox" class="wt-addloc-tag" value="wantToGo"/> 🚩 가고싶은곳</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#5A4030;cursor:pointer"><input type="checkbox" class="wt-addloc-tag" value="favorites"/> 💜 즐겨찾기</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#5A4030;cursor:pointer"><input type="checkbox" class="wt-addloc-tag" value="travel"/> 🧳 여행계획</label>
+            </div>
+            <div style="display:flex;gap:6px">
+                <button id="wt-addloc-ok" style="flex:1;padding:8px;background:#F7EC8D;border:1.5px solid #F6A93A;border-radius:8px;font-size:12px;font-weight:600;color:#775537;cursor:pointer;font-family:inherit">✚ 등록</button>
+                <button id="wt-addloc-cancel" style="flex:1;padding:8px;background:#fff;border:1.5px solid #E8E4D8;border-radius:8px;font-size:12px;color:#9A8A7A;cursor:pointer;font-family:inherit">취소</button>
+            </div>
+        </div>`);
+
+        $('#wt-bottomsheet').append(popup);
+        const self = this;
+
+        popup.find('#wt-addloc-ok').on('click', async () => {
+            const name = popup.find('#wt-addloc-name').val().trim();
+            if (!name) { popup.find('#wt-addloc-name').css('borderColor', '#F5A8A8'); return; }
+            const addr = popup.find('#wt-addloc-addr').val().trim();
+            const tags = [];
+            popup.find('.wt-addloc-tag:checked').each(function() { tags.push($(this).val()); });
+
+            const loc = await self.lm.addLocation(name);
+            if (loc) {
+                const updates = {};
+                if (tags.length) updates.tags = tags;
+                // 주소 입력 → Nominatim 검색해서 좌표도 저장
+                if (addr) {
+                    updates.address = addr;
+                    try {
+                        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`, { headers: { 'User-Agent': 'RP-World-Tracker/0.3' } });
+                        const data = await res.json();
+                        if (data?.[0]) {
+                            updates.lat = parseFloat(data[0].lat);
+                            updates.lng = parseFloat(data[0].lon);
+                            console.log(`[${EXTENSION_NAME}] 🔧 addLoc geocode: "${addr}" → (${updates.lat},${updates.lng})`);
+                        }
+                    } catch(e) { console.warn(`[${EXTENSION_NAME}] 🔧 addLoc geocode failed:`, e.message); }
+                }
+                if (Object.keys(updates).length) await self.lm.updateLocation(loc.id, updates);
+            }
+            popup.remove();
+            self._showMyPageBS();
+            toastSuccess(`📍 "${name}" 등록!`);
+            // 거리 자동 계산
+            try { await self.lm.autoCalcDistances(); } catch(_){}
+            console.log(`[${EXTENSION_NAME}] 🔧 addLocation from MyPage: "${name}" addr="${addr}" tags=${tags}`);
+        });
+        popup.find('#wt-addloc-cancel').on('click', () => popup.remove());
+        popup.find('#wt-addloc-name').focus();
     }
 
     // ========== 🕐 타임라인 (아코디언 — 오늘 펼침, 과거 접힘) ==========
@@ -1845,6 +2409,56 @@ export class UIManager {
         setTimeout(() => overlay.remove(), 15000);
     }
 
+    // ★ AI 중복 방지: 유저 장소와 AI 장소 병합 제안
+    showMergeToast(userLoc, aiName) {
+        $('#wt-merge-overlay').remove();
+
+        const sendBtn = document.querySelector('#send_but');
+        if (!sendBtn || sendBtn.offsetParent === null) return;
+
+        const overlay = $(`<div id="wt-merge-overlay" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);width:320px;max-width:90vw;background:rgba(245,244,237,0.98);border:2px solid #5E84E2;border-radius:14px;padding:10px 14px;z-index:2147483646;box-shadow:0 6px 24px rgba(0,0,0,0.2);backdrop-filter:blur(8px);font-family:-apple-system,'Noto Sans KR',sans-serif">
+            <div style="font-size:13px;font-weight:700;color:#3C4043;margin-bottom:6px">📍 "${aiName}"</div>
+            <div style="font-size:12px;color:#5A4030;margin-bottom:8px">= "<strong>${userLoc.name}</strong>" 와 같은 장소인가요?</div>
+            <div style="display:flex;gap:6px">
+                <button id="wt-merge-yes" style="flex:1;padding:8px;background:#E8F0FE;border:1.5px solid #5E84E2;border-radius:8px;font-size:12px;font-weight:600;color:#1A73E8;cursor:pointer;font-family:inherit">🔗 같은 곳 (별칭 추가)</button>
+                <button id="wt-merge-no" style="flex:1;padding:8px;background:#fff;border:1.5px solid #E8E4D8;border-radius:8px;font-size:12px;color:#775537;cursor:pointer;font-family:inherit">📍 다른 곳</button>
+            </div>
+        </div>`);
+
+        $('body').append(overlay);
+        const self = this;
+
+        // 같은 곳 → 별칭 추가
+        overlay.find('#wt-merge-yes').on('click', async () => {
+            const aliases = [...(userLoc.aliases || []), aiName];
+            await self.lm.updateLocation(userLoc.id, { aliases });
+            toastSuccess(`📎 "${aiName}" → "${userLoc.name}"의 별칭으로 추가!`);
+            self.pi?.inject();
+            overlay.remove();
+            console.log(`[${EXTENSION_NAME}] 🔧 merge: "${aiName}" → alias of "${userLoc.name}"`);
+        });
+
+        // 다른 곳 → 새로 등록
+        overlay.find('#wt-merge-no').on('click', async () => {
+            const loc = await self.lm.addLocation(aiName);
+            if (loc) {
+                await self.lm.moveTo(loc.id);
+                self.pi?.inject(); self.refresh();
+                self.showAutoToast(loc);
+                setTimeout(async () => { try { await self.lm.autoCalcDistances(); await self.lm.autoReverseGeocode(); self.pi?.inject(); } catch(_){} }, 1500);
+            }
+            overlay.remove();
+            toastSuccess(`📍 "${aiName}" 새로 등록!`);
+        });
+
+        // 10초 후 자동 → 같은 곳으로 처리
+        setTimeout(() => {
+            if ($('#wt-merge-overlay').length) {
+                $('#wt-merge-yes').click();
+            }
+        }, 10000);
+    }
+
     _findSim(name) {
         if(!this.lm.locations.length)return[]; const lo=name.toLowerCase();
         const mg=catGroups.filter(g=>g.some(w=>lo.includes(w))); if(!mg.length)return[];
@@ -1964,7 +2578,7 @@ export class UIManager {
 
     // ---- 거리 입력 섹션 ----
     _updDistSection(locId) {
-        const others = this.lm.locations.filter(l => l.id !== locId);
+        const others = this.lm.locations.filter(l => l.id !== locId && !l.parentId); // ★ 서브 장소 제외
         if (!others.length) { $('#wt-pop-dist-section').hide(); return; }
         $('#wt-pop-dist-section').show();
 
@@ -1974,7 +2588,7 @@ export class UIManager {
             let otherId = d.fromId === locId ? d.toId : d.toId === locId ? d.fromId : null;
             if (!otherId) continue;
             const other = this.lm.locations.find(l => l.id === otherId);
-            if (!other) continue;
+            if (!other || other.parentId) continue; // ★ 서브 장소 거리 안 표시
             const item = $(`<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A4030;background:#FAFAF5;padding:4px 8px;border-radius:6px">
                 <span style="flex:1">${other.name}</span><span style="color:#9A8A7A">${d.distanceText||'—'}</span>
                 <button class="wt-btn-icon" style="font-size:12px;padding:2px 4px;color:#F5A8A8" data-did="${d.id}">✕</button>
@@ -2139,11 +2753,15 @@ export class UIManager {
                     $('#wt-pop-geo-input').val('');
                     self.hidePop();
                     self._setMapMode('leaflet');
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         if (self.leafletRenderer?.map) {
                             self.leafletRenderer.render();
                             self.leafletRenderer.map.setView([lat, lng], 15);
                         }
+                        // ★ 위치 기반 자동 확장
+                        try { await self.lm.autoCalcDistances(); } catch(_){}
+                        try { await self.lm.autoReverseGeocode(); } catch(_){}
+                        self.pi?.inject();
                     }, 500);
                 });
                 resultsDiv.append(item);
@@ -2354,7 +2972,7 @@ export class UIManager {
                 const gen = ctx?.generateQuietPrompt;
                 if (gen) {
                     const prompt = `Create a short, witty title (max 15 chars) for this event that emphasizes the place's meaning. Write like "OO한 곳". Respond with ONLY the title text, nothing else.\n\nEvent: ${text.substring(0, 300)}`;
-                    const result = await runWithoutAutoDetect(() => gen(prompt));
+                    const result = await runWithoutAutoDetect(() => gen({ prompt }));
                     if (result?.trim()) title = result.trim().substring(0, 20);
                 }
             } catch(e) {}
@@ -2460,21 +3078,21 @@ export class UIManager {
             // 이벤트 요약 (최근 5개)
             const evSummary = (loc.events || []).slice(-5).map(e => `${e.mood||'📝'} ${e.title||e.text||''}`).join(', ') || '아직 이벤트 없음';
 
-            // 방문횟수 보정 리뷰 수 (최대 10개, 수 많을수록 확률 급감 → 토큰 절약)
+            // 방문횟수 보정 리뷰 수 (최대 10개, 수 많을수록 확률 급감)
             const visits = loc.visitCount || 0;
             let maxReviews, weights;
             if (visits <= 2) {
                 maxReviews = 3;
-                weights = [0.50, 0.85, 1.0]; // 1(50%) 2(35%) 3(15%)
+                weights = [0.50, 0.85, 1.0];
             } else if (visits <= 5) {
                 maxReviews = 5;
-                weights = [0.30, 0.60, 0.80, 0.92, 1.0]; // 1(30%) 2(30%) 3(20%) 4(12%) 5(8%)
+                weights = [0.30, 0.60, 0.80, 0.92, 1.0];
             } else if (visits <= 9) {
                 maxReviews = 8;
-                weights = [0.20, 0.45, 0.70, 0.85, 0.93, 0.97, 0.99, 1.0]; // 1~8
+                weights = [0.20, 0.45, 0.70, 0.85, 0.93, 0.97, 0.99, 1.0];
             } else {
                 maxReviews = 10;
-                weights = [0.15, 0.35, 0.60, 0.78, 0.88, 0.93, 0.96, 0.98, 0.99, 1.0]; // 1~10
+                weights = [0.15, 0.35, 0.60, 0.78, 0.88, 0.93, 0.96, 0.98, 0.99, 1.0];
             }
             const rnd = Math.random();
             let reviewCount = 1;
@@ -2506,7 +3124,7 @@ Also generate a 1-sentence poetic SUMMARY that captures the emotional contrast o
 JSON ONLY, no markdown:
 {"summary":"poetic 1-sentence place summary","reviews":[{"name":"name","role":"role","avatar":"emoji","stars":1-5,"text":"1-2 sentences","daysAgo":1-30}]}`;
 
-            const result = await runWithoutAutoDetect(() => gen(prompt), 2500);
+            const result = await runWithoutAutoDetect(() => gen({ prompt }), 2500);
             if (!result) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">생성 실패 — 다시 시도해주세요</div>'); return; }
 
             // JSON 파싱
@@ -2938,7 +3556,7 @@ If mundane: {"mood":null}
 
 Text: ${trimmed}`;
 
-                    const result = await runWithoutAutoDetect(() => generateQuietPrompt(prompt), 2500);
+                    const result = await runWithoutAutoDetect(() => generateQuietPrompt({ prompt }), 2500);
                     if (result) {
                         const m = result.match(/\{[\s\S]*?\}/);
                         if (m) {

@@ -11,6 +11,7 @@ import { UIManager } from './ui-manager.js';
 export const EXTENSION_NAME = 'rp-world-tracker';
 export const PROMPT_KEY = 'rp-world-tracker-prompt';
 let _autoDetectPauseCount = 0;
+let _lastUserNewLoc = null; // ★ 유저가 마지막으로 만든 장소 (AI 중복 방지)
 
 export async function runWithoutAutoDetect(task, cooldownMs = 1500) {
     _autoDetectPauseCount++;
@@ -121,7 +122,16 @@ async function scanMessage(text, source = 'USER') {
             const metaLoc = locMatch[1].trim().replace(/[`*_]/g, '');
             if (metaLoc.length >= 2 && metaLoc.length <= 30) {
                 dbg(`📌 Meta location: "${metaLoc}"`);
-                // 기존 장소에 있는지 확인
+                // ★ 서브로케이션 체크 (거실, 부엌 등 → 현재 장소의 하위)
+                if (lm.isSubLocation(metaLoc) && lm.currentLocationId) {
+                    const sub = await lm.findOrCreateSub(lm.currentLocationId, metaLoc);
+                    await lm.moveToSub(sub.id);
+                    const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
+                    dbg(`🏠 Sub-location: "${curLoc?.name} > ${metaLoc}"`);
+                    pi.inject();
+                    await _tryEvent(text, sub.id, source); // ★ 이벤트는 서브에 저장!
+                    return true;
+                }                // 기존 장소에 있는지 확인
                 const existing = lm.locations.find(l =>
                     l.name.toLowerCase() === metaLoc.toLowerCase() ||
                     (l.aliases || []).some(a => a.toLowerCase() === metaLoc.toLowerCase())
@@ -138,13 +148,36 @@ async function scanMessage(text, source = 'USER') {
                     // 새 장소 등록
                     if (!lm.currentChatId) await lm.loadChat();
                     if (lm.currentChatId) {
+                        // ★ 위치 기반 중복 방지: AI가 현재 위치의 다른 이름을 언급한 경우
+                        if (mode === 'ai' && lm.currentLocationId) {
+                            const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
+                            const lastMove = lm.movements.length ? lm.movements[lm.movements.length - 1] : null;
+                            // 최근 2분 이내에 이동한 곳이면 → 같은 곳의 구체적 이름일 확률 높음
+                            if (curLoc && lastMove && (Date.now() - lastMove.timestamp < 120000)) {
+                                dbg(`🔀 AI loc "${metaLoc}" at current "${curLoc.name}" → auto-alias`);
+                                const aliases = [...(curLoc.aliases || []), metaLoc];
+                                await lm.updateLocation(curLoc.id, { aliases });
+                                wtNotify(`📎 "${metaLoc}" → "${curLoc.name}"의 별칭`, 'info', 3000);
+                                await _tryEvent(text, curLoc.id, source);
+                                return true;
+                            }
+                        }
+                        // ★ AI 중복 방지: 최근 유저 장소와 같은 곳인지 확인
+                        if (mode === 'ai' && _lastUserNewLoc && (Date.now() - _lastUserNewLoc.timestamp < 60000)) {
+                            dbg(`🔀 AI loc "${metaLoc}" → merge candidate with user loc "${_lastUserNewLoc.loc.name}"`);
+                            ui.showMergeToast(_lastUserNewLoc.loc, metaLoc);
+                            await _tryEvent(text, _lastUserNewLoc.loc.id, source);
+                            return true;
+                        }
                         const loc = await lm.addLocation(metaLoc);
                         if (loc) {
+                            if (mode === 'user') _lastUserNewLoc = { loc, timestamp: Date.now() };
                             await lm.moveTo(loc.id, rpDate);
                             if (s.showDetectToast) wtNotify(`${wtMascot()} 🆕 ${loc.name}`, 'new', 3500);
                             pi.inject(); if (ui.panelVisible) ui.refresh();
                             ui.showAutoToast(loc);
                             await _tryEvent(text, loc.id, source);
+                            setTimeout(async () => { try { await lm.autoCalcDistances(); await lm.autoReverseGeocode(); pi.inject(); } catch(_){} }, 1500);
                         }
                     }
                     return true;
@@ -172,16 +205,48 @@ async function scanMessage(text, source = 'USER') {
         // 새 장소 발견 (mode 전달 → AI는 엄격)
         const np = det.detectNewPlace(text, mode);
         if (np) {
+            // ★ 서브로케이션 체크 (거실, 부엌 등 → 현재 장소의 하위)
+            if (lm.isSubLocation(np) && lm.currentLocationId) {
+                const sub = await lm.findOrCreateSub(lm.currentLocationId, np);
+                await lm.moveToSub(sub.id);
+                const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
+                dbg(`🏠 Sub-location: "${curLoc?.name} > ${np}"`);
+                pi.inject();
+                await _tryEvent(text, sub.id, source); // ★ 이벤트는 서브에 저장!
+                return true;
+            }
             dbg(`🆕 "${np}" (${source})`);
             if (!lm.currentChatId) await lm.loadChat();
             if (lm.currentChatId) {
+                // ★ 위치 기반 중복 방지: AI가 현재 위치의 다른 이름을 언급한 경우
+                if (mode === 'ai' && lm.currentLocationId) {
+                    const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
+                    const lastMove = lm.movements.length ? lm.movements[lm.movements.length - 1] : null;
+                    if (curLoc && lastMove && (Date.now() - lastMove.timestamp < 120000)) {
+                        dbg(`🔀 AI newPlace "${np}" at current "${curLoc.name}" → auto-alias`);
+                        const aliases = [...(curLoc.aliases || []), np];
+                        await lm.updateLocation(curLoc.id, { aliases });
+                        wtNotify(`📎 "${np}" → "${curLoc.name}"의 별칭`, 'info', 3000);
+                        await _tryEvent(text, curLoc.id, source);
+                        return true;
+                    }
+                }
+                // ★ AI 중복 방지: 최근 유저 장소와 같은 곳인지 확인
+                if (mode === 'ai' && _lastUserNewLoc && (Date.now() - _lastUserNewLoc.timestamp < 60000)) {
+                    dbg(`🔀 AI loc "${np}" → merge candidate with user loc "${_lastUserNewLoc.loc.name}"`);
+                    ui.showMergeToast(_lastUserNewLoc.loc, np);
+                    await _tryEvent(text, _lastUserNewLoc.loc.id, source);
+                    return true;
+                }
                 const loc = await lm.addLocation(np);
                 if (loc) {
+                    if (mode === 'user') _lastUserNewLoc = { loc, timestamp: Date.now() };
                     await lm.moveTo(loc.id, rpDate);
                     if (s.showDetectToast) wtNotify(`${wtMascot()} 🆕 ${loc.name}`, 'new', 3500);
                     pi.inject(); if (ui.panelVisible) ui.refresh();
                     ui.showAutoToast(loc);
                     await _tryEvent(text, loc.id, source);
+                    setTimeout(async () => { try { await lm.autoCalcDistances(); await lm.autoReverseGeocode(); pi.inject(); } catch(_){} }, 1500);
                 }
             }
             return true;
@@ -276,6 +341,12 @@ async function init() {
         if (!await scanContext()) {
             setTimeout(() => scanContext(), 1000);
         }
+        // ★ 위치 기반 자동 확장
+        setTimeout(async () => {
+            try { await lm.autoCalcDistances(); } catch(_){}
+            try { await lm.autoReverseGeocode(); } catch(_){}
+            if (ui.panelVisible) ui.refresh();
+        }, 3000);
     });
 
     if (event_types.MESSAGE_SENDING) {
@@ -289,6 +360,12 @@ async function init() {
     // 초기 데이터 로드 + 렌더링
     await lm.loadChat();
     ui.refresh();
+    // ★ 위치 기반 자동 확장 (비동기, 로딩 안 막음)
+    setTimeout(async () => {
+        try { await lm.autoCalcDistances(); } catch(_){}
+        try { await lm.autoReverseGeocode(); } catch(_){}
+        ui.refresh();
+    }, 2000);
 }
 
 async function scanContext() {
@@ -475,7 +552,7 @@ Examples:
 Text:
 ${trimmed}${userCtx}`;
 
-            const result = await generateQuietPrompt(prompt);
+            const result = await generateQuietPrompt({ prompt });
             if (result) {
                 // JSON 파싱
                 const jsonMatch = result.match(/\{[\s\S]*?\}/);
