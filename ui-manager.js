@@ -3146,11 +3146,22 @@ JSON ONLY, no markdown:
             const result = await runWithoutAutoDetect(() => gen({ prompt }), 2500);
             if (!result) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">생성 실패 — 다시 시도해주세요</div>'); return; }
 
-            // JSON 파싱
-            const jsonMatch = result.match(/\{[\s\S]*\}/);
+            // JSON 파싱 (LLM 출력 정제)
+            let raw = typeof result === 'string' ? result : JSON.stringify(result);
+            // 마크다운 코드블록 제거
+            raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+            // 트레일링 콤마 제거 (,} → } / ,] → ])
+            raw = raw.replace(/,\s*([}\]])/g, '$1');
+            const jsonMatch = raw.match(/\{[\s\S]*\}/);
             if (!jsonMatch) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">파싱 실패 — 다시 시도해주세요</div>'); return; }
 
-            const parsed = JSON.parse(jsonMatch[0]);
+            let parsed;
+            try { parsed = JSON.parse(jsonMatch[0]); }
+            catch(parseErr) {
+                console.error(`[${EXTENSION_NAME}] 🔧 Review JSON parse fail:`, parseErr.message, '\nRaw:', jsonMatch[0].substring(0, 200));
+                list.html(`<div style="font-size:11px;color:#F5A8A8;padding:8px">파싱 오류 — 다시 시도해주세요</div>`);
+                return;
+            }
             const reviews = parsed.reviews || parsed;
             const aiSummary = parsed.summary || '';
             if (!Array.isArray(reviews) || !reviews.length) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">리뷰 없음</div>'); return; }
