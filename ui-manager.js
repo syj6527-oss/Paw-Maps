@@ -1623,14 +1623,15 @@ export class UIManager {
                 const fullText = ev.text || '';
                 const hasDetail = fullText.length > 0 && fullText !== title;
                 return `<div class="wt-sub-ev-card" style="padding:8px 0;border-bottom:1px solid #F1F3F4;cursor:${hasDetail ? 'pointer' : 'default'};-webkit-tap-highlight-color:transparent">
-                    <div style="display:flex;align-items:flex-start;gap:6px">
+                    <div style="display:flex;align-items:center;gap:6px">
                         <span style="font-size:12px;flex-shrink:0">${ev.mood || '📝'}</span>
-                        <div style="flex:1">
-                            <div style="font-size:12px;font-weight:600;color:#202124">${title}</div>
-                            <div style="font-size:10px;color:#9AA0A6">${ev.timestamp ? this._fmt(ev.timestamp) : '—'}${hasDetail ? ' · 탭하여 펼치기' : ''}</div>
-                        </div>
+                        <span style="flex:1;font-weight:600;font-size:12px;color:#202124">${title}</span>
                     </div>
-                    ${hasDetail ? `<div class="wt-sub-ev-detail" style="display:none;margin-top:6px;padding:6px 8px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#5A4030;line-height:1.6;margin-left:18px">${fullText}</div>` : ''}
+                    <div style="display:flex;align-items:center;gap:6px;margin-top:2px;padding-left:18px">
+                        <span style="font-size:10px;color:#9AA0A6">${ev.timestamp ? this._fmt(ev.timestamp) : '—'}</span>
+                        ${hasDetail ? '<span class="wt-sub-ev-arrow" style="margin-left:auto;font-size:10px;color:#B0A898;cursor:pointer">▼</span>' : ''}
+                    </div>
+                    ${hasDetail ? `<div class="wt-sub-ev-detail" style="display:none;margin-top:4px;padding:6px 8px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#5A4030;line-height:1.6;margin-left:18px">${fullText}</div>` : ''}
                 </div>`;
             }).join('');
         } else {
@@ -1672,9 +1673,10 @@ export class UIManager {
         // ★ 이벤트 아코디언 토글
         bs.find('.wt-sub-ev-card').on('click', function() {
             const det = $(this).find('.wt-sub-ev-detail');
+            const arrow = $(this).find('.wt-sub-ev-arrow');
             if (det.length) {
                 det.slideToggle(200);
-                const hint = $(this).find('.wt-sub-ev-hint');
+                arrow.text(det.is(':visible') ? '▲' : '▼');
             }
         });
     }
