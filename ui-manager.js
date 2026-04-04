@@ -3118,32 +3118,27 @@ export class UIManager {
             for (let i = 0; i < weights.length; i++) {
                 if (rnd < weights[i]) { reviewCount = i + 1; break; }
             }
-            const prompt = `Generate ${reviewCount} Google Maps-style reviews for an RP location. Each reviewer is a CHARACTER from the story with a distinct voice.
+            const prompt = `[SYSTEM OVERRIDE — THIS IS NOT A ROLEPLAY MESSAGE]
+[DO NOT CONTINUE THE STORY — DO NOT WRITE NARRATIVE — JSON ONLY]
 
-Place: "${loc.name}" | Memo: "${loc.memo || ''}" | Notes: "${loc.aiNotes || ''}" | Visits: ${loc.visitCount || 0}
+You are a data generator. Your ONLY job: output a JSON object.
+NEVER write story text, dialogue, actions, or narrative.
+
+Generate ${reviewCount} Google Maps-style reviews.
+Place: "${loc.name}" | Visits: ${loc.visitCount || 0} | Memo: "${loc.memo || ''}"
 Events: ${evSummary}
-User="${userName}", Character="${charName}"
+Characters: User="${userName}", Char="${charName}"
 ${langInst}
 
-REVIEWER POOL (pick ${reviewCount} randomly, can repeat types):
-• "${charName}" — main character, write in their personality. Reference events. Show relationship with ${userName}.
-• "${userName}" — protagonist, personal emotional reaction to this place.
-• Pet/Animal — a pet, stray cat, military dog, bird, etc. Write from animal POV (smells, food, warmth, territory).
-• NPC — barista, neighbor, soldier, ghost, street vendor, etc. Quirky and unexpected.
-• Wild creature — crow watching from rooftop, alley cat, stray dog. Pure instinct-based review.
+Reviewers: pick from "${charName}", "${userName}", Pet/Animal, NPC, Wild creature.
+Each review: 1-2 sentences max, in-character voice.
 
-VOICE RULES:
-• Tough character → blunt, short, reluctant praise
-• Gentle character → emotional, poetic, nostalgic
-• Animal → sensory (smell, warmth, food, nap spots). No human logic.
-• NPC → unique quirk that reveals something about the place
+OUTPUT THIS EXACT FORMAT (valid JSON, no markdown, no explanation):
+{"summary":"one poetic sentence","reviews":[{"name":"reviewer","role":"role","avatar":"emoji","stars":4,"text":"review text","daysAgo":3}]}
 
-Also generate a 1-sentence poetic SUMMARY that captures the emotional contrast of this place (combine the warmest and coldest memories).
+CRITICAL: Start your response with { and end with }. Nothing else.`;
 
-JSON ONLY, no markdown:
-{"summary":"poetic 1-sentence place summary","reviews":[{"name":"name","role":"role","avatar":"emoji","stars":1-5,"text":"1-2 sentences","daysAgo":1-30}]}`;
-
-            const result = await runWithoutAutoDetect(() => gen({ prompt }), 2500);
+            const result = await runWithoutAutoDetect(() => gen({ prompt, quietToLoud: false }), 2500);
             if (!result) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">생성 실패 — 다시 시도해주세요</div>'); return; }
 
             // JSON 파싱 (LLM 출력 정제)
