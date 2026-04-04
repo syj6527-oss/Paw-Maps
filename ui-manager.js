@@ -1070,13 +1070,20 @@ export class UIManager {
 
         const eventsHtml = events.length ? events.map((ev, i) => {
             const date = ev.timestamp ? this._fmt(ev.timestamp) : '—';
-            return `<div style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border-bottom:1px solid #F1F3F4">
-                <span style="font-size:12px">${ev.mood || '📝'}</span>
-                <div style="flex:1">
-                    <div style="font-size:11px;font-weight:600;color:#202124">${ev.title || ev.text?.substring(0, 30) || '—'}</div>
-                    <div style="font-size:10px;color:#9AA0A6">${date}</div>
+            const title = ev.title || ev.text?.substring(0, 20) + '...' || '—';
+            const fullText = ev.text || '';
+            const hasDetail = fullText.length > 0 && fullText !== title;
+            return `<div class="wt-subpop-ev-card" style="padding:6px 8px;border-bottom:1px solid #F1F3F4">
+                <div style="display:flex;align-items:center;gap:5px">
+                    <span style="font-size:12px">${ev.mood || '📝'}</span>
+                    <span style="flex:1;font-weight:600;font-size:11px;color:#5A4030">${title}</span>
                 </div>
-                <span class="wt-subpop-ev-del" data-idx="${i}" style="cursor:pointer;color:#F5A8A8;font-size:11px">✕</span>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+                    <span style="font-size:10px;color:#9AA0A6">${date}</span>
+                    <span class="wt-subpop-ev-del" data-idx="${i}" style="cursor:pointer;color:#F5A8A8;font-size:11px;margin-left:auto">✕</span>
+                    ${hasDetail ? '<span class="wt-subpop-ev-toggle" style="cursor:pointer;font-size:10px;color:#B0A898">▼</span>' : ''}
+                </div>
+                ${hasDetail ? `<div class="wt-subpop-ev-detail" style="display:none;margin-top:4px;padding:6px 8px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#5A4030;line-height:1.6">${fullText}</div>` : ''}
             </div>`;
         }).join('') : '<div style="padding:10px;text-align:center;color:#9AA0A6;font-size:11px">아직 이벤트가 없어요</div>';
 
@@ -1169,6 +1176,16 @@ export class UIManager {
             pop.find('.wt-pop-body').hide();
             self._showSubPop(parentId, subId);
             toastSuccess('🗑️ 삭제!');
+        });
+        // ▼ 이벤트 아코디언 토글
+        overlay.find('.wt-subpop-ev-card').on('click', function(e) {
+            if ($(e.target).closest('.wt-subpop-ev-del').length) return;
+            const det = $(this).find('.wt-subpop-ev-detail');
+            const arrow = $(this).find('.wt-subpop-ev-toggle');
+            if (det.length) {
+                det.slideToggle(200);
+                arrow.text(det.is(':visible') ? '▲' : '▼');
+            }
         });
         console.log(`[${EXTENSION_NAME}] 🔧 showSubPop: "${parent.name} > ${sub.name}"`);
     }
