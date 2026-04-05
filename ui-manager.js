@@ -3383,10 +3383,11 @@ OUTPUT THIS EXACT FORMAT (valid JSON, no markdown, no explanation):
 CRITICAL: Start your response with { and end with }. Nothing else.`;
 
             const result = await callLLM(prompt);
-            if (!result) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">생성 실패 — 다시 시도해주세요</div>'); return; }
+            console.log(`[${EXTENSION_NAME}] 🔧 Review LLM result: ${result ? result.substring(0, 100) + '...' : 'null'}`);
+            if (!result) { list.html('<div style="font-size:11px;color:#F5A8A8;padding:8px">⚠️ LLM 응답 없음 — API 키를 확인하거나 다시 시도해주세요</div>'); return; }
 
             const parsed = parseLLMJson(result);
-            if (!parsed) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">파싱 실패 — 다시 시도해주세요</div>'); return; }
+            if (!parsed) { list.html(`<div style="font-size:11px;color:#F5A8A8;padding:8px">⚠️ JSON 파싱 실패<div style="font-size:9px;margin-top:4px;color:#B0A898;word-break:break-all">${result.substring(0, 150)}...</div></div>`); return; }
             const reviews = parsed.reviews || parsed;
             const aiSummary = parsed.summary || '';
             if (!Array.isArray(reviews) || !reviews.length) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">리뷰 없음</div>'); return; }

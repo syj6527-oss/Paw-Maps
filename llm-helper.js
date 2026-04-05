@@ -89,18 +89,48 @@ function _getApiConfig() {
 // ========== Google Gemini 직접 호출 ==========
 async function _callGoogle(key, model, prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-    const res = await fetch(url, {
+
+    // ★ 1차 시도: JSON 강제 모드
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                systemInstruction: { parts: [{ text: 'You are a JSON-only data extraction assistant. Respond with valid JSON only. No markdown, no explanation, no RP.' }] },
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 2000, responseMimeType: 'application/json' },
+            }),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (text && text.includes('{')) {
+                dbg(`🔧 Google API OK (JSON mode, ${text.length}c)`);
+                return text;
+            }
+            // 빈 응답이나 JSON 아닌 응답 → 폴백
+            dbg(`⚠️ Google JSON mode: empty or non-JSON response, falling back`);
+        } else {
+            dbg(`⚠️ Google JSON mode failed: ${res.status}, falling back`);
+        }
+    } catch(e) {
+        dbg(`⚠️ Google JSON mode error: ${e.message}, falling back`);
+    }
+
+    // ★ 2차 시도: JSON 강제 없이 (폴백)
+    const res2 = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            systemInstruction: { parts: [{ text: 'You are a JSON-only data extraction assistant for an RP world tracker tool. You MUST respond with valid JSON only. Never write RP dialogue, narrative, or story continuation. Never roleplay.' }] },
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 2000, responseMimeType: 'application/json' },
+            contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
         }),
     });
-    if (!res.ok) throw new Error(`Google API ${res.status}: ${res.statusText}`);
-    const data = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
+    const data2 = await res2.json();
+    const text2 = data2?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    dbg(`🔧 Google API OK (fallback mode, ${text2.length}c)`);
+    return text2;
 }
 
 // ========== OpenAI / OpenRouter 직접 호출 ==========
