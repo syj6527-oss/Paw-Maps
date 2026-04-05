@@ -1620,7 +1620,7 @@ export class UIManager {
             const id = bs.attr('data-id');
             if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
-            if (action === 'dist' && id) { self._hideBottomSheet(); self.showPop(id); }
+            if (action === 'dist' && id) { self._showDistanceMeasure(id); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
         });
         bs.find('.wt-bs-tab').on('click', function(e) {
@@ -2163,6 +2163,87 @@ export class UIManager {
                 await self.lm.updateLocation(locId, { tags: loc.tags });
                 self._showTagList(t); // 리스트 리렌더
                 toastSuccess('🏷️ 태그 해제!');
+            }
+        });
+    }
+
+    // ========== 📏 거리 측정 (바텀시트 "거리" 버튼) ==========
+    _showDistanceMeasure(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        const others = this.lm.locations.filter(l => l.id !== locId && !l.parentId);
+        if (!others.length) { toastSuccess('📏 다른 장소가 없어요!'); return; }
+
+        $('#wt-dist-popup').remove();
+        const self = this;
+
+        let listHtml = others.map(o => {
+            const existing = this.lm.getDistanceBetween(locId, o.id);
+            const st = this.leafletRenderer?._locStyle?.(o.name) || { emoji: '📍' };
+
+            // GPS 좌표 있으면 직선거리 계산
+            let autoInfo = '';
+            if (loc.lat && loc.lng && o.lat && o.lng) {
+                const R = 6371000;
+                const dLat = (o.lat - loc.lat) * Math.PI / 180;
+                const dLon = (o.lng - loc.lng) * Math.PI / 180;
+                const a = Math.sin(dLat/2)**2 + Math.cos(loc.lat*Math.PI/180) * Math.cos(o.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+                const meters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+                const walkMin = Math.round((meters * 1.4) / 80); // 도보 80m/min + 1.4보정
+                autoInfo = `<span style="font-size:10px;color:#2B8A6E;font-weight:500">${meters}m · 도보 ${walkMin}분</span>`;
+            }
+
+            const savedInfo = existing ? `<span style="font-size:10px;color:#9AA0A6">저장: ${existing.distanceText || ''}</span>` : '';
+
+            return `<div class="wt-dist-item" data-id="${o.id}" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #F1F3F4;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                <span style="font-size:16px">${st.emoji}</span>
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;font-weight:600;color:#202124;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.name}</div>
+                    <div style="display:flex;gap:8px;align-items:center">${autoInfo}${savedInfo}</div>
+                </div>
+                <span style="font-size:12px;color:#9AA0A6">›</span>
+            </div>`;
+        }).join('');
+
+        const popup = $(`<div id="wt-dist-popup" style="position:fixed;bottom:0;left:0;right:0;max-height:60vh;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);z-index:10000;overflow:hidden;font-family:-apple-system,'Noto Sans KR',sans-serif">
+            <div style="display:flex;justify-content:center;padding:12px 0 4px"><div style="width:32px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between">
+                <div style="font-size:15px;font-weight:800;color:#202124">📏 ${loc.name}에서의 거리</div>
+                <span id="wt-dist-close" style="font-size:18px;color:#9AA0A6;cursor:pointer;padding:4px">✕</span>
+            </div>
+            <div style="padding:4px 16px 16px;overflow-y:auto;max-height:45vh;-webkit-overflow-scrolling:touch">${listHtml}</div>
+        </div>`);
+
+        $('body').append(popup);
+        popup.find('#wt-dist-close').on('click', () => popup.remove());
+
+        popup.find('.wt-dist-item').on('click', async function() {
+            const otherId = $(this).data('id');
+            const other = self.lm.locations.find(l => l.id === otherId);
+            if (!other) return;
+
+            // GPS 좌표 있으면 자동 계산
+            if (loc.lat && loc.lng && other.lat && other.lng) {
+                const R = 6371000;
+                const dLat = (other.lat - loc.lat) * Math.PI / 180;
+                const dLon = (other.lng - loc.lng) * Math.PI / 180;
+                const a = Math.sin(dLat/2)**2 + Math.cos(loc.lat*Math.PI/180) * Math.cos(other.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+                const meters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+                const walkMin = Math.max(1, Math.round((meters * 1.4) / 80));
+                const distText = `도보 ${walkMin}분`;
+                const level = walkMin <= 1 ? 1 : walkMin <= 3 ? 2 : walkMin <= 5 ? 3 : walkMin <= 8 ? 4 : walkMin <= 12 ? 5 : walkMin <= 15 ? 6 : walkMin <= 20 ? 7 : walkMin <= 30 ? 8 : 9;
+
+                await self.lm.setDistance(locId, otherId, distText, null, level);
+                popup.remove();
+                toastSuccess(`📏 ${loc.name} ↔ ${other.name}: ${meters}m (${distText})`);
+                self.pi?.inject();
+                if (self.panelVisible) self.refresh();
+            } else {
+                // GPS 없으면 팝오버로 수동 설정
+                popup.remove();
+                self._hideBottomSheet();
+                self.showPop(locId);
+                toastSuccess('📏 좌표가 없어서 수동 설정으로 이동합니다');
             }
         });
     }
@@ -3265,7 +3346,7 @@ export class UIManager {
             // ★ 터줏대감 목록 (리뷰어로 활용)
             const npcList = (loc.npcs || []).map(n => `"${n.name}"(${n.role || n.type})`).join(', ');
 
-            const prompt = `You are writing Google Maps-style character reviews for an RP location. Write in-character, vivid, emotional reviews that reflect each reviewer's unique personality and speech patterns from the RP.
+            const prompt = `You are writing Google Maps-style character reviews for an RP location. Each reviewer has STRONG opinions, personal grudges, inside jokes, and emotional memories tied to this place. Write like real people leaving passionate, opinionated, sometimes petty reviews.
 
 Generate ${reviewCount} reviews.
 Place: "${loc.name}" | Visits: ${loc.visitCount || 0} | Memo: "${loc.memo || ''}"
@@ -3275,10 +3356,20 @@ ${charContext ? `Character context: ${charContext}` : ''}
 ${langInst}
 ${recentChat ? `\n[Recent RP scenes — use these to absorb character voice, tone, and relationship dynamics]:\n${recentChat}\n` : ''}
 Reviewers: pick from "${charName}", "${userName}"${npcList ? `, ${npcList}` : ''}, or other NPCs/animals that might visit this place.
-Each review: 1-2 sentences max, in-character voice. Match the RP's tone and each character's unique speech style.${npcList ? `\nIMPORTANT: Prioritize the known NPCs/animals listed above as reviewers — they are real characters from this location.` : ''}
+
+REVIEW STYLE RULES:
+- Each review: 2-4 sentences. Be DETAILED and SPECIFIC.
+- Reference ACTUAL events that happened here (from the Events list above).
+- Use each character's UNIQUE speech patterns, slang, and personality quirks.
+- Include sensory details (smells, sounds, textures, temperature).
+- Mix emotions: nostalgia, complaint, humor, affection, sarcasm, passive-aggression.
+- Some reviews should be hilariously petty or oddly specific.
+- Animals/pets write from their perspective (a cat reviewing a kitchen = "the warm spot near the stove is acceptable").
+- NPCs can have strong opinions about the main characters.
+${npcList ? `\nIMPORTANT: Prioritize the known NPCs/animals listed above as reviewers — they are real characters from this location.` : ''}
 
 OUTPUT THIS EXACT FORMAT (valid JSON, no markdown, no explanation):
-{"summary":"one poetic sentence","reviews":[{"name":"reviewer","role":"role","avatar":"emoji","stars":4,"text":"review text","daysAgo":3}]}
+{"summary":"one atmospheric, poetic sentence capturing this place's soul","reviews":[{"name":"reviewer","role":"role","avatar":"emoji","stars":4,"text":"detailed review 2-4 sentences","daysAgo":3}]}
 
 CRITICAL: Start your response with { and end with }. Nothing else.`;
 
