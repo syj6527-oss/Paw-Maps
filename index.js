@@ -7,6 +7,7 @@ import { LocationManager } from './location-manager.js';
 import { LocationDetector } from './detector.js';
 import { PromptInjector } from './prompt-injector.js';
 import { UIManager } from './ui-manager.js';
+import { callLLM, parseLLMJson, getRecentChatContext } from './llm-helper.js';
 
 export const EXTENSION_NAME = 'rp-world-tracker';
 export const PROMPT_KEY = 'rp-world-tracker-prompt';
@@ -255,6 +256,39 @@ async function scanMessage(text, source = 'USER') {
         // 장소 감지 실패해도, 현재 위치가 있으면 이벤트만 추출
         if (lm.currentLocationId) await _tryEvent(text, lm.currentLocationId, source);
 
+        // ★ AI 응답에서 NPC/동물 자동 감지 (터줏대감)
+        if (source === 'AI' && lm.currentLocationId) {
+            try {
+                const ctx = getContext();
+                const npcs = det.detectNPCs(text, ctx.name1, ctx.name2);
+                for (const npc of npcs) {
+                    await lm.addNpcToLocation(lm.currentLocationId, npc);
+                }
+                if (npcs.length) { pi.inject(); if (ui?.panelVisible) ui.refresh(); }
+            } catch(e) { dbg('⚠️ NPC detect error:', e.message); }
+        }
+
+        // ★ 약속 장소 감지 ("내일 ~에서 만나자")
+        if (lm.currentLocationId) {
+            try {
+                const promisePlace = det.detectPromisePlace(text);
+                if (promisePlace && !lm.findByName(promisePlace)) {
+                    const loc = await lm.addLocation(promisePlace);
+                    if (loc) {
+                        loc.tags = ['wantToGo'];
+                        loc._tempAddress = true;
+                        loc.memo = '📅 약속 장소 (주소 미확정)';
+                        if (!loc.events) loc.events = [];
+                        loc.events.push({ text: `📅 약속 장소로 등록됨`, title: '약속 장소', mood: '📅', timestamp: Date.now(), source: 'auto' });
+                        await lm.updateLocation(loc.id, { tags: loc.tags, events: loc.events, _tempAddress: true, memo: loc.memo });
+                        dbg(`📅 Promise place: "${promisePlace}" (temp address)`);
+                        if (extension_settings[EXTENSION_NAME]?.showDetectToast) wtNotify(`📅 약속 장소: ${promisePlace} (주소 미확정)`, 'new', 3500);
+                        pi.inject(); if (ui?.panelVisible) ui.refresh();
+                    }
+                }
+            } catch(e) { dbg('⚠️ Promise detect error:', e.message); }
+        }
+
         return false;
     } catch(e) { console.error(`[${EXTENSION_NAME}] Scan:`, e); return false; }
 }
@@ -347,6 +381,66 @@ async function init() {
             try { await lm.autoReverseGeocode(); } catch(_){}
             if (ui.panelVisible) ui.refresh();
         }, 3000);
+
+        // ★ 캐릭터시트에서 1차 주소/지역 자동 추출 (GPS 앵커 없을 때)
+        setTimeout(async () => {
+            try {
+                // GPS 좌표 있는 장소가 하나라도 있으면 스킵 (이미 앵커 있음)
+                const hasAnchor = lm.locations.some(l => l.lat && l.lng);
+                if (hasAnchor) return;
+
+                const ctx = getContext();
+                const desc = ctx.characters?.[ctx.characterId]?.description || '';
+                const scenario = ctx.characters?.[ctx.characterId]?.scenario || '';
+                const persona = ctx.characters?.[ctx.characterId]?.personality || '';
+                const combined = [desc, scenario, persona].join(' ');
+                if (combined.length < 10) return;
+
+                // 주소/지역 패턴 추출 (폭넓은 매칭)
+                const patterns = [
+                    // 영어: "lives in X", "based in X", "set in X"
+                    /(?:lives?\s+in|based\s+in|located\s+in|set\s+in|takes?\s+place\s+in|stationed\s+in|deployed\s+to)\s+([A-Z][a-zA-Z\s,]+?)(?:[.\n;]|$)/i,
+                    // 한국어: "~에 사는", "배경: ~"
+                    /(?:사는\s*곳|거주지|배경|위치|거점|활동지)[:\s은는이가]*([^\n,.]{2,15})/,
+                    // 도시명 직접 매칭 (영어)
+                    /(New\s+Orleans|Los\s+Angeles|New\s+York|San\s+Francisco|Las\s+Vegas|Hong\s+Kong|Rio\s+de\s+Janeiro|Buenos\s+Aires|Kuala\s+Lumpur|Tel\s+Aviv|Abu\s+Dhabi|London|Tokyo|Paris|Seoul|Berlin|Moscow|Beijing|Shanghai|Chicago|Toronto|Sydney|Melbourne|Singapore|Mumbai|Bangkok|Dubai|Rome|Madrid|Amsterdam|Prague|Vienna|Istanbul|Cairo|Nairobi|Jakarta|Manila|Taipei|Osaka|Kyoto|Busan|Hanoi|Saigon|Havana|Lima|Bogota|Mexico\s+City)/i,
+                    // 도시명 직접 매칭 (한국어 외래어)
+                    /(뉴올리언스|로스앤젤레스|뉴욕|샌프란시스코|라스베이거스|홍콩|런던|도쿄|파리|베를린|모스크바|베이징|상하이|시카고|토론토|시드니|멜버른|싱가포르|뭄바이|방콕|두바이|로마|마드리드|암스테르담|프라하|비엔나|이스탄불|카이로|자카르타|마닐라|타이베이|오사카|교토|부산|하노이|하바나|리마|멕시코시티)/,
+                    // 한국 도시
+                    /(서울|부산|대구|인천|광주|대전|울산|세종|제주|수원|성남|고양|용인|창원|청주|전주|포항|천안|김해|평택)/,
+                    // 군사/기지
+                    /(?:기지|base|camp|fort|headquarters|HQ|barracks|막사|본부|사령부|주둔지)\s*(?:in\s+|:?\s*)([A-Za-z\uAC00-\uD7A3\s]{2,20})/i,
+                ];
+
+                for (const pat of patterns) {
+                    const m = combined.match(pat);
+                    if (m) {
+                        const place = (m[1] || m[0]).replace(/[,.\s]+$/g, '').trim().substring(0, 25);
+                        if (place.length >= 2) {
+                            dbg(`🏠 Character sheet region detected: "${place}"`);
+                            // 이미 같은 이름의 장소 있으면 스킵
+                            if (lm.findByName(place)) {
+                                dbg(`🏠 "${place}" already exists, skipping`);
+                                break;
+                            }
+                            const loc = await lm.addLocation(place);
+                            if (loc) {
+                                loc.memo = '캐릭터시트에서 감지된 지역';
+                                await lm.updateLocation(loc.id, { memo: loc.memo });
+                                // 첫 장소이거나 현재 위치 없으면 여기로 이동
+                                if (!lm.currentLocationId) await lm.moveTo(loc.id);
+                                pi.inject();
+                                if (ui.panelVisible) ui.refresh();
+                                wtNotify(`🏠 캐릭터 시트에서 "${place}" 감지!`, 'new', 4000);
+                                // ★ Nominatim 직접 호출로 GPS 좌표 설정
+                                _geocodePlace(loc.id, place);
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch(e) { dbg('⚠️ CharSheet addr error:', e.message); }
+        }, 2000);
     });
 
     if (event_types.MESSAGE_SENDING) {
@@ -450,6 +544,67 @@ async function scanChatHistory(ctx) {
 
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
 
+// ========== 자동 지오코딩 (캐릭터시트/약속 장소용) ==========
+async function _geocodePlace(locId, placeName, retry = 0) {
+    dbg(`🌐 Geocoding attempt ${retry + 1}: "${placeName}" (locId=${locId})`);
+    try {
+        const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeName)}&limit=1&accept-language=ko`;
+        dbg(`🌐 Fetching: ${geoUrl}`);
+        const geoRes = await fetch(geoUrl, { headers: { 'User-Agent': 'RP-World-Tracker/0.4' } });
+        dbg(`🌐 Response: ${geoRes.status} ${geoRes.statusText}`);
+
+        if (!geoRes.ok) {
+            dbg(`⚠️ Nominatim HTTP error: ${geoRes.status}`);
+            if (retry < 2) { setTimeout(() => _geocodePlace(locId, placeName, retry + 1), 3000); return; }
+            wtNotify(`⚠️ 주소 검색 실패 (${geoRes.status}) — 수동으로 설정해주세요`, 'warn', 5000);
+            return;
+        }
+
+        const geoData = await geoRes.json();
+        dbg(`🌐 Results: ${geoData.length}개`);
+
+        if (!geoData.length) {
+            dbg(`⚠️ Nominatim: no results for "${placeName}"`);
+            if (retry < 2) { setTimeout(() => _geocodePlace(locId, placeName, retry + 1), 3000); return; }
+            wtNotify(`⚠️ "${placeName}" 주소를 찾지 못했어요 — 수동으로 설정해주세요`, 'warn', 5000);
+            return;
+        }
+
+        const lat = parseFloat(geoData[0].lat);
+        const lng = parseFloat(geoData[0].lon);
+        const addr = geoData[0].display_name?.split(',').slice(0, 3).join(',') || placeName;
+
+        await lm.updateLocation(locId, { lat, lng, address: addr });
+        dbg(`🏠 ✅ Anchor set: "${placeName}" → ${lat.toFixed(4)},${lng.toFixed(4)} (${addr})`);
+        wtNotify(`📍 ${placeName} → ${addr}`, 'new', 3000);
+
+        // 기존 좌표 없는 장소들도 이 앵커 주변에 자동 배치
+        const others = lm.locations.filter(l => l.id !== locId && !l.lat && !l.lng);
+        if (others.length > 0) {
+            const angleStep = (2 * Math.PI) / others.length;
+            for (let i = 0; i < others.length; i++) {
+                const dist = 30 + Math.random() * 120;
+                const angle = angleStep * i + (Math.random() * 0.3);
+                const oLat = lat + (dist / 111320) * Math.cos(angle);
+                const oLng = lng + (dist / (111320 * Math.cos(lat * Math.PI / 180))) * Math.sin(angle);
+                await lm.updateLocation(others[i].id, { lat: oLat, lng: oLng });
+            }
+            dbg(`🏠 Auto-placed ${others.length} locations around "${placeName}"`);
+        }
+        pi.inject();
+        if (ui?.panelVisible) ui.refresh();
+    } catch(e) {
+        dbg(`⚠️ Geocode error (attempt ${retry + 1}): ${e.message}`);
+        console.error(`[${EXTENSION_NAME}] Geocode:`, e);
+        if (retry < 2) {
+            dbg(`🔄 Retrying in 3s...`);
+            setTimeout(() => _geocodePlace(locId, placeName, retry + 1), 3000);
+        } else {
+            wtNotify(`⚠️ "${placeName}" 주소 자동 설정 실패 — 수동으로 설정해주세요`, 'warn', 5000);
+        }
+    }
+}
+
 // ========== RP 날짜 추출 (메타데이터에서) ==========
 function _extractRpDate(text) {
     // 패턴 1: - Time: 2025/07/12 또는 Date: 2025.07.12
@@ -499,34 +654,31 @@ async function _tryEvent(text, locId, source) {
 
     let evText = null, evTitle = null, evMood = '💕';
 
-    // ★ Phase 2: LLM 요약 시도
+    // ★ Phase 2: LLM 요약 시도 (직접 API 호출)
     try {
         const ctx = getContext();
-        const generateQuietPrompt = ctx?.generateQuietPrompt;
-        if (generateQuietPrompt) {
-            // HTML 제거 + 메타데이터 제거
-            const clean = text.replace(/<[^>]*>/g, '').replace(/```[\s\S]*?```/g, '').replace(/<memo>[\s\S]*?<\/memo>/g, '').trim();
-            if (clean.length < 30) return;
+        // HTML 제거 + 메타데이터 제거
+        const clean = text.replace(/<[^>]*>/g, '').replace(/```[\s\S]*?```/g, '').replace(/<memo>[\s\S]*?<\/memo>/g, '').trim();
+        if (clean.length < 30) return;
 
-            // 2000자 제한 (토큰 절약)
-            const trimmed = clean.length > 2000 ? clean.substring(0, 2000) : clean;
+        const trimmed = clean.length > 2000 ? clean.substring(0, 2000) : clean;
+        const userCtx = _userContext ? `\n\n[User's action]: ${_userContext.replace(/<[^>]*>/g, '').substring(0, 300)}` : '';
+        const userName = ctx.name1 || 'User';
+        const charName = ctx.name2 || 'Character';
+        // ★ 캐릭터 맥락 (이벤트 요약 품질 향상)
+        const charDesc = (ctx.characters?.[ctx.characterId]?.description || '').substring(0, 200);
+        const charPersonality = (ctx.characters?.[ctx.characterId]?.personality || '').substring(0, 100);
+        const charContext = [charDesc, charPersonality].filter(Boolean).join(' | ').substring(0, 300);
+        const eLang = extension_settings[EXTENSION_NAME]?.eventLang || 'auto';
+        const langInst = eLang === 'ko' ? 'Write the summary in Korean (한국어).'
+                       : eLang === 'en' ? 'Write the summary in English.'
+                       : 'Write in the SAME LANGUAGE as the input text.';
+        const recentChat = getRecentChatContext(1500);
 
-            // 유저 입력 컨텍스트 추가 (있으면)
-            const userCtx = _userContext ? `\n\n[User's action]: ${_userContext.replace(/<[^>]*>/g, '').substring(0, 300)}` : '';
-
-            // 캐릭터 이름 가져오기
-            const userName = ctx.name1 || 'User';
-            const charName = ctx.name2 || 'Character';
-
-            // 언어 설정
-            const eLang = extension_settings[EXTENSION_NAME]?.eventLang || 'auto';
-            const langInst = eLang === 'ko' ? 'Write the summary in Korean (한국어).'
-                           : eLang === 'en' ? 'Write the summary in English.'
-                           : 'Write in the SAME LANGUAGE as the input text.';
-
-            const prompt = `You are a narrative memory keeper for an RP story. Read the scene and write a rich, detailed 2-sentence memory summary.
+        const prompt = `You are a narrative memory keeper for an RP story. Read the scene and write a rich, detailed 2-sentence memory summary.
 
 Character info: The user/protagonist is named "${userName}". The main character is "${charName}".
+${charContext ? `Character context: ${charContext}` : ''}
 IMPORTANT: You MUST use "${userName}" by name in the summary. Always write like: "${userName}이/가 [character]와..."
 
 Rules:
@@ -540,7 +692,7 @@ Rules:
 If no significant event (just walking, sitting, daily routine): {"mood":null,"summary":null}
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"mood":"💕","title":"ultra-short hook max 15chars that emphasizes THIS PLACE's emotional meaning. Write like: 'OO한 곳' or 'OO이 시작된 곳'. Do NOT copy dialogue literally — capture the emotional significance. Match the scene's tone: playful scenes can have witty/humorous titles, serious scenes should stay sincere.","summary":"detailed 2-sentence summary"}
+{"mood":"💕","title":"ultra-short hook max 15chars that emphasizes THIS PLACE's emotional meaning. Write like: 'OO한 곳' or 'OO이 시작된 곳'. Do NOT copy dialogue literally — capture the emotional significance. Match the scene's tone: playful scenes can have witty/humorous titles, serious scenes should stay sincere.","summary":"detailed 2-sentence summary","promisePlace":"if mood is 📅 and characters plan to meet at a SPECIFIC named place, write that place name here. Otherwise null."}
 
 Mood types: 💕=romantic/emotional 📅=promise/future ⚡=conflict/danger
 
@@ -548,22 +700,37 @@ Examples:
 {"mood":"⚡","title":"고구마와 뒷담화의 현장","summary":"군견 Dex의 막사에서 ${userName}가 몰래 군고구마를 나눠먹으며 Ghost에 대한 불만을 털어놓던 중, 이를 엿들은 Ghost에게 현장을 들키고 만다. Ghost의 묵언의 압박과 Dex의 으르렁거림이 섞이며, 이 밀폐된 공간에서 아슬아슬한 대화가 이어질 것을 암시한다."}
 {"mood":"💕","title":"금지된 키스가 시작된 곳","summary":"시가 향과 가죽 냄새가 밴 Price의 어두운 방에서 ${userName}과 Soap이 거칠지만 다정한 키스를 나눴다. 대장의 영역을 침범한 이 은밀한 행위가 둘의 관계를 더 위험하고 짜릿하게 만들 것을 예고한다."}
 {"mood":"📅","title":"비밀 약속을 나눈 곳","summary":"노을이 물드는 옥상에서 Alejandro가 ${userName}의 손을 잡으며 '내일, 여기서'라고 속삭였다. 이 장소가 둘만의 비밀스러운 거점이 될 것을 서로의 떨리는 손끝으로 예감했다."}
-
-Text:
+${recentChat ? `\n[Recent conversation for tone & context]:\n${recentChat}\n` : ''}
+[Current scene to summarize]:
 ${trimmed}${userCtx}`;
 
-            const result = await generateQuietPrompt({ prompt });
-            if (result) {
-                // JSON 파싱
-                const jsonMatch = result.match(/\{[\s\S]*?\}/);
-                if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    if (parsed.mood && parsed.summary) {
-                        evText = parsed.summary;
-                        evTitle = parsed.title || parsed.summary.substring(0, 15) + '...';
-                        evMood = parsed.mood;
-                        dbg(`🤖 LLM Event: "${evTitle}" | "${evText}" (${evMood})`);
-                    }
+        const result = await callLLM(prompt);
+        if (result) {
+            const parsed = parseLLMJson(result);
+            if (parsed?.mood && parsed?.summary) {
+                evText = parsed.summary;
+                evTitle = parsed.title || parsed.summary.substring(0, 15) + '...';
+                evMood = parsed.mood;
+                dbg(`🤖 LLM Event: "${evTitle}" | "${evText}" (${evMood})`);
+                // ★ 약속 장소 자동 등록 (LLM이 📅 이벤트에서 장소 추출)
+                if (parsed.promisePlace && parsed.promisePlace !== 'null' && parsed.mood === '📅') {
+                    try {
+                        const pPlace = parsed.promisePlace.trim();
+                        if (pPlace.length >= 2 && pPlace.length <= 25 && !lm.findByName(pPlace)) {
+                            const newLoc = await lm.addLocation(pPlace);
+                            if (newLoc) {
+                                newLoc.tags = ['wantToGo'];
+                                newLoc._tempAddress = true; // ★ 임시 주소 표시
+                                newLoc.memo = '📅 약속 장소 (주소 미확정)';
+                                if (!newLoc.events) newLoc.events = [];
+                                newLoc.events.push({ text: `📅 "${evTitle}" — 여기서 만나기로 약속`, title: '약속 장소', mood: '📅', timestamp: Date.now(), source: 'auto' });
+                                await lm.updateLocation(newLoc.id, { tags: newLoc.tags, events: newLoc.events, _tempAddress: true, memo: newLoc.memo });
+                                dbg(`📅 Promise place registered: "${pPlace}" (temp address)`);
+                                if (extension_settings[EXTENSION_NAME]?.showDetectToast) wtNotify(`📅 약속 장소: ${pPlace} (주소 미확정)`, 'new', 3500);
+                                pi.inject(); if (ui?.panelVisible) ui.refresh();
+                            }
+                        }
+                    } catch(e) { dbg('⚠️ Promise place from LLM error:', e.message); }
                 }
             }
         }
@@ -585,10 +752,36 @@ ${trimmed}${userCtx}`;
     const rpDate = _extractRpDate(text);
 
     if (!loc.events) loc.events = [];
-    loc.events.push({ text: evText, title: evTitle, mood: evMood, timestamp: Date.now(), rpDate, source });
+
+    // ★ 재생성/스와이프 중복 방지 — 최근 3분 이내 유사 이벤트면 교체
+    const now = Date.now();
+    let replaced = false;
+    if (loc.events.length > 0) {
+        const last = loc.events[loc.events.length - 1];
+        const timeDiff = now - (last.timestamp || 0);
+        if (timeDiff < 180000) { // 3분 이내
+            // 단어 유사도 체크
+            const wordsA = new Set((last.text || '').split(/\s+/).filter(w => w.length > 1));
+            const wordsB = new Set((evText || '').split(/\s+/).filter(w => w.length > 1));
+            if (wordsA.size > 0 && wordsB.size > 0) {
+                let overlap = 0;
+                for (const w of wordsB) { if (wordsA.has(w)) overlap++; }
+                const sim = overlap / Math.max(wordsA.size, wordsB.size);
+                if (sim > 0.35) {
+                    // 교체! (재생성/스와이프로 인한 중복)
+                    dbg(`🔄 Event dedup: ${(sim*100).toFixed(0)}% similar, replacing last event`);
+                    loc.events[loc.events.length - 1] = { text: evText, title: evTitle, mood: evMood, timestamp: now, rpDate, source };
+                    replaced = true;
+                }
+            }
+        }
+    }
+    if (!replaced) {
+        loc.events.push({ text: evText, title: evTitle, mood: evMood, timestamp: now, rpDate, source });
+    }
     if (loc.events.length > 20) loc.events = loc.events.slice(-20);
     await lm.updateLocation(locId, { events: loc.events });
-    _lastEventTime = Date.now();
+    _lastEventTime = now;
     _lastEventLocId = locId;
     // 알림 (오버레이 → 읽기 전용)
     try {

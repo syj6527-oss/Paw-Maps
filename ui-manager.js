@@ -5,6 +5,7 @@ console.log('[wt] ui-manager hotfix16 loaded');
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
 import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat, runWithoutAutoDetect } from './index.js';
+import { callLLM, parseLLMJson, getRecentChatContext } from './llm-helper.js';
 import { MapRenderer } from './map-renderer.js';
 import { LeafletRenderer } from './leaflet-renderer.js';
 
@@ -59,6 +60,17 @@ export class UIManager {
                     <select id="wt-s-eventlang" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="auto">🔄 자동 (RP 언어)</option><option value="ko">🇰🇷 한국어</option><option value="en">🇺🇸 English</option></select>
                 </div>
                 <div class="wt-divider"></div>
+                <div class="wt-s-row"><label>🔑 LLM API 키 (리뷰/이벤트 생성용)</label></div>
+                <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
+                    <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:90px;font-size:11px"><option value="google">Gemini</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
+                    <input type="password" id="wt-s-llm-key" class="text_pole" placeholder="API 키 입력..." style="flex:1;font-size:11px;padding:6px 8px"/>
+                </div>
+                <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
+                    <select id="wt-s-llm-model" class="text_pole wt-select" style="flex:1;font-size:11px"></select>
+                    <button id="wt-s-llm-test" class="menu_button" style="font-size:11px;padding:6px 10px;white-space:nowrap">🧪 테스트</button>
+                </div>
+                <span id="wt-s-llm-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px">미설정 → 기본(generateQuietPrompt) 사용</span>
+                <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-worldcont"/> 🌍 세계관 이어가기</label></div>
                 <span id="wt-s-worldcont-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:1px;margin-bottom:4px">새 채팅에서도 같은 캐릭터의 세계관 유지</span>
                 <div class="wt-divider"></div>
@@ -95,6 +107,61 @@ export class UIManager {
             $('#wt-s-profile-status').text(`✅ "${name}" 저장됨`).css('color','#5E84E2');
             toastSuccess(`🧠 감지 모델: ${name}`);
             setTimeout(() => $('#wt-s-profile-status').text(''), 3000);
+        });
+        // 🔑 LLM API 키 설정
+        const llmModels = {
+            google: [
+                { value: 'gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash (추천)' },
+                { value: 'gemini-2.0-flash', label: '⚡ Gemini 2.0 Flash' },
+                { value: 'gemini-2.5-pro', label: '🧠 Gemini 2.5 Pro (고품질)' },
+                { value: 'gemini-2.0-flash-lite', label: '💨 Gemini 2.0 Flash Lite (최저비용)' },
+            ],
+            openai: [
+                { value: 'gpt-4o-mini', label: '⚡ GPT-4o Mini (추천)' },
+                { value: 'gpt-4o', label: '🧠 GPT-4o (고품질)' },
+                { value: 'gpt-4.1-mini', label: '⚡ GPT-4.1 Mini' },
+                { value: 'gpt-4.1', label: '🧠 GPT-4.1' },
+            ],
+            openrouter: [
+                { value: 'google/gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash' },
+                { value: 'google/gemini-2.5-pro', label: '🧠 Gemini 2.5 Pro' },
+                { value: 'openai/gpt-4o-mini', label: '⚡ GPT-4o Mini' },
+                { value: 'anthropic/claude-sonnet-4', label: '🧠 Claude Sonnet 4' },
+            ],
+        };
+        const _populateModels = (provider) => {
+            const sel = $('#wt-s-llm-model').empty();
+            const models = llmModels[provider] || [];
+            models.forEach(m => sel.append(`<option value="${m.value}">${m.label}</option>`));
+            // 저장된 모델 복원
+            if (s?.llmModel) sel.val(s.llmModel);
+        };
+        $('#wt-s-llm-provider').val(s?.llmProvider || 'google');
+        _populateModels(s?.llmProvider || 'google');
+        $('#wt-s-llm-key').val(s?.llmApiKey || '');
+        if (s?.llmApiKey) $('#wt-s-llm-status').text('✅ API 키 설정됨').css('color', '#2B8A6E');
+        $('#wt-s-llm-provider').on('change', () => {
+            s.llmProvider = $('#wt-s-llm-provider').val();
+            _populateModels(s.llmProvider);
+            s.llmModel = $('#wt-s-llm-model').val();
+            saveSettingsDebounced();
+        });
+        $('#wt-s-llm-key').on('change', () => { s.llmApiKey = $('#wt-s-llm-key').val().trim(); saveSettingsDebounced(); $('#wt-s-llm-status').text(s.llmApiKey ? '✅ 저장됨' : '미설정').css('color', s.llmApiKey ? '#2B8A6E' : '#9A8A7A'); });
+        $('#wt-s-llm-model').on('change', () => { s.llmModel = $('#wt-s-llm-model').val(); saveSettingsDebounced(); });
+        $('#wt-s-llm-test').on('click', async () => {
+            $('#wt-s-llm-status').text('🔄 테스트 중...').css('color', '#5E84E2');
+            try {
+                const { callLLM } = await import('./llm-helper.js');
+                const result = await callLLM('Respond with ONLY this JSON: {"test":"ok"}');
+                if (result && result.includes('ok')) {
+                    $('#wt-s-llm-status').text('✅ 연결 성공!').css('color', '#2B8A6E');
+                    toastSuccess('🔑 LLM 연결 성공!');
+                } else {
+                    $('#wt-s-llm-status').text('⚠️ 응답 이상: ' + (result?.substring(0, 50) || 'empty')).css('color', '#F5A8A8');
+                }
+            } catch(e) {
+                $('#wt-s-llm-status').text('❌ 실패: ' + e.message).css('color', '#F5A8A8');
+            }
         });
         // 🌍 세계관 이어가기
         $('#wt-s-worldcont').prop('checked', s?.worldContinuity ?? false).on('change', async () => {
@@ -280,6 +347,10 @@ export class UIManager {
                         <div id="wt-pop-ainotes-section" style="margin-top:2px">
                             <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">🤖 특이사항 <span style="font-size:10px;color:#B0A898">(AI에게만 전달)</span></div>
                             <textarea id="wt-pop-ainotes" class="wt-input wt-textarea" placeholder="예: 0900 붐빔, 바리스타 민수, 2층 창가석 단골..." rows="3" style="font-size:11px;line-height:1.5"></textarea>
+                        </div>
+                        <div id="wt-pop-npcs-section" style="margin-top:4px">
+                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">👥 터줏대감 <span style="font-size:10px;color:#B0A898">(자동 감지)</span></div>
+                            <div id="wt-pop-npcs-list" style="display:flex;flex-direction:column;gap:2px;max-height:120px;overflow-y:auto"></div>
                         </div>
                         <div id="wt-pop-events-section" style="margin-top:4px">
                             <div style="font-size:12px;color:#9A8A7A;margin-bottom:4px">📝 이벤트 기록</div>
@@ -910,7 +981,7 @@ export class UIManager {
             const subCount = this.lm.getSubLocations(loc.id).length;
             const item = $(`<div class="wt-loc-item ${cur?'wt-loc-active':''}" data-id="${loc.id}">
                 <div class="wt-loc-dot" style="background:${loc.color}"></div>
-                <div class="wt-loc-info"><div class="wt-loc-name">${loc.name}${cur?' 🐾':''}${subCount?' <span style="font-size:9px;color:#9AA0A6">(+${subCount})</span>':''}</div></div>
+                <div class="wt-loc-info"><div class="wt-loc-name">${loc.name}${cur?' 🐾':''}${subCount?` <span style="font-size:9px;color:#9AA0A6">(+${subCount})</span>`:''}</div></div>
                 <div class="wt-loc-visits">${loc.visitCount||0}회</div></div>`);
             item.on('click', () => this.showPop(loc.id));
             list.append(item);
@@ -979,6 +1050,28 @@ export class UIManager {
         $('#wt-pop-last').text(l.rpLastVisited || (l.lastVisited?this._fmt(l.lastVisited):'—'));
         $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
         $('#wt-pop-ainotes').val(l.aiNotes||'');
+        // ★ 터줏대감 목록 렌더
+        const npcList = $('#wt-pop-npcs-list');
+        npcList.empty();
+        if (l.npcs?.length) {
+            l.npcs.forEach(n => {
+                const icon = n.type === 'animal' ? '🐾' : '🧑';
+                npcList.append(`<div style="display:flex;align-items:center;gap:4px;padding:3px 6px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#3C4043">
+                    <span>${icon}</span><span style="font-weight:500">${n.name}</span>${n.role ? `<span style="font-size:9px;color:#9AA0A6">(${n.role})</span>` : ''}
+                    <span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span>
+                    <span class="wt-npc-del" data-name="${n.name}" style="color:#F5A8A8;cursor:pointer;font-size:9px;margin-left:4px">✕</span>
+                </div>`);
+            });
+            npcList.find('.wt-npc-del').on('click', async function(e) {
+                e.stopPropagation();
+                const name = $(this).data('name');
+                const locId = $('#wt-popover').attr('data-id');
+                await self.lm.removeNpcFromLocation(locId, name);
+                $(this).closest('div').fadeOut(200, function() { $(this).remove(); });
+            });
+        } else {
+            npcList.html('<div style="font-size:10px;color:#B0A898;padding:4px">아직 감지된 인물이 없어요</div>');
+        }
         $('#wt-pop-aliases').val((l.aliases||[]).join(', '));
         // Task 5: 아이콘 타입 선택 복원
         $('#wt-pop-icon-type').val(l.locationType || '');
@@ -1433,6 +1526,7 @@ export class UIManager {
                 <button id="wt-bs-x" style="width:28px;height:28px;border:none;background:rgba(0,0,0,.04);border-radius:50%;font-size:12px;color:#70757A;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
             </div>
             ${loc.memo ? `<div style="padding:0 14px 6px"><div style="font-size:11px;color:#5A4030;font-style:italic;border-left:3px solid #D4D0C8;padding-left:8px">"${loc.memo}"</div></div>` : ''}
+            ${loc._tempAddress ? `<div style="padding:0 14px 6px"><div style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:14px;font-size:10px;color:#E65100;font-weight:500">📍 임시 주소 · 실제 지도에서 확정해주세요</div></div>` : ''}
             <div style="display:flex;gap:5px;padding:2px 14px 8px;overflow-x:auto">
                 <button class="wt-bs-pill-btn" data-action="move" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#2B8A6E;font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;font-family:inherit${cur ? ';opacity:.4' : ''}">🐾 이동</button>
                 <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
@@ -1452,6 +1546,7 @@ export class UIManager {
                 <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📊</span><div>방문 ${v}회<div style="font-size:9px;color:#B0A898">첫 ${loc.rpFirstVisited || (loc.firstVisited ? this._fmt(loc.firstVisited) : '—')} · 최근 ${loc.rpLastVisited || (loc.lastVisited ? this._fmt(loc.lastVisited) : '—')}</div></div></div>
                 ${specialHtml}
                 ${nearbyHtml}
+                ${(loc.npcs?.length) ? `<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:#5A4030;margin-bottom:4px">👥 터줏대감</div>${loc.npcs.map(n => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;color:#3C4043"><span style="font-size:13px">${n.type==='animal'?'🐾':'🧑'}</span>${n.name}${n.role?` <span style="font-size:9px;color:#9AA0A6">(${n.role})</span>`:''}<span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span></div>`).join('')}</div>` : ''}
                 <!-- T3: 리뷰 미리보기 (개요 안) -->
                 <div id="wt-bs-rv-preview" style="margin-top:10px;padding-top:8px;border-top:1px solid #F0EDE5">
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1667,8 +1762,11 @@ export class UIManager {
         bs.find('.wt-sub-back').on('click', (e) => {
             e.stopPropagation();
             const pid = $(e.currentTarget).data('parentid');
+            // ★ 현재 스테이지 보존 (깜빡임 방지)
+            const prevStage = self._bsStage || 2;
             self._showBottomSheet(pid);
-            setTimeout(() => { bs.find('.wt-bs-tab[data-tab="rooms"]').click(); }, 100);
+            self._applyBsStage(prevStage);
+            setTimeout(() => { $('#wt-bottomsheet').find('.wt-bs-tab[data-tab="rooms"]').click(); }, 100);
         });
         // ★ 이벤트 아코디언 토글
         bs.find('.wt-sub-ev-card').on('click', function() {
@@ -1758,6 +1856,8 @@ export class UIManager {
             dragged = false;
             totalDelta = 0;
             bsEl.style.transition = 'none';
+            // ★ 드래그 중 스크롤 차단 (MyPage/Timeline 스와이프 버그 수정)
+            bsEl.style.overflowY = 'hidden';
             // ★ Full 상태면 top:0 → maxHeight 모드로 전환
             if (self._bsStage === 3) {
                 const wrapEl = bsEl.closest('#wt-leaflet-wrap') || bsEl.parentElement;
@@ -2393,8 +2493,16 @@ export class UIManager {
         overlay.find('.wt-reg-merge').on('click', async function() {
             const sid = $(this).attr('data-sid');
             const sname = $(this).attr('data-sname');
-            await self.lm.deleteLocation(loc.id);
+            // ★ 이벤트 이전 (삭제 전에!)
             const target = self.lm.locations.find(l => l.id === sid);
+            if (target && loc.events?.length) {
+                if (!target.events) target.events = [];
+                target.events.push(...loc.events);
+                if (target.events.length > 20) target.events = target.events.slice(-20);
+                await self.lm.updateLocation(sid, { events: target.events });
+                dbg(`📎 Transferred ${loc.events.length} events from "${loc.name}" → "${sname}"`);
+            }
+            await self.lm.deleteLocation(loc.id);
             if (target) await self.lm.updateLocation(sid, { aliases: [...(target.aliases || []), loc.name] });
             await self.lm.moveTo(sid);
             toastSuccess(`📎 "${sname}"에 병합!`);
@@ -2408,6 +2516,18 @@ export class UIManager {
         // ✏️ 수정 — 패널 열고 수정 폼
         overlay.find('#wt-reg-edit').on('click', () => {
             overlay.remove();
+            // ★ 이벤트 임시 보관 (삭제 전에!)
+            const savedEvents = loc.events ? [...loc.events] : [];
+            const curId = self.lm.currentLocationId;
+            if (curId && savedEvents.length) {
+                const curLoc = self.lm.locations.find(l => l.id === curId);
+                if (curLoc) {
+                    if (!curLoc.events) curLoc.events = [];
+                    curLoc.events.push(...savedEvents);
+                    self.lm.updateLocation(curId, { events: curLoc.events });
+                    dbg(`✏️ Transferred ${savedEvents.length} events from "${loc.name}" → "${curLoc.name}"`);
+                }
+            }
             self.togglePanel(true);
             setTimeout(() => {
                 $('#wt-add-form').slideDown(200); $('#wt-add-arrow').text('▴');
@@ -2418,10 +2538,22 @@ export class UIManager {
 
         // ↩️ 취소
         overlay.find('#wt-reg-undo').on('click', async () => {
+            // ★ 이벤트 이전 → 현재 위치로 (삭제 전에!)
+            const curId = self.lm.currentLocationId;
+            if (curId && loc.events?.length) {
+                const curLoc = self.lm.locations.find(l => l.id === curId);
+                if (curLoc) {
+                    if (!curLoc.events) curLoc.events = [];
+                    curLoc.events.push(...loc.events);
+                    if (curLoc.events.length > 20) curLoc.events = curLoc.events.slice(-20);
+                    await self.lm.updateLocation(curId, { events: curLoc.events });
+                    dbg(`↩️ Transferred ${loc.events.length} events from "${loc.name}" → "${curLoc.name}"`);
+                }
+            }
             await self.lm.deleteLocation(loc.id);
             self.pi?.inject(); self.refresh();
             overlay.remove();
-            toastSuccess('↩️ 취소됨');
+            toastSuccess('↩️ 취소됨 (이벤트는 현재 장소로 이전)');
         });
 
         // 15초 후 자동 제거 (유저가 안 누르면)
@@ -2750,7 +2882,7 @@ export class UIManager {
                     const lat = parseFloat($(this).attr('data-lat'));
                     const lng = parseFloat($(this).attr('data-lng'));
                     const addrText = $(this).text().replace('📍 ', '').trim();
-                    await self.lm.updateLocation(locId, { lat, lng, address: addrText });
+                    await self.lm.updateLocation(locId, { lat, lng, address: addrText, _tempAddress: false });
 
                     // 앵커 포인트 기반 원형 분포 — 좌표 없는 다른 장소들도 배치
                     const others = self.lm.locations.filter(l => l.id !== locId && !l.lat && !l.lng);
@@ -2987,13 +3119,9 @@ export class UIManager {
         // 긴 텍스트면 LLM으로 title 생성
         if (text.length > 20) {
             try {
-                const ctx = getContext();
-                const gen = ctx?.generateQuietPrompt;
-                if (gen) {
-                    const prompt = `Create a short, witty title (max 15 chars) for this event that emphasizes the place's meaning. Write like "OO한 곳". Respond with ONLY the title text, nothing else.\n\nEvent: ${text.substring(0, 300)}`;
-                    const result = await runWithoutAutoDetect(() => gen({ prompt }));
-                    if (result?.trim()) title = result.trim().substring(0, 20);
-                }
+                const prompt = `Create a short, witty title (max 15 chars) for this event that emphasizes the place's meaning. Write like "OO한 곳". Respond with ONLY the title text, nothing else.\n\nEvent: ${text.substring(0, 300)}`;
+                const result = await callLLM(prompt);
+                if (result?.trim()) title = result.trim().replace(/["\n]/g, '').substring(0, 20);
             } catch(e) {}
         }
 
@@ -3085,78 +3213,68 @@ export class UIManager {
 
         try {
             const ctx = getContext();
-            const gen = ctx?.generateQuietPrompt;
-            if (!gen) { list.html('<div style="font-size:11px;color:#F5A8A8;padding:8px">LLM 연결 필요</div>'); return; }
-
             const userName = ctx.name1 || 'User';
             const charName = ctx.name2 || 'Character';
+            // ★ 캐릭터 맥락 추출 (리뷰 맛 향상)
+            const charDesc = (ctx.characters?.[ctx.characterId]?.description || '').substring(0, 300);
+            const charPersonality = (ctx.characters?.[ctx.characterId]?.personality || '').substring(0, 200);
+            const charScenario = (ctx.characters?.[ctx.characterId]?.scenario || '').substring(0, 200);
+            const charContext = [charDesc, charPersonality, charScenario].filter(Boolean).join(' | ').substring(0, 500);
             const s = extension_settings[EXTENSION_NAME];
             const eLang = s?.eventLang || 'auto';
             const langInst = eLang === 'ko' ? 'Write ALL reviews in Korean.' : eLang === 'en' ? 'Write ALL reviews in English.' : 'Write in the same language as the RP.';
 
             // 이벤트 요약 (최근 5개)
             const evSummary = (loc.events || []).slice(-5).map(e => `${e.mood||'📝'} ${e.title||e.text||''}`).join(', ') || '아직 이벤트 없음';
+            // ★ 최근 채팅 맥락 (리뷰 품질 향상 — 톤/말투/관계 흡수)
+            const recentChat = getRecentChatContext(2500);
 
-            // 방문횟수 보정 리뷰 수 (최대 10개, 수 많을수록 확률 급감)
+            // 방문횟수 보정 리뷰 수 (최소 2개 보장, 확률 상향)
             const visits = loc.visitCount || 0;
             let maxReviews, weights;
             if (visits <= 2) {
-                maxReviews = 3;
-                weights = [0.50, 0.85, 1.0];
+                maxReviews = 4;
+                weights = [0.15, 0.55, 0.85, 1.0]; // 2~3개 주력
             } else if (visits <= 5) {
-                maxReviews = 5;
-                weights = [0.30, 0.60, 0.80, 0.92, 1.0];
+                maxReviews = 6;
+                weights = [0.05, 0.25, 0.55, 0.78, 0.92, 1.0]; // 3~4개 주력
             } else if (visits <= 9) {
                 maxReviews = 8;
-                weights = [0.20, 0.45, 0.70, 0.85, 0.93, 0.97, 0.99, 1.0];
+                weights = [0.03, 0.12, 0.30, 0.55, 0.75, 0.88, 0.95, 1.0]; // 4~5개 주력
             } else {
                 maxReviews = 10;
-                weights = [0.15, 0.35, 0.60, 0.78, 0.88, 0.93, 0.96, 0.98, 0.99, 1.0];
+                weights = [0.02, 0.08, 0.20, 0.40, 0.60, 0.76, 0.88, 0.94, 0.98, 1.0]; // 5~6개 주력
             }
             const rnd = Math.random();
             let reviewCount = 1;
             for (let i = 0; i < weights.length; i++) {
                 if (rnd < weights[i]) { reviewCount = i + 1; break; }
             }
-            const prompt = `[SYSTEM OVERRIDE — THIS IS NOT A ROLEPLAY MESSAGE]
-[DO NOT CONTINUE THE STORY — DO NOT WRITE NARRATIVE — JSON ONLY]
+            // ★ 터줏대감 목록 (리뷰어로 활용)
+            const npcList = (loc.npcs || []).map(n => `"${n.name}"(${n.role || n.type})`).join(', ');
 
-You are a data generator. Your ONLY job: output a JSON object.
-NEVER write story text, dialogue, actions, or narrative.
+            const prompt = `You are writing Google Maps-style character reviews for an RP location. Write in-character, vivid, emotional reviews that reflect each reviewer's unique personality and speech patterns from the RP.
 
-Generate ${reviewCount} Google Maps-style reviews.
+Generate ${reviewCount} reviews.
 Place: "${loc.name}" | Visits: ${loc.visitCount || 0} | Memo: "${loc.memo || ''}"
 Events: ${evSummary}
 Characters: User="${userName}", Char="${charName}"
+${charContext ? `Character context: ${charContext}` : ''}
 ${langInst}
-
-Reviewers: pick from "${charName}", "${userName}", Pet/Animal, NPC, Wild creature.
-Each review: 1-2 sentences max, in-character voice.
+${recentChat ? `\n[Recent RP scenes — use these to absorb character voice, tone, and relationship dynamics]:\n${recentChat}\n` : ''}
+Reviewers: pick from "${charName}", "${userName}"${npcList ? `, ${npcList}` : ''}, or other NPCs/animals that might visit this place.
+Each review: 1-2 sentences max, in-character voice. Match the RP's tone and each character's unique speech style.${npcList ? `\nIMPORTANT: Prioritize the known NPCs/animals listed above as reviewers — they are real characters from this location.` : ''}
 
 OUTPUT THIS EXACT FORMAT (valid JSON, no markdown, no explanation):
 {"summary":"one poetic sentence","reviews":[{"name":"reviewer","role":"role","avatar":"emoji","stars":4,"text":"review text","daysAgo":3}]}
 
 CRITICAL: Start your response with { and end with }. Nothing else.`;
 
-            const result = await runWithoutAutoDetect(() => gen({ prompt, quietToLoud: false }), 2500);
+            const result = await callLLM(prompt);
             if (!result) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">생성 실패 — 다시 시도해주세요</div>'); return; }
 
-            // JSON 파싱 (LLM 출력 정제)
-            let raw = typeof result === 'string' ? result : JSON.stringify(result);
-            // 마크다운 코드블록 제거
-            raw = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
-            // 트레일링 콤마 제거 (,} → } / ,] → ])
-            raw = raw.replace(/,\s*([}\]])/g, '$1');
-            const jsonMatch = raw.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">파싱 실패 — 다시 시도해주세요</div>'); return; }
-
-            let parsed;
-            try { parsed = JSON.parse(jsonMatch[0]); }
-            catch(parseErr) {
-                console.error(`[${EXTENSION_NAME}] 🔧 Review JSON parse fail:`, parseErr.message, '\nRaw:', jsonMatch[0].substring(0, 200));
-                list.html(`<div style="font-size:11px;color:#F5A8A8;padding:8px">파싱 오류 — 다시 시도해주세요</div>`);
-                return;
-            }
+            const parsed = parseLLMJson(result);
+            if (!parsed) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">파싱 실패 — 다시 시도해주세요</div>'); return; }
             const reviews = parsed.reviews || parsed;
             const aiSummary = parsed.summary || '';
             if (!Array.isArray(reviews) || !reviews.length) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">리뷰 없음</div>'); return; }
@@ -3561,7 +3679,6 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
 
             try {
                 const ctx = getContext();
-                const generateQuietPrompt = ctx?.generateQuietPrompt;
                 const userName = ctx?.name1 || 'User';
                 const charName = ctx?.name2 || 'Character';
                 const s = extension_settings[EXTENSION_NAME];
@@ -3573,7 +3690,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
                 let evTitle = null, evText = null, evMood = '📝';
                 const trimmed = selectedText.substring(0, 1500);
 
-                if (generateQuietPrompt) {
+                try {
                     const prompt = `Summarize this RP scene excerpt as a place-event memory. ${langInst}
 Character info: protagonist="${userName}", main character="${charName}".
 Respond with ONLY JSON: {"mood":"💕 or 📅 or ⚡","title":"place-meaning hook max 15chars","summary":"detailed 2-sentence summary"}
@@ -3581,19 +3698,16 @@ If mundane: {"mood":null}
 
 Text: ${trimmed}`;
 
-                    const result = await runWithoutAutoDetect(() => generateQuietPrompt({ prompt }), 2500);
+                    const result = await callLLM(prompt);
                     if (result) {
-                        const m = result.match(/\{[\s\S]*?\}/);
-                        if (m) {
-                            const p = JSON.parse(m[0]);
-                            if (p.mood && p.summary) {
-                                evTitle = p.title || p.summary.substring(0, 15) + '...';
-                                evText = p.summary;
-                                evMood = p.mood;
-                            }
+                        const p = parseLLMJson(result);
+                        if (p?.mood && p?.summary) {
+                            evTitle = p.title || p.summary.substring(0, 15) + '...';
+                            evText = p.summary;
+                            evMood = p.mood;
                         }
                     }
-                }
+                } catch(_) {}
 
                 // LLM 실패 시 선택 텍스트 그대로
                 if (!evText) {
