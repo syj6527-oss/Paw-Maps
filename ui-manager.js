@@ -1622,7 +1622,7 @@ export class UIManager {
             const id = bs.attr('data-id');
             if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
-            if (action === 'dist' && id) { console.log(`[${EXTENSION_NAME}] 📏 Distance button clicked: ${id}`); self._showDistanceMeasure(id); }
+            if (action === 'dist' && id) { console.log(`[${EXTENSION_NAME}] 📏 Distance button clicked: ${id}`); if (self._bsStage < 3) self._applyBsStage(3); setTimeout(() => self._showDistanceMeasure(id), 200); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
         });
         bs.find('.wt-bs-tab').on('click', function(e) {
@@ -2209,7 +2209,7 @@ export class UIManager {
             </div>`;
         }).join('');
 
-        const popup = $(`<div id="wt-dist-popup" style="position:fixed;bottom:0;left:0;right:0;max-height:60vh;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);z-index:10000;overflow:hidden;font-family:-apple-system,'Noto Sans KR',sans-serif">
+        const popup = $(`<div id="wt-dist-popup" style="position:absolute;bottom:0;left:0;right:0;max-height:60vh;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);z-index:10001;overflow:hidden;font-family:-apple-system,'Noto Sans KR',sans-serif">
             <div style="display:flex;justify-content:center;padding:12px 0 4px"><div style="width:32px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
             <div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between">
                 <div style="font-size:15px;font-weight:800;color:#202124">📏 ${loc.name}에서의 거리</div>
@@ -2218,7 +2218,7 @@ export class UIManager {
             <div style="padding:4px 16px 16px;overflow-y:auto;max-height:45vh;-webkit-overflow-scrolling:touch">${listHtml}</div>
         </div>`);
 
-        $('body').append(popup);
+        $('#wt-bottomsheet').append(popup);
         popup.find('#wt-dist-close').on('click', () => popup.remove());
 
         popup.find('.wt-dist-item').on('click', async function() {
