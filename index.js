@@ -607,19 +607,24 @@ async function _geocodePlace(locId, placeName, retry = 0) {
 
 // ========== RP 날짜 추출 (메타데이터에서) ==========
 function _extractRpDate(text) {
-    // 패턴 1: - Time: 2025/07/12 또는 Date: 2025.07.12
-    const m1 = text.match(/[-*]\s*(?:Time|Date|날짜|시간)[:\s]+(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/i);
+    // HTML 태그 제거 (렌더된 마크다운 대응)
+    const clean = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    // 패턴 1: - Time: 2025/07/12 또는 Date: 2025.07.12 (- 선택적)
+    const m1 = clean.match(/(?:[-*]\s*)?(?:Time|Date|날짜|시간)[:\s]+(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/i);
     if (m1) return `${m1[1]}/${parseInt(m1[2])}/${parseInt(m1[3])}`;
+    // 패턴 1b: 2024/12/19 단독 (날짜 형식만으로도 감지)
+    const m1b = clean.match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2}),?\s*\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)/);
+    if (m1b) return `${m1b[1]}/${parseInt(m1b[2])}/${parseInt(m1b[3])}`;
     // 패턴 2: July 12, 2025 또는 12 July 2025
     const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
-    const m2 = text.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
+    const m2 = clean.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
     if (m2 && months[m2[1].substring(0,3).toLowerCase()]) return `${m2[3]}/${months[m2[1].substring(0,3).toLowerCase()]}/${parseInt(m2[2])}`;
-    const m3 = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+    const m3 = clean.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
     if (m3 && months[m3[2].substring(0,3).toLowerCase()]) return `${m3[3]}/${months[m3[2].substring(0,3).toLowerCase()]}/${parseInt(m3[1])}`;
     // 패턴 3: 7월 12일 (년도 없으면 빈값)
-    const m4 = text.match(/(\d{1,2})월\s*(\d{1,2})일/);
+    const m4 = clean.match(/(\d{1,2})월\s*(\d{1,2})일/);
     if (m4) {
-        const yr = text.match(/(\d{4})년/);
+        const yr = clean.match(/(\d{4})년/);
         return yr ? `${yr[1]}/${parseInt(m4[1])}/${parseInt(m4[2])}` : `${parseInt(m4[1])}/${parseInt(m4[2])}`;
     }
     return '';

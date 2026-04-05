@@ -880,7 +880,7 @@ export class UIManager {
                         if (res.ok) {
                             const d = await res.json();
                             const addr = d.display_name?.split(',').slice(0, 3).join(', ') || '';
-                            if (addr) await this.lm.updateLocation(locId, { address: addr });
+                            if (addr) await this.lm.updateLocation(locId, { address: addr, _tempAddress: false });
                             toastSuccess(`📍 "${loc.name}" → ${addr}`);
                         } else { toastSuccess(`📍 "${loc.name}" 이동!`); }
                     } catch(_) { toastSuccess(`📍 "${loc.name}" 이동!`); }
