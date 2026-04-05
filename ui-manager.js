@@ -1497,9 +1497,11 @@ export class UIManager {
             eventsHtml = events.slice(-5).reverse().map(ev => {
                 const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : '');
                 const hasDetail = ev.text && ev.text !== ev.title && ev.text.length > 15;
-                return `<div class="wt-bs-ev-card" style="background:#FAFAF5;border-radius:7px;padding:7px 9px;border:1px solid #EAE6DC;margin-bottom:4px;cursor:${hasDetail ? 'pointer' : 'default'}">
-                    <div style="display:flex;align-items:center;gap:5px"><span style="font-size:12px">${ev.mood||'📝'}</span><span style="flex:1;font-weight:600;font-size:10.5px;color:#5A4030">${ev.title||ev.text||''}</span><span style="font-size:8px;color:#B0A898">${dateStr}</span>${hasDetail ? '<span class="wt-bs-ev-arrow" style="font-size:8px;color:#B0A898">▼</span>' : ''}</div>
-                    ${hasDetail ? `<div class="wt-bs-ev-detail" style="display:none;margin-top:5px;padding-top:5px;border-top:1px dashed #EAE6DC;font-size:9.5px;line-height:1.6;color:#7A7060">${ev.text}</div>` : ''}
+                const moodColors = { '💕': { bg:'#FFF0F3', border:'#F5C0CE', text:'#8B2252' }, '⚡': { bg:'#FFF3E0', border:'#F5C28A', text:'#8B4513' }, '📅': { bg:'#E8F5E9', border:'#A5D6A7', text:'#2E5E3E' } };
+                const mc = moodColors[ev.mood] || { bg:'#F5F5F5', border:'#E0E0E0', text:'#4A4A4A' };
+                return `<div class="wt-bs-ev-card" style="background:${mc.bg};border-radius:7px;padding:7px 9px;border:1px solid ${mc.border};margin-bottom:4px;cursor:${hasDetail ? 'pointer' : 'default'}">
+                    <div style="display:flex;align-items:center;gap:5px"><span style="font-size:12px">${ev.mood||'📝'}</span><span style="flex:1;font-weight:600;font-size:10.5px;color:${mc.text}">${ev.title||ev.text||''}</span><span style="font-size:8px;color:#B0A898">${dateStr}</span>${hasDetail ? '<span class="wt-bs-ev-arrow" style="font-size:8px;color:#B0A898">▼</span>' : ''}</div>
+                    ${hasDetail ? `<div class="wt-bs-ev-detail" style="display:none;margin-top:5px;padding-top:5px;border-top:1px dashed ${mc.border};font-size:9.5px;line-height:1.6;color:#7A7060">${ev.text}</div>` : ''}
                 </div>`;
             }).join('');
         } else {
@@ -1529,9 +1531,9 @@ export class UIManager {
             ${loc._tempAddress ? `<div style="padding:0 14px 6px"><div style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:14px;font-size:10px;color:#E65100;font-weight:500">📍 임시 주소 · 실제 지도에서 확정해주세요</div></div>` : ''}
             <div style="display:flex;gap:5px;padding:2px 14px 8px;overflow-x:auto">
                 <button class="wt-bs-pill-btn" data-action="move" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#2B8A6E;font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;font-family:inherit${cur ? ';opacity:.4' : ''}">🐾 이동</button>
-                <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
-                <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#E8F4F0;font-size:10.5px;font-weight:600;color:#2B8A6E;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 ${((loc.tags||[]).length ? (loc.tags||[]).map(t=>({favorites:'💜',starred:'⭐',wantToGo:'🚩',travel:'🧳'})[t]||'').join('') : '저장')}</button>
-                <button class="wt-bs-pill-btn" data-action="dist" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E0E0E0;background:#fff;font-size:10.5px;font-weight:600;color:#3C4043;white-space:nowrap;cursor:pointer;font-family:inherit">📏 거리</button>
+                <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #5E84E2;background:#EAF0FF;font-size:10.5px;font-weight:600;color:#3A5FBA;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
+                <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #8B6BB4;background:#F3EEFA;font-size:10.5px;font-weight:600;color:#6B4F91;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 ${((loc.tags||[]).length ? (loc.tags||[]).map(t=>({favorites:'💜',starred:'⭐',wantToGo:'🚩',travel:'🧳'})[t]||'').join('') : '저장')}</button>
+                <button class="wt-bs-pill-btn" data-action="dist" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E07C3A;background:#FFF3E8;font-size:10.5px;font-weight:600;color:#B85A1A;white-space:nowrap;cursor:pointer;font-family:inherit">📏 거리</button>
             </div>
             <div id="wt-bs-tabs" style="display:flex;border-bottom:2px solid #F0EDE5">
                 <div class="wt-bs-tab" data-tab="overview" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#2B8A6E;cursor:pointer;border-bottom:2.5px solid #2B8A6E;margin-bottom:-2px">개요</div>
@@ -1546,7 +1548,7 @@ export class UIManager {
                 <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📊</span><div>방문 ${v}회<div style="font-size:9px;color:#B0A898">첫 ${loc.rpFirstVisited || (loc.firstVisited ? this._fmt(loc.firstVisited) : '—')} · 최근 ${loc.rpLastVisited || (loc.lastVisited ? this._fmt(loc.lastVisited) : '—')}</div></div></div>
                 ${specialHtml}
                 ${nearbyHtml}
-                ${(loc.npcs?.length) ? `<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:#5A4030;margin-bottom:4px">👥 터줏대감</div>${loc.npcs.map(n => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;color:#3C4043"><span style="font-size:13px">${n.type==='animal'?'🐾':'🧑'}</span>${n.name}${n.role?` <span style="font-size:9px;color:#9AA0A6">(${n.role})</span>`:''}<span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span></div>`).join('')}</div>` : ''}
+                ${(loc.npcs?.length) ? `<div style="margin-top:8px;padding:8px 10px;background:#F3EEFA;border-left:3px solid #8B6BB4;border-radius:0 8px 8px 0"><div style="font-size:10px;font-weight:600;color:#6B4F91;margin-bottom:3px">👥 터줏대감</div>${loc.npcs.map(n => `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;color:#5A4070"><span style="font-size:12px">${n.type==='animal'?'🐾':'🧑'}</span>${n.name}${n.role?` <span style="font-size:9px;color:#8B6BB4">(${n.role})</span>`:''}<span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span></div>`).join('')}</div>` : ''}
                 <!-- T3: 리뷰 미리보기 (개요 안) -->
                 <div id="wt-bs-rv-preview" style="margin-top:10px;padding-top:8px;border-top:1px solid #F0EDE5">
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1620,14 +1622,16 @@ export class UIManager {
             const id = bs.attr('data-id');
             if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
-            if (action === 'dist' && id) { self._showDistanceMeasure(id); }
+            if (action === 'dist' && id) { console.log(`[${EXTENSION_NAME}] 📏 Distance button clicked: ${id}`); self._showDistanceMeasure(id); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
         });
         bs.find('.wt-bs-tab').on('click', function(e) {
             e.stopPropagation();
             const tab = $(this).data('tab');
+            const tabColors = { overview: '#2B8A6E', events: '#CF6E2E', review: '#5E84E2', rooms: '#8B6B4A' };
+            const color = tabColors[tab] || '#2B8A6E';
             bs.find('.wt-bs-tab').css({ color: '#B0A898', borderBottomColor: 'transparent' });
-            $(this).css({ color: '#2B8A6E', borderBottomColor: '#2B8A6E' });
+            $(this).css({ color, borderBottomColor: color });
             bs.find('[id^="wt-bs-tab-"]').hide();
             bs.find(`#wt-bs-tab-${tab}`).show();
             // 이벤트/리뷰 탭은 full로 확장
@@ -1654,7 +1658,7 @@ export class UIManager {
             e.stopPropagation();
             // 리뷰 탭으로 전환
             bs.find('.wt-bs-tab').css({ color: '#B0A898', borderBottomColor: 'transparent' });
-            bs.find('.wt-bs-tab[data-tab="review"]').css({ color: '#2B8A6E', borderBottomColor: '#2B8A6E' });
+            bs.find('.wt-bs-tab[data-tab="review"]').css({ color: '#5E84E2', borderBottomColor: '#5E84E2' });
             bs.find('[id^="wt-bs-tab-"]').hide();
             bs.find('#wt-bs-tab-review').show();
             if (self._bsStage < 3) self._applyBsStage(3);
@@ -3406,11 +3410,11 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
     _renderReviews(container, reviews, aiSummary) {
         container.empty();
 
-        // 1. AI 요약 (블루박스)
+        // 1. AI 요약 (골드 사이드바)
         if (aiSummary) {
-            container.append(`<div style="padding:10px 12px;background:rgba(94,132,226,.06);border-radius:8px;border:1px solid rgba(94,132,226,.1);margin-bottom:10px">
-                <div style="font-size:10px;color:#5E84E2;font-weight:600;margin-bottom:3px">🤖 AI 리뷰 요약</div>
-                <div style="font-size:12px;color:#5E84E2;line-height:1.6;font-style:italic">"${aiSummary}"</div>
+            container.append(`<div style="padding:8px 10px;background:#FFFBF0;border-left:3px solid #F6A93A;border-radius:0 8px 8px 0;margin-bottom:10px">
+                <div style="font-size:10px;color:#8B6B14;font-weight:600;margin-bottom:3px">AI 리뷰 요약</div>
+                <div style="font-size:12px;color:#6B5B14;line-height:1.6;font-style:italic">"${aiSummary}"</div>
             </div>`);
         }
 
