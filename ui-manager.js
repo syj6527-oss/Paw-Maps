@@ -1203,7 +1203,7 @@ export class UIManager {
             <div style="font-size:12px;color:#9A8A7A">🤖 특이사항 (AI에게만 전달)</div>
             <textarea id="wt-subpop-ainotes" class="wt-input" placeholder="예: 큰 TV가 있음, 창문이 남향" style="height:35px;resize:none;font-size:12px">${sub.aiNotes || ''}</textarea>
             <div style="font-size:12px;color:#9A8A7A">📝 이벤트 기록</div>
-            <div id="wt-subpop-events" style="border:1px solid #E8E4D8;border-radius:8px;overflow:hidden;background:#fff">${eventsHtml}</div>
+            <div id="wt-subpop-events" style="border:1px solid #E8E4D8;border-radius:8px;overflow-y:auto;max-height:200px;-webkit-overflow-scrolling:touch;background:#fff">${eventsHtml}</div>
             <div style="display:flex;gap:4px">
                 <input type="text" id="wt-subpop-ev-input" class="wt-input" placeholder="이벤트 추가..." style="flex:1;font-size:11px;padding:5px 8px"/>
                 <button id="wt-subpop-ev-add" class="wt-btn-accent wt-btn-s">+</button>
@@ -1717,10 +1717,11 @@ export class UIManager {
                 const title = ev.title || ev.text?.substring(0, 40) || '—';
                 const fullText = ev.text || '';
                 const hasDetail = fullText.length > 0 && fullText !== title;
-                return `<div class="wt-sub-ev-card" style="padding:8px 0;border-bottom:1px solid #F1F3F4;cursor:${hasDetail ? 'pointer' : 'default'};-webkit-tap-highlight-color:transparent">
+                return `<div class="wt-sub-ev-card" data-idx="${i}" style="padding:8px 0;border-bottom:1px solid #F1F3F4;cursor:${hasDetail ? 'pointer' : 'default'};-webkit-tap-highlight-color:transparent">
                     <div style="display:flex;align-items:center;gap:6px">
                         <span style="font-size:12px;flex-shrink:0">${ev.mood || '📝'}</span>
                         <span style="flex:1;font-weight:600;font-size:12px;color:#202124">${title}</span>
+                        <span class="wt-sub-ev-del" data-idx="${i}" style="cursor:pointer;color:#F5A8A8;font-size:11px;padding:2px 4px">✕</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;margin-top:2px;padding-left:18px">
                         <span style="font-size:10px;color:#9AA0A6">${ev.timestamp ? this._fmt(ev.timestamp) : '—'}</span>
@@ -1749,7 +1750,7 @@ export class UIManager {
                 ${sub.memo ? `<div style="padding:8px 0;border-top:1px solid #F0EDE5"><div style="font-size:11px;color:#5A4030;font-style:italic;border-left:3px solid #D4D0C8;padding-left:8px">"${sub.memo}"</div></div>` : ''}
                 <div style="padding:8px 0;border-top:1px solid #F0EDE5">
                     <div style="font-size:12px;font-weight:700;color:#202124;margin-bottom:6px">이벤트</div>
-                    ${evHtml}
+                    <div style="max-height:40vh;overflow-y:auto;-webkit-overflow-scrolling:touch">${evHtml}</div>
                 </div>
             </div>`;
 
@@ -1769,13 +1770,24 @@ export class UIManager {
             setTimeout(() => { $('#wt-bottomsheet').find('.wt-bs-tab[data-tab="rooms"]').click(); }, 100);
         });
         // ★ 이벤트 아코디언 토글
-        bs.find('.wt-sub-ev-card').on('click', function() {
+        bs.find('.wt-sub-ev-card').on('click', function(e) {
+            if ($(e.target).closest('.wt-sub-ev-del').length) return; // 삭제 버튼 클릭 시 무시
             const det = $(this).find('.wt-sub-ev-detail');
             const arrow = $(this).find('.wt-sub-ev-arrow');
             if (det.length) {
                 det.slideToggle(200);
                 arrow.text(det.is(':visible') ? '▲' : '▼');
             }
+        });
+        // ★ 이벤트 삭제
+        bs.find('.wt-sub-ev-del').on('click', function(e) {
+            e.stopPropagation();
+            const idx = parseInt($(this).data('idx'));
+            if (isNaN(idx)) return;
+            sub.events.splice(idx, 1);
+            self.lm.updateLocation(subId, { events: sub.events });
+            self._showSubLocationDetail(parentId, subId); // 리렌더
+            toastSuccess('✕ 이벤트 삭제');
         });
     }
 
