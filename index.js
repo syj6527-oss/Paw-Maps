@@ -692,7 +692,7 @@ Rules:
 If no significant event (just walking, sitting, daily routine): {"mood":null,"summary":null}
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"mood":"💕","title":"ultra-short hook max 15chars that emphasizes THIS PLACE's emotional meaning. Write like: 'OO한 곳' or 'OO이 시작된 곳'. Do NOT copy dialogue literally — capture the emotional significance. Match the scene's tone: playful scenes can have witty/humorous titles, serious scenes should stay sincere.","summary":"detailed 2-sentence summary","promisePlace":"Extract ANY named location (store, city, building, base, etc.) that characters discuss visiting, going to, or planning a trip to in the FUTURE. Include even casually mentioned destinations. Write ONLY the place name (e.g. 'Tesco', '하와이', 'the park'). If no future place mentioned, write null."}
+{"mood":"💕","title":"ultra-short hook max 15chars that emphasizes THIS PLACE's emotional meaning. Write like: 'OO한 곳' or 'OO이 시작된 곳'. Do NOT copy dialogue literally — capture the emotional significance. Match the scene's tone: playful scenes can have witty/humorous titles, serious scenes should stay sincere.","summary":"detailed 2-sentence summary","promisePlace":"Extract ANY named store, city, building, or location that characters mention wanting to go to, discuss going to, plan to visit, or even joke about visiting. Be AGGRESSIVE — if a place name appears alongside words like 'go', 'run', 'trip', 'visit', 'let\\'s', 'we should', 'we could', 'discuss', 'plan', or shopping/travel context, extract it. Write ONLY the place name. If truly no future place, write null."}
 
 Mood types: 💕=romantic/emotional 📅=promise/future ⚡=conflict/danger
 

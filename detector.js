@@ -473,6 +473,12 @@ export class LocationDetector {
             /(?:schedule|calendar|planned|plan)[^.]{0,30}?[''""]([A-Z][a-zA-Z\s]{1,20}?)[''"" ]/i,
             // 영어: "~ tomorrow", "~ this weekend"
             /[''""]([A-Z][a-zA-Z\s]{1,15}?)[''""]\s*\.?\s*(?:tomorrow|next week|this weekend|tonight)/i,
+            // 영어: "TESCO RUN", "Tesco run" (대문자 장소 + run/trip)
+            /([A-Z][a-zA-Z]+)\s+(?:run|trip|visit|shopping|invasion|mission|outing|excursion)(?:\s|!|\.|\?|$)/i,
+            // 영어: "go to Tesco" 느슨한 매칭 (we'll discuss, supply run 등 컨텍스트 무관)
+            /(?:go\s+to|head\s+to|hit\s+up|stop\s+by|trip\s+to|run\s+to|visit)\s+([A-Z][a-zA-Z\s']{1,20}?)(?:[.!?,\s]|$)/i,
+            // 한국어: "테스코 나들이/장보기/쇼핑" (느슨)
+            /([A-Za-z\uAC00-\uD7A3]{2,10})\s*(?:나들이|장보기|쇼핑|탐방|투어|습격|작전|가기|방문)/,
         ];
 
         for (const pat of patterns) {
