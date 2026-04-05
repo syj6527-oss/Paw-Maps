@@ -90,47 +90,70 @@ function _getApiConfig() {
 async function _callGoogle(key, model, prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
-    // ★ 1차 시도: JSON 강제 모드
+    // ★ 2.5 모델 thinking 비활성화
+    const isThinkingModel = model.includes('2.5') || model.includes('thinking');
+
+    // ★ 1차 시도: JSON 강제 모드 (thinking 비활성화)
     try {
+        const genConfig = { temperature: 0.7, maxOutputTokens: 2000, responseMimeType: 'application/json' };
+        if (isThinkingModel) genConfig.thinkingConfig = { thinkingBudget: 0 };
+
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                systemInstruction: { parts: [{ text: 'You are a JSON-only data extraction assistant. Respond with valid JSON only. No markdown, no explanation, no RP.' }] },
+                systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 2000, responseMimeType: 'application/json' },
+                generationConfig: genConfig,
             }),
         });
         if (res.ok) {
             const data = await res.json();
-            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (text && text.includes('{')) {
-                dbg(`🔧 Google API OK (JSON mode, ${text.length}c)`);
-                return text;
+            dbg('🔧 Google raw response:', JSON.stringify(data).substring(0, 300));
+            // ★ 모든 parts에서 JSON 검색 (thinking 모델은 여러 part 반환)
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            for (const part of parts) {
+                if (part.text && part.text.includes('{')) {
+                    dbg(`🔧 Google API OK (JSON mode, ${part.text.length}c)`);
+                    return part.text;
+                }
             }
-            // 빈 응답이나 JSON 아닌 응답 → 폴백
-            dbg(`⚠️ Google JSON mode: empty or non-JSON response, falling back`);
+            dbg(`⚠️ Google JSON mode: no JSON in response parts`);
         } else {
-            dbg(`⚠️ Google JSON mode failed: ${res.status}, falling back`);
+            const errBody = await res.text().catch(() => '');
+            dbg(`⚠️ Google JSON mode failed: ${res.status} ${errBody.substring(0, 200)}`);
         }
     } catch(e) {
-        dbg(`⚠️ Google JSON mode error: ${e.message}, falling back`);
+        dbg(`⚠️ Google JSON mode error: ${e.message}`);
     }
 
-    // ★ 2차 시도: JSON 강제 없이 (폴백)
-    const res2 = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
-        }),
-    });
-    if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
-    const data2 = await res2.json();
-    const text2 = data2?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    dbg(`🔧 Google API OK (fallback mode, ${text2.length}c)`);
-    return text2;
+    // ★ 2차 시도: JSON 강제 없이 + thinking 없이
+    try {
+        const genConfig2 = { temperature: 0.7, maxOutputTokens: 2000 };
+        if (isThinkingModel) genConfig2.thinkingConfig = { thinkingBudget: 0 };
+
+        const res2 = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
+                generationConfig: genConfig2,
+            }),
+        });
+        if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
+        const data2 = await res2.json();
+        const parts2 = data2?.candidates?.[0]?.content?.parts || [];
+        for (const part of parts2) {
+            if (part.text && part.text.includes('{')) {
+                dbg(`🔧 Google API OK (fallback, ${part.text.length}c)`);
+                return part.text;
+            }
+        }
+        dbg(`⚠️ Google fallback: no JSON in parts either`);
+        return parts2[0]?.text || '';
+    } catch(e) {
+        throw new Error(`Google API both attempts failed: ${e.message}`);
+    }
 }
 
 // ========== OpenAI / OpenRouter 직접 호출 ==========
