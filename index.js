@@ -120,8 +120,48 @@ async function scanMessage(text, source = 'USER') {
         // ★ 메타데이터에서 Location 직접 추출 (memo/yaml 블록)
         const locMatch = text.match(/[-*]\s*Location[:\s]+(.+)/i);
         if (locMatch) {
-            const metaLoc = locMatch[1].trim().replace(/[`*_]/g, '');
-            if (metaLoc.length >= 2 && metaLoc.length <= 30) {
+            let metaLoc = locMatch[1].trim().replace(/[`*_]/g, '');
+            if (metaLoc.length >= 2 && metaLoc.length <= 80) {
+                dbg(`📌 Meta location raw: "${metaLoc}"`);
+
+                // ★ "Parent - Sub" 또는 "Parent — Sub" 형태 분리
+                let metaParent = null, metaSub = null;
+                const sepMatch = metaLoc.match(/^(.+?)\s*[-–—]\s*([\uAC00-\uD7A3A-Za-z].+)$/);
+                if (sepMatch) {
+                    const part1 = sepMatch[1].trim();
+                    const part2 = sepMatch[2].trim();
+                    // part2가 서브장소 키워드 포함하면 분리
+                    const subKw = /kitchen|living|bed|bath|room|거실|부엌|주방|침실|화장실|방|마당|차고|서재|발코니|테라스|현관|복도|다락|지하|옥상|lobby|hall|office|studio|garage|balcony|terrace|rooftop|basement/i;
+                    if (subKw.test(part2)) {
+                        metaParent = part1;
+                        metaSub = part2;
+                        dbg(`📌 Split: parent="${metaParent}", sub="${metaSub}"`);
+                    }
+                }
+
+                // 분리된 경우: 부모 장소 매칭 → 서브 등록
+                if (metaParent && metaSub) {
+                    const parentLoc = lm.locations.find(l =>
+                        l.name.toLowerCase() === metaParent.toLowerCase() ||
+                        metaParent.toLowerCase().includes(l.name.toLowerCase()) ||
+                        l.name.toLowerCase().includes(metaParent.toLowerCase()) ||
+                        (l.aliases || []).some(a => metaParent.toLowerCase().includes(a.toLowerCase()))
+                    );
+                    if (parentLoc) {
+                        // 서브장소 "&"로 나뉜 경우 첫번째만 사용 ("Kitchen & Living Room" → "Kitchen")
+                        const subName = metaSub.split(/\s*[&,+]\s*/)[0].trim();
+                        const sub = await lm.findOrCreateSub(parentLoc.id, subName);
+                        if (lm.currentLocationId !== parentLoc.id) await lm.moveTo(parentLoc.id, rpDate);
+                        await lm.moveToSub(sub.id);
+                        dbg(`🏠 Meta sub-location: "${parentLoc.name} > ${subName}"`);
+                        pi.inject(); if (ui.panelVisible) ui.refresh();
+                        await _tryEvent(text, sub.id, source);
+                        return true;
+                    }
+                    // 부모 못 찾으면 전체를 일반 처리
+                    metaLoc = metaParent;
+                }
+
                 dbg(`📌 Meta location: "${metaLoc}"`);
                 // ★ 서브로케이션 체크 (거실, 부엌 등 → 현재 장소의 하위)
                 if (lm.isSubLocation(metaLoc) && lm.currentLocationId) {
