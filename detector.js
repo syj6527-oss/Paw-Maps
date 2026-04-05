@@ -380,7 +380,7 @@ export class LocationDetector {
         return true;
     }
 
-    _strip(t) { return t.replace(/<[^>]+>/g,'').replace(/\*{1,2}([^*]+)\*{1,2}/g,'$1').replace(/_{1,2}([^_]+)_{1,2}/g,'$1'); }
+    _strip(t) { return t.replace(/<[^>]+>/g,'').replace(/\*{1,2}([^*]+)\*{1,2}/g,'$1').replace(/_{1,2}([^_]+)_{1,2}/g,'$1').replace(/\[([^\]]*)\]/g, '$1'); }
     _findAll(t,n) { const r=[]; let p=0; while(true){ const i=t.indexOf(n,p); if(i===-1)break; r.push(i); p=i+1; } return r; }
     _inDlg(t,pos) { const b=t.substring(0,pos); for(const[o,c]of[['"','"'],['"','"'],['「','」']]){const lo=b.lastIndexOf(o);if(lo>-1&&lo>b.lastIndexOf(c))return true;} return false; }
     _getDlg(t,pos) { for(const[o,c]of[['"','"'],['"','"'],['「','」']]){const s=t.lastIndexOf(o,pos);if(s===-1)continue;const e=t.indexOf(c,s+1);if(e>-1&&e>=pos)return t.substring(s+1,e);} return null; }
@@ -467,7 +467,7 @@ export class LocationDetector {
             // 영어: "meet at ~", "let's go to ~ tomorrow"
             /(?:tomorrow|next\s+(?:time|week|month)|later|weekend|tonight|this\s+weekend)\s+(?:at|in|to)\s+(.{2,20})/i,
             /(?:meet|see you|let'?s go|travel|trip|visit|head)\s+(?:at|to|in)\s+(.{2,20}?)(?:\s+(?:tomorrow|next|later|tonight|this|soon))?/i,
-            /(?:let'?s|we\s+should|we\s+could)\s+(?:go|travel|fly|drive|head)\s+(?:to|for)\s+(.{2,20})/i,
+            /(?:let'?s|we'?ll|we\s+(?:should|could|can|are\s+going\s+to|will|gotta))\s+(?:go|travel|fly|drive|head|visit|hit)\s+(?:to|for)?\s*(.{2,20})/i,
             // 영어: "Tomorrow. 'Tesco Run'" 형태 (일정/계획 스타일)
             /[Tt]omorrow[.\s]+['"']?([A-Z][a-zA-Z]+)\s*(?:Run|Trip|Visit|Shopping|Day|Tour)['"']?/,
             /(?:schedule|calendar|planned|plan)[^.]{0,30}?[''""]([A-Z][a-zA-Z\s]{1,20}?)[''"" ]/i,
@@ -478,7 +478,7 @@ export class LocationDetector {
         for (const pat of patterns) {
             const m = clean.match(pat);
             if (m?.[1]) {
-                const place = m[1].replace(/[,."'!?…]+$/g, '').trim();
+                const place = m[1].replace(/[\[\](){}「」""''",.'!?…:;]+/g, '').replace(/\s+/g, ' ').trim();
                 if (place.length >= 1 && place.length <= 15 && !this._isSkip(place)) {
                     return place;
                 }
