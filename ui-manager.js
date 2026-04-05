@@ -1622,7 +1622,7 @@ export class UIManager {
             const id = bs.attr('data-id');
             if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
-            if (action === 'dist' && id) { console.log(`[${EXTENSION_NAME}] 📏 Distance button clicked: ${id}`); if (self._bsStage < 3) self._applyBsStage(3); setTimeout(() => self._showDistanceMeasure(id), 200); }
+            if (action === 'dist' && id) { self._showDistanceMeasure(id); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
         });
         bs.find('.wt-bs-tab').on('click', function(e) {
@@ -2084,7 +2084,7 @@ export class UIManager {
 
         const bs = $('#wt-bottomsheet');
         bs.html(html).show().css({ background: '#fff' });
-        this._applyBsStage(1);
+        this._applyBsStage(2); // half — 타임라인과 동일 높이
         this._bindBsDrag(bs[0]);
         bs.find('.wt-bs-handle').css({ position: 'sticky', top: 0, zIndex: 10, background: '#fff' });
 
@@ -2178,14 +2178,13 @@ export class UIManager {
         const others = this.lm.locations.filter(l => l.id !== locId && !l.parentId);
         if (!others.length) { toastSuccess('📏 다른 장소가 없어요!'); return; }
 
-        $('#wt-dist-popup').remove();
         const self = this;
+        const bs = $('#wt-bottomsheet');
 
         let listHtml = others.map(o => {
             const existing = this.lm.getDistanceBetween(locId, o.id);
             const st = this.leafletRenderer?._locStyle?.(o.name) || { emoji: '📍' };
 
-            // GPS 좌표 있으면 직선거리 계산
             let autoInfo = '';
             if (loc.lat && loc.lng && o.lat && o.lng) {
                 const R = 6371000;
@@ -2193,7 +2192,7 @@ export class UIManager {
                 const dLon = (o.lng - loc.lng) * Math.PI / 180;
                 const a = Math.sin(dLat/2)**2 + Math.cos(loc.lat*Math.PI/180) * Math.cos(o.lat*Math.PI/180) * Math.sin(dLon/2)**2;
                 const meters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-                const walkMin = Math.round((meters * 1.4) / 80); // 도보 80m/min + 1.4보정
+                const walkMin = Math.max(1, Math.round((meters * 1.4) / 80));
                 autoInfo = `<span style="font-size:10px;color:#2B8A6E;font-weight:500">${meters}m · 도보 ${walkMin}분</span>`;
             }
 
@@ -2209,24 +2208,32 @@ export class UIManager {
             </div>`;
         }).join('');
 
-        const popup = $(`<div id="wt-dist-popup" style="position:absolute;bottom:0;left:0;right:0;max-height:60vh;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);z-index:10001;overflow:hidden;font-family:-apple-system,'Noto Sans KR',sans-serif">
-            <div style="display:flex;justify-content:center;padding:12px 0 4px"><div style="width:32px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
-            <div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between">
-                <div style="font-size:15px;font-weight:800;color:#202124">📏 ${loc.name}에서의 거리</div>
-                <span id="wt-dist-close" style="font-size:18px;color:#9AA0A6;cursor:pointer;padding:4px">✕</span>
-            </div>
-            <div style="padding:4px 16px 16px;overflow-y:auto;max-height:45vh;-webkit-overflow-scrolling:touch">${listHtml}</div>
-        </div>`);
+        const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:14px 0 8px;min-height:44px;cursor:pointer;position:sticky;top:0;z-index:10;background:#fff;border-radius:16px 16px 0 0"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
+            <div style="padding:8px 14px;overflow-y:auto">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                    <span class="wt-dist-back" data-locid="${locId}" style="font-size:18px;cursor:pointer;color:#9AA0A6">←</span>
+                    <div style="font-size:15px;font-weight:800;color:#202124">📏 ${loc.name}에서의 거리</div>
+                </div>
+                ${listHtml}
+            </div>`;
 
-        $('#wt-bottomsheet').append(popup);
-        popup.find('#wt-dist-close').on('click', () => popup.remove());
+        bs.html(html).show().css({ background: '#fff' });
+        this._applyBsStage(2);
+        this._bindBsDrag(bs[0]);
 
-        popup.find('.wt-dist-item').on('click', async function() {
+        // ← 뒤로가기
+        bs.find('.wt-dist-back').on('click', (e) => {
+            e.stopPropagation();
+            const lid = $(e.currentTarget).data('locid');
+            self._showBottomSheet(lid);
+        });
+
+        // 장소 클릭 → 거리 자동 저장
+        bs.find('.wt-dist-item').on('click', async function() {
             const otherId = $(this).data('id');
             const other = self.lm.locations.find(l => l.id === otherId);
             if (!other) return;
 
-            // GPS 좌표 있으면 자동 계산
             if (loc.lat && loc.lng && other.lat && other.lng) {
                 const R = 6371000;
                 const dLat = (other.lat - loc.lat) * Math.PI / 180;
@@ -2238,15 +2245,13 @@ export class UIManager {
                 const level = walkMin <= 1 ? 1 : walkMin <= 3 ? 2 : walkMin <= 5 ? 3 : walkMin <= 8 ? 4 : walkMin <= 12 ? 5 : walkMin <= 15 ? 6 : walkMin <= 20 ? 7 : walkMin <= 30 ? 8 : 9;
 
                 await self.lm.setDistance(locId, otherId, distText, null, level);
-                popup.remove();
                 toastSuccess(`📏 ${loc.name} ↔ ${other.name}: ${meters}m (${distText})`);
                 self.pi?.inject();
-                if (self.panelVisible) self.refresh();
+                // 리스트 리렌더
+                self._showDistanceMeasure(locId);
             } else {
-                // GPS 없으면 팝오버로 수동 설정
-                popup.remove();
-                self._hideBottomSheet();
-                self.showPop(locId);
+                self._showBottomSheet(locId);
+                setTimeout(() => { self._hideBottomSheet(); self.showPop(locId); }, 200);
                 toastSuccess('📏 좌표가 없어서 수동 설정으로 이동합니다');
             }
         });
