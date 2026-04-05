@@ -457,10 +457,22 @@ export class LocationDetector {
             // 한국어: "~로 여행가자", "~로 가자", "~에 놀러가자"
             /(?:내일|모레|다음에|나중에|주말에|다음달|다음주|이번주말?)\s*(.{1,15}?)(?:로|으로)\s*(?:여행|놀러|출발|떠나|가자|갈까|가볼까)/,
             /(.{1,15}?)(?:로|으로)\s*(?:여행\s*가자|여행\s*갈까|놀러\s*가자|놀러\s*갈까|떠나자|떠날까|출발)/,
+            // 한국어: "테스코 나들이", "마트 장보기", "~쇼핑" (일정/계획 형태)
+            /(?:내일|모레|다음에|주말에|다음달|다음주)[.\s]+['"']?(.{1,15}?)\s*(?:나들이|장보기|쇼핑|탐방|투어|가기|방문|데이트)/,
+            /[''""](.{1,15}?)\s*(?:나들이|Run|Trip|Shopping|Tour)[''""]/i,
+            // 한국어: "~에 가기로", "~갈 예정", "~갈 거야"
+            /(.{1,15}?)(?:에|로)\s*(?:가기로|갈\s*예정|갈\s*거[야예]|갈\s*계획|가자고)/,
+            // 한국어: 일정/달력/스케줄에 장소 언급
+            /(?:일정|달력|스케줄|schedule|calendar)[^.]{0,30}?[''""](.{1,15}?)[''"" ]/i,
             // 영어: "meet at ~", "let's go to ~ tomorrow"
             /(?:tomorrow|next\s+(?:time|week|month)|later|weekend|tonight|this\s+weekend)\s+(?:at|in|to)\s+(.{2,20})/i,
             /(?:meet|see you|let'?s go|travel|trip|visit|head)\s+(?:at|to|in)\s+(.{2,20}?)(?:\s+(?:tomorrow|next|later|tonight|this|soon))?/i,
             /(?:let'?s|we\s+should|we\s+could)\s+(?:go|travel|fly|drive|head)\s+(?:to|for)\s+(.{2,20})/i,
+            // 영어: "Tomorrow. 'Tesco Run'" 형태 (일정/계획 스타일)
+            /[Tt]omorrow[.\s]+['"']?([A-Z][a-zA-Z]+)\s*(?:Run|Trip|Visit|Shopping|Day|Tour)['"']?/,
+            /(?:schedule|calendar|planned|plan)[^.]{0,30}?[''""]([A-Z][a-zA-Z\s]{1,20}?)[''"" ]/i,
+            // 영어: "~ tomorrow", "~ this weekend"
+            /[''""]([A-Z][a-zA-Z\s]{1,15}?)[''""]\s*\.?\s*(?:tomorrow|next week|this weekend|tonight)/i,
         ];
 
         for (const pat of patterns) {
