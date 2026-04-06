@@ -428,7 +428,11 @@ export class LocationDetector {
             'very','just','also','only','even','still','already','never','always',
             'said','told','asked','went','came','got','had','was','were','been',
             'can','will','shall','may','might','could','would','should',
-            'them','they','their','its','our','him','she','who','what','how','why','when'];
+            'them','they','their','its','our','him','she','who','what','how','why','when',
+            'family','supply','tactical','quick','little','big','small','great','good','bad',
+            'nice','proper','simple','easy','hard','long','short','new','old','real',
+            'whole','entire','full','half','daily','weekly','morning','evening','night',
+            'emergency','routine','regular','special','secret','final','last','first','next'];
         if (skipEn.includes(lower)) return true;
         if (place.length <= 1) return true;
         return false;
