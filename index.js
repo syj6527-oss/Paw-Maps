@@ -122,6 +122,11 @@ async function scanMessage(text, source = 'USER') {
         if (locMatch) {
             let metaLoc = locMatch[1].trim().replace(/[`*_]/g, '');
             if (metaLoc.length >= 2 && metaLoc.length <= 80) {
+                // ★ 영어만 2글자 이하 → 스킵 (th, am, pm 등 오탐 방지)
+                if (/^[a-zA-Z\s]+$/.test(metaLoc) && metaLoc.trim().length <= 2) {
+                    dbg(`⏭️ Meta location too short (EN): "${metaLoc}"`);
+                    return false;
+                }
                 dbg(`📌 Meta location raw: "${metaLoc}"`);
 
                 // ★ 이동 중/차량 내부 → 장소 등록 건너뛰기 (현재 위치 유지)
