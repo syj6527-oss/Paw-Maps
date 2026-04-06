@@ -154,9 +154,7 @@ async function scanMessage(text, source = 'USER') {
                         metaLoc = lastPart;
                     }
                 }
-                    if (lm.currentLocationId) await _tryEvent(text, lm.currentLocationId, source);
-                    return true;
-                }
+
                 // ★ "Parent - Sub" 또는 "Parent — Sub" 형태 분리
                 let metaParent = null, metaSub = null;
                 const sepMatch = metaLoc.match(/^(.+?)\s*[-–—]\s*([\uAC00-\uD7A3A-Za-z].+)$/);
