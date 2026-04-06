@@ -124,6 +124,39 @@ async function scanMessage(text, source = 'USER') {
             if (metaLoc.length >= 2 && metaLoc.length <= 80) {
                 dbg(`📌 Meta location raw: "${metaLoc}"`);
 
+                // ★ 이동 중/차량 내부 → 장소 등록 건너뛰기 (현재 위치 유지)
+                const transitSkip = /이동\s*중|향으로\s*이동|밴\s*내부|차량\s*내부|차\s*안|버스\s*안|택시\s*안|SUV\s*내부|en\s*route|in\s*transit|on\s+the\s+way|driving|riding|heading\s+to|moving\s+to/i;
+                if (transitSkip.test(metaLoc)) {
+                    dbg(`🚗 Transit location skipped: "${metaLoc}"`);
+                    await _tryEvent(text, lm.currentLocationId, source);
+                    return true;
+                }
+
+                // ★★★ 핵심 방어: 30자 초과 서술형 Location → 무조건 현재 장소 별칭
+                if (metaLoc.length > 30 && lm.currentLocationId) {
+                    const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
+                    if (curLoc) {
+                        dbg(`🔀 Long meta loc (${metaLoc.length}c) "${metaLoc}" → alias to "${curLoc.name}"`);
+                        const aliases = [...new Set([...(curLoc.aliases || []), metaLoc])];
+                        await lm.updateLocation(curLoc.id, { aliases });
+                        await _tryEvent(text, curLoc.id, source);
+                        return true;
+                    }
+                }
+
+                // ★ 콤마 구분자 정리: "영국 헤리퍼드, NCO Barracks 1층" → 마지막 파트만 사용
+                if (metaLoc.includes(',')) {
+                    const parts = metaLoc.split(',').map(p => p.trim()).filter(p => p.length >= 2);
+                    if (parts.length >= 2) {
+                        // 마지막 파트가 장소명일 가능성 높음
+                        const lastPart = parts[parts.length - 1];
+                        dbg(`📌 Comma split: "${metaLoc}" → last part: "${lastPart}"`);
+                        metaLoc = lastPart;
+                    }
+                }
+                    if (lm.currentLocationId) await _tryEvent(text, lm.currentLocationId, source);
+                    return true;
+                }
                 // ★ "Parent - Sub" 또는 "Parent — Sub" 형태 분리
                 let metaParent = null, metaSub = null;
                 const sepMatch = metaLoc.match(/^(.+?)\s*[-–—]\s*([\uAC00-\uD7A3A-Za-z].+)$/);
@@ -163,20 +196,51 @@ async function scanMessage(text, source = 'USER') {
                 }
 
                 dbg(`📌 Meta location: "${metaLoc}"`);
+
+                // ★ 괄호 내용 제거 후 정리 ("집 (22nd's old NCO Barracks) 주방" → "집 주방")
+                const metaClean = metaLoc.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+
                 // ★ 서브로케이션 체크 (거실, 부엌 등 → 현재 장소의 하위)
-                if (lm.isSubLocation(metaLoc) && lm.currentLocationId) {
-                    const sub = await lm.findOrCreateSub(lm.currentLocationId, metaLoc);
+                if (lm.isSubLocation(metaClean) && lm.currentLocationId) {
+                    const sub = await lm.findOrCreateSub(lm.currentLocationId, metaClean);
                     await lm.moveToSub(sub.id);
                     const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
-                    dbg(`🏠 Sub-location: "${curLoc?.name} > ${metaLoc}"`);
+                    dbg(`🏠 Sub-location: "${curLoc?.name} > ${metaClean}"`);
                     pi.inject();
-                    await _tryEvent(text, sub.id, source); // ★ 이벤트는 서브에 저장!
+                    await _tryEvent(text, sub.id, source);
                     return true;
-                }                // 기존 장소에 있는지 확인
-                const existing = lm.locations.find(l =>
-                    l.name.toLowerCase() === metaLoc.toLowerCase() ||
-                    (l.aliases || []).some(a => a.toLowerCase() === metaLoc.toLowerCase())
-                );
+                }
+
+                // ★ 기존 장소 매칭 — 부분 포함 + 단어 겹침 검사
+                const metaLower = metaLoc.toLowerCase();
+                const metaCleanLower = (metaClean || metaLoc).toLowerCase();
+                // 메타데이터에서 핵심 단어 추출 (2글자 이상)
+                const metaWords = new Set(metaLower.replace(/[()[\]{}"',./\\-]/g, ' ').split(/\s+/).filter(w => w.length >= 2));
+
+                const existing = lm.locations.find(l => {
+                    const n = l.name.toLowerCase();
+                    // 1. 정확히 일치
+                    if (n === metaLower || n === metaCleanLower) return true;
+                    // 2. 기존 이름이 메타데이터에 포함
+                    if (n.length >= 2 && (metaLower.includes(n) || metaCleanLower.includes(n))) return true;
+                    // 3. 메타데이터가 기존 이름에 포함
+                    if (metaCleanLower.length >= 3 && n.includes(metaCleanLower)) return true;
+                    // 4. 별칭 매칭
+                    if ((l.aliases || []).some(a => {
+                        const al = a.toLowerCase();
+                        return al === metaLower || al === metaCleanLower || (al.length >= 2 && metaLower.includes(al)) || (metaCleanLower.length >= 3 && al.includes(metaCleanLower));
+                    })) return true;
+                    // 5. ★ 단어 겹침 매칭 (핵심 단어 50%+ 겹치면 같은 곳)
+                    const locWords = new Set(n.replace(/[()[\]{}"',./\\-]/g, ' ').split(/\s+/).filter(w => w.length >= 2));
+                    const allAliasWords = (l.aliases || []).flatMap(a => a.toLowerCase().split(/\s+/).filter(w => w.length >= 2));
+                    allAliasWords.forEach(w => locWords.add(w));
+                    if (locWords.size >= 1 && metaWords.size >= 1) {
+                        let overlap = 0;
+                        for (const w of metaWords) { if (locWords.has(w)) overlap++; }
+                        if (overlap >= 1 && overlap / Math.min(locWords.size, metaWords.size) >= 0.4) return true;
+                    }
+                    return false;
+                });
                 if (existing) {
                     if (lm.currentLocationId !== existing.id) {
                         await lm.moveTo(existing.id, rpDate);
@@ -192,11 +256,10 @@ async function scanMessage(text, source = 'USER') {
                         // ★ 위치 기반 중복 방지: AI가 현재 위치의 다른 이름을 언급한 경우
                         if (mode === 'ai' && lm.currentLocationId) {
                             const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
-                            const lastMove = lm.movements.length ? lm.movements[lm.movements.length - 1] : null;
-                            // 최근 2분 이내에 이동한 곳이면 → 같은 곳의 구체적 이름일 확률 높음
-                            if (curLoc && lastMove && (Date.now() - lastMove.timestamp < 120000)) {
-                                dbg(`🔀 AI loc "${metaLoc}" at current "${curLoc.name}" → auto-alias`);
-                                const aliases = [...(curLoc.aliases || []), metaLoc];
+                            // ★ AI 메타데이터 Location은 대부분 현재 위치의 변형 → 항상 별칭으로 처리
+                            if (curLoc) {
+                                dbg(`🔀 AI meta loc "${metaLoc}" at current "${curLoc.name}" → auto-alias`);
+                                const aliases = [...new Set([...(curLoc.aliases || []), metaLoc, metaClean].filter(Boolean))];
                                 await lm.updateLocation(curLoc.id, { aliases });
                                 wtNotify(`📎 "${metaLoc}" → "${curLoc.name}"의 별칭`, 'info', 3000);
                                 await _tryEvent(text, curLoc.id, source);

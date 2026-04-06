@@ -360,7 +360,6 @@ export class UIManager {
                                 <button id="wt-pop-event-add" class="wt-btn-accent wt-btn-s">+</button>
                             </div>
                         </div>
-                        <input type="text" id="wt-pop-status" class="wt-input" placeholder="상태 (붐빔, 한산...)"/>
                         <div style="font-size:12px;color:#9A8A7A;margin-top:2px">🏷️ 별칭 (쉼표 구분)</div>
                         <input type="text" id="wt-pop-aliases" class="wt-input" placeholder="예: 사격장, Shooting range" style="font-size:12px"/>
                         <div id="wt-pop-sub-section" style="margin-top:6px;display:none">
@@ -1048,7 +1047,7 @@ export class UIManager {
         $('#wt-pop-title').val(l.name); $('#wt-pop-visits').text(l.visitCount||0);
         $('#wt-pop-first').text(l.rpFirstVisited || (l.firstVisited?this._fmt(l.firstVisited):'—'));
         $('#wt-pop-last').text(l.rpLastVisited || (l.lastVisited?this._fmt(l.lastVisited):'—'));
-        $('#wt-pop-memo').val(l.memo||''); $('#wt-pop-status').val(l.status||'');
+        $('#wt-pop-memo').val(l.memo||'');
         $('#wt-pop-ainotes').val(l.aiNotes||'');
         // ★ 터줏대감 목록 렌더
         const npcList = $('#wt-pop-npcs-list');
@@ -1198,6 +1197,8 @@ export class UIManager {
                     <div style="font-size:11px;color:#70757A">방문 ${sub.visitCount || 0}회${isCur ? ' · 현재 🐾' : ''}</div>
                 </div>
             </div>
+            <div style="font-size:12px;color:#9A8A7A">🏷️ 별칭 (쉼표 구분)</div>
+            <input type="text" id="wt-subpop-aliases" class="wt-input" placeholder="예: 리빙룸, Living Room" style="font-size:12px" value="${(sub.aliases||[]).join(', ')}"/>
             <div style="font-size:12px;color:#9A8A7A">💭 메모</div>
             <textarea id="wt-subpop-memo" class="wt-input" placeholder="예: 소파가 편해서 맨날 잠" style="height:45px;resize:none;font-size:12px">${sub.memo || ''}</textarea>
             <div style="font-size:12px;color:#9A8A7A">🤖 특이사항 (AI에게만 전달)</div>
@@ -1227,9 +1228,11 @@ export class UIManager {
         overlay.find('#wt-subpop-close').on('click', () => { overlay.remove(); self.hidePop(); });
         // 💾 저장
         overlay.find('#wt-subpop-save').on('click', async () => {
+            const aliases = overlay.find('#wt-subpop-aliases').val().split(',').map(a=>a.trim()).filter(Boolean);
             await self.lm.updateLocation(subId, {
                 memo: overlay.find('#wt-subpop-memo').val().trim(),
                 aiNotes: overlay.find('#wt-subpop-ainotes').val().trim(),
+                aliases,
             });
             toastSuccess('💾 저장!');
             self.pi?.inject();
@@ -2533,10 +2536,9 @@ export class UIManager {
         const aliases = $('#wt-pop-aliases').val().split(',').map(a=>a.trim()).filter(Boolean);
         const update = {
             memo:$('#wt-pop-memo').val().trim(),
-            status:$('#wt-pop-status').val().trim(),
             aliases: aliases,
             aiNotes:$('#wt-pop-ainotes').val().trim(),
-            locationType: $('#wt-pop-icon-type').val() || '',  // Task 5: 아이콘 타입
+            locationType: $('#wt-pop-icon-type').val() || '',
         };
         // 이름 변경
         if (newName) update.name = newName;
