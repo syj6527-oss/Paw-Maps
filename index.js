@@ -117,6 +117,27 @@ async function scanMessage(text, source = 'USER') {
         const mode = source === 'AI' ? 'ai' : 'user';
         const rpDate = _extractRpDate(text);
 
+        // ★ 약속 장소 감지 — 메타 Location 처리와 독립적으로 항상 실행
+        if (lm.currentLocationId) {
+            try {
+                const promisePlace = det.detectPromisePlace(text);
+                if (promisePlace && !lm.findByName(promisePlace)) {
+                    const loc = await lm.addLocation(promisePlace);
+                    if (loc) {
+                        loc.tags = ['wantToGo'];
+                        loc._tempAddress = true;
+                        loc.memo = '📅 약속 장소 (주소 미확정)';
+                        if (!loc.events) loc.events = [];
+                        loc.events.push({ text: `📅 약속 장소로 등록됨`, title: '약속 장소', mood: '📅', timestamp: Date.now(), rpDate, source: 'auto' });
+                        await lm.updateLocation(loc.id, { tags: loc.tags, events: loc.events, _tempAddress: true, memo: loc.memo });
+                        dbg(`📅 Promise place (early): "${promisePlace}" (temp address)`);
+                        if (extension_settings[EXTENSION_NAME]?.showDetectToast) wtNotify(`📅 약속 장소: ${promisePlace} (주소 미확정)`, 'new', 3500);
+                        pi.inject(); if (ui?.panelVisible) ui.refresh();
+                    }
+                }
+            } catch(e) { dbg('⚠️ Promise detect error:', e.message); }
+        }
+
         // ★ 메타데이터에서 Location 직접 추출 (memo/yaml 블록)
         const locMatch = text.match(/[-*]\s*Location[:\s]+(.+)/i);
         if (locMatch) {
@@ -374,26 +395,7 @@ async function scanMessage(text, source = 'USER') {
             } catch(e) { dbg('⚠️ NPC detect error:', e.message); }
         }
 
-        // ★ 약속 장소 감지 ("내일 ~에서 만나자")
-        if (lm.currentLocationId) {
-            try {
-                const promisePlace = det.detectPromisePlace(text);
-                if (promisePlace && !lm.findByName(promisePlace)) {
-                    const loc = await lm.addLocation(promisePlace);
-                    if (loc) {
-                        loc.tags = ['wantToGo'];
-                        loc._tempAddress = true;
-                        loc.memo = '📅 약속 장소 (주소 미확정)';
-                        if (!loc.events) loc.events = [];
-                        loc.events.push({ text: `📅 약속 장소로 등록됨`, title: '약속 장소', mood: '📅', timestamp: Date.now(), source: 'auto' });
-                        await lm.updateLocation(loc.id, { tags: loc.tags, events: loc.events, _tempAddress: true, memo: loc.memo });
-                        dbg(`📅 Promise place: "${promisePlace}" (temp address)`);
-                        if (extension_settings[EXTENSION_NAME]?.showDetectToast) wtNotify(`📅 약속 장소: ${promisePlace} (주소 미확정)`, 'new', 3500);
-                        pi.inject(); if (ui?.panelVisible) ui.refresh();
-                    }
-                }
-            } catch(e) { dbg('⚠️ Promise detect error:', e.message); }
-        }
+        // (약속 장소 감지는 메타 Location 처리 전에 이미 실행됨)
 
         return false;
     } catch(e) { console.error(`[${EXTENSION_NAME}] Scan:`, e); return false; }
