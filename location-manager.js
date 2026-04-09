@@ -275,6 +275,16 @@ export class LocationManager {
             l.name.toLowerCase() === lo || (l.aliases || []).some(a => a.toLowerCase() === lo)
         );
         if (direct) return direct;
+        // ★ 부분 포함 매칭 (3글자 이상일 때: "Barracks" ⊂ "NCO Barracks")
+        if (lo.length >= 3) {
+            const partial = this.locations.find(l => {
+                const n = l.name.toLowerCase();
+                if (n.includes(lo) || lo.includes(n)) return true;
+                if ((l.aliases || []).some(a => { const al = a.toLowerCase(); return al.includes(lo) || lo.includes(al); })) return true;
+                return false;
+            });
+            if (partial) return partial;
+        }
         // 한영 사전 매칭
         for (const group of LocationManager.PLACE_DICT) {
             const glo = group.map(w => w.toLowerCase());
@@ -300,7 +310,7 @@ export class LocationManager {
         await this.db.putLocation(loc);
         if (prevId && prevId !== locationId) {
             const d = this.getDistanceBetween(prevId, locationId);
-            const mov = { chatId: this.currentChatId, fromId: prevId, toId: locationId, timestamp: Date.now(), distance: d?.distanceText || null };
+            const mov = { chatId: this.currentChatId, fromId: prevId, toId: locationId, timestamp: Date.now(), rpDate: rpDate || '', distance: d?.distanceText || null };
             await this.db.addMovement(mov); this.movements.push(mov);
         }
         this.currentLocationId = locationId;

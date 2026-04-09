@@ -102,6 +102,24 @@ export class LocationDetector {
             '대문','뒷문','쪽문','현관','정원','화단','잔디','연못',
             '의식','무의식','직감','본능','반사','경험','감각','인식','판단','결정',
             '기술','능력','실력','경험','자격','권한','의무','책임','규칙','규율',
+            // ★ 한국어 형용사/부사 오탐 방지 (~적, ~적인, ~스러운 등)
+            '일반적','일반적인','전반적','전반적인','기본적','기본적인','전형적','전형적인',
+            '공식적','공식적인','비공식','개인적','개인적인','사회적','국제적','역사적',
+            '일시적','일시적인','영구적','임시적','물리적','심리적','정신적','육체적',
+            '논리적','감정적','이성적','본능적','직관적','객관적','주관적','상대적','절대적',
+            '극적','극적인','비극적','희극적','낭만적','현실적','이상적','합리적','비합리적',
+            '효과적','실질적','구체적','추상적','일방적','상호적','전략적','전술적',
+            '일반','보통','평범','특별','특수','정상','비정상','자연스','부자연',
+            // ★ 성인 RP 오탐 방지 (야한 씬에서 장소로 잡히는 단어들)
+            '정액','절정','쾌감','오르가즘','흥분','자극','쾌락','욕정','정욕','욕망',
+            '사정','삽입','애무','전희','후희','관계','체위','속도','강도','리듬',
+            '신음','숨결','호흡','땀','열기','온기','체온','떨림','경련','수축',
+            '엉덩이','골반','허벅지','사타구니','가랑이','겨드랑이','젖꼭지',
+            // ★ 조사 붙은 형태 + 캐릭터 한국어명 오탐 방지
+            '통을','것을','곳을','때를','말을','날을','밤을','손을','눈을','입을',
+            '알레한드','알레한드로','호랑이','프라이스','고스트','솝','쾨니히','쾨니그',
+            '맥태비시','가즈','라스웰','셰퍼드','니콜라이','파라','로즈','발레리아',
+            '홍진','예린','지훈','민수','서연','하은','수빈','도윤','지우','시우',
         ];
         this.singleKo = ['집','방','숲','강','산','역','관','점','원','장'];
 
@@ -135,6 +153,7 @@ export class LocationDetector {
         this.skipMods = [
             'the','a','an','this','that','its','his','her','their','my','our',
             'old','new','big','small','dark','bright','lit','large','little',
+            'very','quite','really','pretty','rather','fairly','super','ultra',
             'metal','wooden','stone','steel','stainless','plastic','heavy',
             'entered','reached','left','to','at','into','from','of','in','on',
             'toward','towards','inside','through','open',
@@ -330,8 +349,11 @@ export class LocationDetector {
         const lo = clean.toLowerCase();
 
         // 1) 도시명 매칭 (Bug F: 영어는 단어 경계 체크)
+        const foodCtx = /chocolate|coffee|tea|cake|cookie|pizza|burger|steak|food|cuisine|restaurant|dish|recipe|flavor|taste|spice/i;
         for (const city of this.cityNames) {
             if (this.lm.findByName(city)) continue;
+            // ★ 음식/브랜드 맥락이면 도시명 스킵 ("Dubai chocolate" → 스킵)
+            if (foodCtx.test(clean)) continue;
             if (/[a-zA-Z]/.test(city)) {
                 const rx = new RegExp('\\b' + city.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
                 if (rx.test(clean)) { console.log(`[${EXTENSION_NAME}] 📋 desc city: "${city}"`); return city; }
@@ -349,7 +371,12 @@ export class LocationDetector {
             let name = m[0].trim();
             const words = name.split(/\s+/);
             if (words.length > 1 && this.skipMods.includes(words[0].toLowerCase())) name = words.slice(1).join(' ');
+            // ★ 선행 관사/접속사 제거 ("And gynecology clinic" → "gynecology clinic")
+            name = name.replace(/^(?:And|The|A|An|Or|But|In|On|At|Of|For|By|To)\s+/i, '');
             name = name.charAt(0).toUpperCase() + name.slice(1);
+            // ★ 서브장소 키워드 단독이면 독립 장소 등록 안 함 (#11)
+            const bareSubKw = /^(?:room|kitchen|bathroom|bedroom|living\s*room|hall|lobby|office|garage|basement|attic|balcony|거실|부엌|주방|침실|화장실|방|복도|현관)s?$/i;
+            if (bareSubKw.test(name)) continue;
             if (name.length >= 3 && name.length <= 30 && !this.lm.findByName(name)) {
                 console.log(`[${EXTENSION_NAME}] 📋 desc place: "${name}"`);
                 return name;
@@ -403,6 +430,8 @@ export class LocationDetector {
         if (this.lm.findByName(c)) return false;
         if (this.skipKo.includes(c)) return false;
         if (c.length === 2 && /[을를이가에은는도로서]$/.test(c)) return false;
+        // ★ 한국어 형용사/부사 접미사 → 장소 아님
+        if (/[적]인?$|스러[운운]|[답]게?$|[롭]게?$/.test(c)) return false;
         // ★ 두 글자 한글: 조사 붙은 형태, 순수 동사/형용사 어근 필터
         if (c.length === 2 && /^[가-힣]{2}$/.test(c)) {
             // 동사/형용사 어근 (X다, X고, X며, X면, X서, X니, X게, X지, X듯, X적)
@@ -432,7 +461,29 @@ export class LocationDetector {
             'family','supply','tactical','quick','little','big','small','great','good','bad',
             'nice','proper','simple','easy','hard','long','short','new','old','real',
             'whole','entire','full','half','daily','weekly','morning','evening','night',
-            'emergency','routine','regular','special','secret','final','last','first','next'];
+            'emergency','routine','regular','special','secret','final','last','first','next',
+            'immediate','absolute','terrible','beautiful','brilliant','bloody','fucking',
+            'civilian','military','tactical','strategic','operational','critical','vital',
+            'another','other','same','such','much','many','some','any','every','each',
+            'after','before','during','since','until','while','about','around','through',
+            'again','away','down','off','out','up','near','far','above','below',
+            // ★ RP 캐릭터 이름 오탐 방지
+            'price','soap','ghost','gaz','alejandro','horangi','könig','konig','valeria',
+            'captain','lieutenant','sergeant','corporal','private','commander','general',
+            'doctor','nurse','professor','teacher','master','boss','chief','sir','madam',
+            // ★ 사물/도구 오탐 방지
+            'tablet','phone','laptop','computer','screen','monitor','keyboard','radio',
+            'weapon','rifle','pistol','gun','knife','sword','grenade','bullet','magazine',
+            'chair','table','desk','bed','sofa','couch','door','window','wall','floor',
+            'plate','cup','mug','glass','bottle','bowl','spoon','fork','paper','card',
+            'bag','box','case','pack','kit','vest','mask','hood','helmet','boot','glove',
+            // ★ 성인 RP 오탐 방지
+            'cum','climax','orgasm','thrust','moan','groan','pant','gasp','shudder',
+            'breast','chest','thigh','hip','groin','crotch','nipple','cock','dick',
+            'arousal','erection','penetration','rhythm','pace','intensity','friction',
+            // ★ 음식/물건 + placeWord 조합 오탐 방지
+            'chocolate','coffee','protein','candy','snack','energy','cereal','granola',
+            'iron','steel','crow','towel','mini','wet','dry','cold','hot','raw'];
         if (skipEn.includes(lower)) return true;
         if (place.length <= 1) return true;
         return false;

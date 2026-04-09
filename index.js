@@ -139,9 +139,36 @@ async function scanMessage(text, source = 'USER') {
         }
 
         // ★ 메타데이터에서 Location 직접 추출 (memo/yaml 블록)
-        const locMatch = text.match(/[-*]\s*Location[:\s]+(.+)/i);
+        // HTML 태그 제거 후 다양한 포맷 매칭
+        const cleanForMeta = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+        const locPatterns = [
+            /[-*•]\s*Location\s*[:：]\s*(.+)/i,
+            /Location\s*[:：]\s*(.+)/i,
+            /📍\s*Location\s*[:：]\s*(.+)/i,        // ★ Celia/P&C 이모지 형식
+            /[-*•]\s*장소\s*[:：]\s*(.+)/,
+            /[-*•]\s*위치\s*[:：]\s*(.+)/,
+            /[-*•]\s*Place\s*[:：]\s*(.+)/i,
+            /[-*•]\s*Scene\s*[:：]\s*(.+)/i,
+            /[-*•]\s*Current\s+Location\s*[:：]\s*(.+)/i,
+        ];
+        let locMatch = null;
+        for (const pat of locPatterns) {
+            const m = cleanForMeta.match(pat);
+            if (m) { locMatch = m; break; }
+        }
+        // 원본 텍스트에서도 시도 (HTML 태그 안에 있을 수 있음)
+        if (!locMatch) {
+            const m2 = text.match(/[-*•]\s*Location\s*[:：]\s*(.+)/i);
+            if (m2) locMatch = m2;
+        }
         if (locMatch) {
-            let metaLoc = locMatch[1].trim().replace(/[`*_]/g, '');
+            let metaLoc = locMatch[1].trim()
+                .replace(/[`*_]/g, '')           // 마크다운 제거
+                .replace(/<[^>]*>/g, '')          // 잔여 HTML 제거
+                .replace(/\s+/g, ' ')             // 공백 정리
+                .replace(/[\r\n]+/g, '')          // 줄바꿈 제거
+                .split(/[-–—]\s*(?:Time|Date|Characters|Outfit|Items|Condition|시간|캐릭터|복장)/i)[0]  // 다음 필드 시작 전까지만
+                .trim();
             if (metaLoc.length >= 2 && metaLoc.length <= 80) {
                 // ★ 영어만 2글자 이하 → 스킵 (th, am, pm 등 오탐 방지)
                 if (/^[a-zA-Z\s]+$/.test(metaLoc) && metaLoc.trim().length <= 2) {
@@ -150,24 +177,19 @@ async function scanMessage(text, source = 'USER') {
                 }
                 dbg(`📌 Meta location raw: "${metaLoc}"`);
 
-                // ★ 이동 중/차량 내부 → 장소 등록 건너뛰기 (현재 위치 유지)
-                const transitSkip = /이동\s*중|향으로\s*이동|밴\s*내부|차량\s*내부|차\s*안|버스\s*안|택시\s*안|SUV\s*내부|en\s*route|in\s*transit|on\s+the\s+way|driving|riding|heading\s+to|moving\s+to/i;
+                // ★ 이동 중/차량/탈것 내부 → 장소 등록 건너뛰기
+                const transitSkip = /이동\s*중|향으로\s*이동|밴\s*내부|차량\s*내부|차\s*안|버스\s*안|택시\s*안|SUV|뒷좌석|앞좌석|조수석|운전석|트렁크|차\s*안|차\s*속|차\s*밖|차량|자동차|승합차|지프|트럭|밴|탱크|헬기|헬리콥터|비행기|기차|열차|지하철|전철|보트|배\s*위|선박|en\s*route|in\s*transit|on\s+the\s+way|driving|riding|heading\s+to|moving\s+to|backseat|front\s*seat|passenger|driver.*seat|trunk|SUV|van|truck|jeep|car\s+interior|vehicle|helicopter|chopper|aircraft|humvee|convoy/i;
                 if (transitSkip.test(metaLoc)) {
                     dbg(`🚗 Transit location skipped: "${metaLoc}"`);
                     await _tryEvent(text, lm.currentLocationId, source);
                     return true;
                 }
 
-                // ★★★ 핵심 방어: 30자 초과 서술형 Location → 무조건 현재 장소 별칭
+                // ★★★ 핵심 방어: 30자 초과 서술형 Location → 현재 장소 유지 (별칭 등록 안 함!)
                 if (metaLoc.length > 30 && lm.currentLocationId) {
-                    const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
-                    if (curLoc) {
-                        dbg(`🔀 Long meta loc (${metaLoc.length}c) "${metaLoc}" → alias to "${curLoc.name}"`);
-                        const aliases = [...new Set([...(curLoc.aliases || []), metaLoc])];
-                        await lm.updateLocation(curLoc.id, { aliases });
-                        await _tryEvent(text, curLoc.id, source);
-                        return true;
-                    }
+                    dbg(`🔀 Long meta loc (${metaLoc.length}c) "${metaLoc}" → staying at current (no alias)`);
+                    await _tryEvent(text, lm.currentLocationId, source);
+                    return true;
                 }
 
                 // ★ 콤마 구분자 정리: "영국 헤리퍼드, NCO Barracks 1층" → 마지막 파트만 사용
@@ -183,16 +205,57 @@ async function scanMessage(text, source = 'USER') {
 
                 // ★ "Parent - Sub" 또는 "Parent — Sub" 형태 분리
                 let metaParent = null, metaSub = null;
+                const subKw = /kitchen|living\s*room|bed\s*room|bath\s*room|room|거실|부엌|주방|침실|화장실|방|마당|차고|서재|발코니|테라스|현관|복도|다락|지하|옥상|lobby|hall|office|studio|garage|balcony|terrace|rooftop|basement|armory|무기고|식당|mess\s*hall/i;
+
+                // 방법1: 대시 구분자
                 const sepMatch = metaLoc.match(/^(.+?)\s*[-–—]\s*([\uAC00-\uD7A3A-Za-z].+)$/);
                 if (sepMatch) {
                     const part1 = sepMatch[1].trim();
                     const part2 = sepMatch[2].trim();
-                    // part2가 서브장소 키워드 포함하면 분리
-                    const subKw = /kitchen|living|bed|bath|room|거실|부엌|주방|침실|화장실|방|마당|차고|서재|발코니|테라스|현관|복도|다락|지하|옥상|lobby|hall|office|studio|garage|balcony|terrace|rooftop|basement/i;
                     if (subKw.test(part2)) {
                         metaParent = part1;
                         metaSub = part2;
-                        dbg(`📌 Split: parent="${metaParent}", sub="${metaSub}"`);
+                        dbg(`📌 Dash split: parent="${metaParent}", sub="${metaSub}"`);
+                    }
+                }
+
+                // 방법2: 공백 기반 — "NCO Barracks Kitchen" → parent="NCO Barracks", sub="Kitchen"
+                if (!metaParent && !metaSub) {
+                    const subMatch = metaLoc.match(new RegExp('(.+?)\\s+(' + subKw.source + '(?:\\s+\\S+)?)$', 'i'));
+                    if (subMatch) {
+                        const candidateParent = subMatch[1].trim();
+                        const candidateSub = subMatch[2].trim();
+                        // 부모 후보가 기존 장소와 매칭되는지 확인
+                        const parentCheck = lm.locations.find(l => {
+                            const n = l.name.toLowerCase();
+                            const cp = candidateParent.toLowerCase();
+                            return n === cp || n.includes(cp) || cp.includes(n) ||
+                                (l.aliases || []).some(a => a.toLowerCase().includes(cp) || cp.includes(a.toLowerCase()));
+                        });
+                        if (parentCheck) {
+                            metaParent = candidateParent;
+                            metaSub = candidateSub;
+                            dbg(`📌 Space split: parent="${metaParent}", sub="${metaSub}"`);
+                        }
+                    }
+                }
+
+                // 방법3: 숫자층 분리 — "Base 1층 주방" → parent="Base", sub="1층 주방"
+                if (!metaParent && !metaSub) {
+                    const floorMatch = metaLoc.match(/^(.+?)\s+(\d+층.*)$/);
+                    if (floorMatch) {
+                        const candidateParent = floorMatch[1].trim();
+                        const parentCheck = lm.locations.find(l => {
+                            const n = l.name.toLowerCase();
+                            const cp = candidateParent.toLowerCase();
+                            return n === cp || n.includes(cp) || cp.includes(n) ||
+                                (l.aliases || []).some(a => a.toLowerCase().includes(cp) || cp.includes(a.toLowerCase()));
+                        });
+                        if (parentCheck) {
+                            metaParent = candidateParent;
+                            metaSub = floorMatch[2].trim();
+                            dbg(`📌 Floor split: parent="${metaParent}", sub="${metaSub}"`);
+                        }
                     }
                 }
 
@@ -715,21 +778,34 @@ async function _geocodePlace(locId, placeName, retry = 0) {
 
 // ========== RP 날짜 추출 (메타데이터에서) ==========
 function _extractRpDate(text) {
-    // HTML 태그 제거 (렌더된 마크다운 대응)
+    // HTML 태그 제거 (렌더된 마크다운 대응) + 이모지 정리
     const clean = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
-    // 패턴 1: - Time: 2025/07/12 또는 Date: 2025.07.12 (- 선택적)
-    const m1 = clean.match(/(?:[-*]\s*)?(?:Time|Date|날짜|시간)[:\s]+(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/i);
+    const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+
+    // 패턴 1: - Time: 2025/07/12 또는 Date: 2025.07.12
+    const m1 = clean.match(/(?:[-*]?\s*)?(?:📅\s*)?(?:Time|Date|날짜|시간)[:\s]+(?:\w+,?\s+)?(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/i);
     if (m1) return `${m1[1]}/${parseInt(m1[2])}/${parseInt(m1[3])}`;
-    // 패턴 1b: 2024/12/19 단독 (날짜 형식만으로도 감지)
+
+    // 패턴 1b: 2024/12/19, 09:30 AM (날짜+시간)
     const m1b = clean.match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2}),?\s*\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)/);
     if (m1b) return `${m1b[1]}/${parseInt(m1b[2])}/${parseInt(m1b[3])}`;
-    // 패턴 2: July 12, 2025 또는 12 July 2025
-    const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+
+    // 패턴 2: "📅 Date: Thu, 19 Dec" 또는 "Date: Thu, 19 Dec 2024" (Celia/P&C 형식)
+    const mCelia = clean.match(/(?:📅\s*)?Date[:\s]+(?:\w{3},?\s+)?(\d{1,2})\s+(\w{3,9})(?:\s+(\d{4}))?/i);
+    if (mCelia && months[mCelia[2].substring(0,3).toLowerCase()]) {
+        const mon = months[mCelia[2].substring(0,3).toLowerCase()];
+        const day = parseInt(mCelia[1]);
+        const yr = mCelia[3] ? parseInt(mCelia[3]) : new Date().getFullYear();
+        return `${yr}/${mon}/${day}`;
+    }
+
+    // 패턴 2b: "December 19, 2024" 또는 "19 December 2024"
     const m2 = clean.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
     if (m2 && months[m2[1].substring(0,3).toLowerCase()]) return `${m2[3]}/${months[m2[1].substring(0,3).toLowerCase()]}/${parseInt(m2[2])}`;
     const m3 = clean.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
     if (m3 && months[m3[2].substring(0,3).toLowerCase()]) return `${m3[3]}/${months[m3[2].substring(0,3).toLowerCase()]}/${parseInt(m3[1])}`;
-    // 패턴 3: 7월 12일 (년도 없으면 빈값)
+
+    // 패턴 3: 7월 12일
     const m4 = clean.match(/(\d{1,2})월\s*(\d{1,2})일/);
     if (m4) {
         const yr = clean.match(/(\d{4})년/);
@@ -738,13 +814,100 @@ function _extractRpDate(text) {
     return '';
 }
 
+// ========== RP 날짜 기반 일정 날짜 계산 ==========
+function _calcPlanDate(rpDate, whenText) {
+    if (!rpDate || !whenText) return '';
+    // rpDate 파싱: "2024/12/19" → Date
+    const parts = rpDate.split('/').map(Number);
+    if (parts.length < 2) return '';
+    let base;
+    if (parts.length === 3) base = new Date(parts[0], parts[1] - 1, parts[2]);
+    else if (parts.length === 2) base = new Date(2024, parts[0] - 1, parts[1]); // 년도 없으면 기본값
+    if (!base || isNaN(base.getTime())) return '';
+
+    const lo = whenText.toLowerCase().trim();
+
+    // 한국어 패턴
+    if (/^내일$/.test(lo)) { base.setDate(base.getDate() + 1); }
+    else if (/^모레$/.test(lo)) { base.setDate(base.getDate() + 2); }
+    else if (/^글피$/.test(lo)) { base.setDate(base.getDate() + 3); }
+    else if (/일주일\s*(?:뒤|후)?/.test(lo)) { base.setDate(base.getDate() + 7); }
+    else if (/^다음\s*주/.test(lo) || /^next\s*week/i.test(lo)) { base.setDate(base.getDate() + 7); }
+    else if (/^이번\s*주말/.test(lo)) { const dow = base.getDay(); base.setDate(base.getDate() + (6 - dow)); }
+    else if (/^다음\s*달/.test(lo) || /^next\s*month/i.test(lo)) { base.setMonth(base.getMonth() + 1); }
+    else if (/보름\s*(?:뒤|후)?/.test(lo)) { base.setDate(base.getDate() + 15); }
+    else {
+        // "N주 뒤/후" or "N달/개월 뒤/후" or "N일 뒤/후"
+        const koNum = lo.match(/(\d+)\s*(?:주)\s*(?:뒤|후)/);
+        if (koNum) { base.setDate(base.getDate() + parseInt(koNum[1]) * 7); }
+        else {
+            const koDay = lo.match(/(\d+)\s*(?:일)\s*(?:뒤|후)/);
+            if (koDay) { base.setDate(base.getDate() + parseInt(koDay[1])); }
+            else {
+                const koMonth = lo.match(/(\d+)\s*(?:달|개월)\s*(?:뒤|후)/);
+                if (koMonth) { base.setMonth(base.getMonth() + parseInt(koMonth[1])); }
+                else {
+                    // 영어: "in N days/weeks/months", "N days later", "tomorrow"
+                    // ★ 영어 단어 숫자 변환
+                    const wordNums = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+                    let loNum = lo;
+                    for (const [word, num] of Object.entries(wordNums)) {
+                        loNum = loNum.replace(new RegExp('\\b' + word + '\\b', 'gi'), num);
+                    }
+                    if (/^tomorrow/i.test(lo)) { base.setDate(base.getDate() + 1); }
+                    else if (/(?:in\s+)?(?:two|2)\s+weeks/i.test(lo)) { base.setDate(base.getDate() + 14); }
+                    else if (/(?:in\s+)?(?:three|3)\s+weeks/i.test(lo)) { base.setDate(base.getDate() + 21); }
+                    else if (/(?:in\s+)?(?:a|one|1)\s+week/i.test(lo)) { base.setDate(base.getDate() + 7); }
+                    else if (/(?:in\s+)?(?:a|one|1)\s+month/i.test(lo)) { base.setMonth(base.getMonth() + 1); }
+                    else {
+                        const enNum = loNum.match(/(\d+)\s*(?:days?)/i);
+                        if (enNum) { base.setDate(base.getDate() + parseInt(enNum[1])); }
+                        else {
+                            const enWeek = lo.match(/(\d+)\s*(?:weeks?)/i);
+                            if (enWeek) { base.setDate(base.getDate() + parseInt(enWeek[1]) * 7); }
+                            else {
+                                const enMonth = lo.match(/(\d+)\s*(?:months?)/i);
+                                if (enMonth) { base.setMonth(base.getMonth() + parseInt(enMonth[1])); }
+                                else {
+                                    // "T+14 DAYS" 패턴
+                                    const tPlus = lo.match(/t\+(\d+)\s*(?:days?)/i);
+                                    if (tPlus) { base.setDate(base.getDate() + parseInt(tPlus[1])); }
+                                    else {
+                                        // N월 N일
+                                        const koDate = lo.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                                        if (koDate) return `${base.getFullYear()}/${parseInt(koDate[1])}/${parseInt(koDate[2])}`;
+                                        // next + 요일
+                                        const days = { monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0,월요일:1,화요일:2,수요일:3,목요일:4,금요일:5,토요일:6,일요일:0 };
+                                        for (const [name, dow] of Object.entries(days)) {
+                                            if (lo.includes(name)) {
+                                                let diff = dow - base.getDay();
+                                                if (diff <= 0) diff += 7;
+                                                base.setDate(base.getDate() + diff);
+                                                break;
+                                            }
+                                        }
+                                        // 매칭 안 되면 빈 값
+                                        if (base.getTime() === new Date(parts[0], parts[1] - 1, parts[2] || 1).getTime()) return '';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return `${base.getFullYear()}/${base.getMonth() + 1}/${base.getDate()}`;
+}
+
 // ========== 이벤트 추출 + 저장 헬퍼 ==========
 const _strongKw = /키스|kiss|고백|confess|사랑|love|싸[우웠]|fight|죽|kill|배신|betray|도망|escape|약속|promise|결혼|marry|이별|breakup|broke up|훔[쳤치]|stole|steal|snuck|sneak|침입|broke in|farewell|작별|맹세|swear|vow|재회|reunion|잃어버|잃[은었을]|lost|missing/i;
 let _lastEventTime = 0;
 let _lastEventLocId = null; // 마지막 이벤트 저장 장소
 
 // 전체 패턴 (AI용 — 가벼운 트리거)
-const _triggerKw = /키스|kiss|포옹|hug|사랑|love|고백|confess|속삭|whisper|입술|lip|심장|heart|두근|떨[리렸]|tremble|끌어안|embrace|울[었다]|눈물|cry|tear|싸[우웠움]|fight|배신|betray|도망|escape|발견|discover|비밀|secret|부상|injur|약속|promise|내일|tomorrow|선물|gift|devour|cupped|passion|intimate|desire|breathless|gasp|moan|shudder|groan|tongue|stole|steal|stolen|snuck|sneak|훔[쳤치]|침입|threat|경고|죽|kill|death|총|gun|칼|sword|knife|피[가를]|blood|curse|저주|분노|rage|복수|revenge|떠나|이별|작별|farewell|goodbye|depart|leave.*behind|결심|맹세|선언|다짐|decide|swear|vow|declare|귀환|재회|돌아[왔오]|return|reunion|위험|위협|위기|danger|warn|peril|잃어버|잃[은었을]|분실|사라[졌진]|lost|lose|missing|vanish|disappear|계획|작전|일정|schedule|operation|mission|trip|run|shopping|장보기|나들이|쇼핑/i;
+const _triggerKw = /키스|kiss|포옹|hug|사랑|love|고백|confess|속삭|whisper|입술|lip|심장|heart|두근|떨[리렸]|tremble|끌어안|embrace|울[었다]|눈물|cry|tear|싸[우웠움]|fight|배신|betray|도망|escape|발견|discover|비밀|secret|부상|injur|약속|promise|내일|tomorrow|선물|gift|devour|cupped|passion|intimate|desire|breathless|gasp|moan|shudder|groan|tongue|stole|steal|stolen|snuck|sneak|훔[쳤치]|침입|threat|경고|죽|kill|death|총|gun|칼|sword|knife|피[가를]|blood|curse|저주|분노|rage|복수|revenge|떠나|이별|작별|farewell|goodbye|depart|leave.*behind|결심|맹세|선언|다짐|decide|swear|vow|declare|귀환|재회|돌아[왔오]|return|reunion|위험|위협|위기|danger|warn|peril|잃어버|잃[은었을]|분실|사라[졌진]|lost|lose|missing|vanish|disappear|계획|작전|일정|schedule|operation|mission|trip|run|shopping|장보기|나들이|쇼핑|appointment|check[- ]?up|검진|재검|진료|예약|clinic|hospital|병원|산부인과|two\s+weeks|next\s+week|next\s+month|다음\s*주|다음\s*달|주\s*뒤|주\s*후|every\s+(?:week|month|time)|영화|cinema|movie|데이트|date|일주일|마트|mart|tesco|가자|가기로|만나자|오기로|ticket|티켓|초대|invite|여행|travel|vacation|휴가|놀러/i;
 
 async function _tryEvent(text, locId, source) {
     dbg(`📋 _tryEvent (${source}) len=${text.length}`);
@@ -766,6 +929,9 @@ async function _tryEvent(text, locId, source) {
     }
 
     let evText = null, evTitle = null, evMood = '💕';
+
+    // ★ RP 날짜 추출 (먼저! plans에서도 사용)
+    const rpDate = _extractRpDate(text);
 
     // ★ Phase 2: LLM 요약 시도 (직접 API 호출)
     try {
@@ -797,22 +963,28 @@ IMPORTANT: You MUST use "${userName}" by name in the summary. Always write like:
 Rules:
 - ${langInst}
 - ALWAYS include character names as subjects (WHO did what with WHOM).
+- When quoting dialogue, ALWAYS verify the correct speaker. Check the context immediately before the quote to identify who is speaking. Never misattribute a quote to the wrong character.
 - Sentence 1: Describe WHERE it happened (place + atmosphere), WHAT ${userName} was doing, and the KEY EVENT that occurred. Be specific with details from the scene (objects, smells, actions). Include a key dialogue quote if impactful.
 - Sentence 2: Describe the emotional consequence, tension shift, or what this event foreshadows for the future. Be vivid and narrative.
 - Each sentence should be detailed and descriptive (60~120 characters each). Do NOT be too brief.
 - Write like a novel's diary entry — immersive, specific, atmospheric.
 
-If no significant event (just walking, sitting, daily routine): {"mood":null,"summary":null}
+If no significant event (just walking, sitting, daily routine): {"mood":null,"summary":null,"future_plan":{"has_plan":false}}
+
+Pay SPECIAL ATTENTION to any future promises, appointments, or plans mentioned in the dialogue (e.g., "Let's go to X tomorrow", "Come back in two weeks", "내일 마트 가자", "2주 뒤에 재검").
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"mood":"💕","title":"ultra-short hook max 15chars that emphasizes THIS PLACE's emotional meaning. Write like: 'OO한 곳' or 'OO이 시작된 곳'. Do NOT copy dialogue literally — capture the emotional significance. Match the scene's tone: playful scenes can have witty/humorous titles, serious scenes should stay sincere.","summary":"detailed 2-sentence summary","promisePlace":"Extract ANY named store, city, building, or location that characters mention wanting to go to, discuss going to, plan to visit, or even joke about visiting. Be AGGRESSIVE — if a place name appears alongside words like 'go', 'run', 'trip', 'visit', 'let\\'s', 'we should', 'we could', 'discuss', 'plan', or shopping/travel context, extract it. Write ONLY the place name. If truly no future place, write null."}
+{"mood":"💕","title":"ultra-short hook max 15chars","summary":"detailed 2-sentence summary","promisePlace":"named location characters plan to visit (or null)","future_plan":{"has_plan":true,"what":"what they plan to do","where":"destination name or null","when":"time expression as-is: 2주 뒤, tomorrow, 오늘 저녁, next week, 1월 3일, every month, etc."}}
 
 Mood types: 💕=romantic/emotional 📅=promise/future ⚡=conflict/danger
+title: Write like 'OO한 곳' or 'OO이 시작된 곳'. Capture emotional significance, not literal dialogue.
+promisePlace: ANY named store/city/building characters discuss visiting. Be AGGRESSIVE. Write ONLY the place name, or null.
+future_plan: ALWAYS check for this. If ANY character mentions going somewhere, doing something later, making an appointment, scheduling a visit, or promising to return — set has_plan: true and fill what/where/when.
 
 Examples:
-{"mood":"⚡","title":"고구마와 뒷담화의 현장","summary":"군견 Dex의 막사에서 ${userName}가 몰래 군고구마를 나눠먹으며 Ghost에 대한 불만을 털어놓던 중, 이를 엿들은 Ghost에게 현장을 들키고 만다. Ghost의 묵언의 압박과 Dex의 으르렁거림이 섞이며, 이 밀폐된 공간에서 아슬아슬한 대화가 이어질 것을 암시한다."}
-{"mood":"💕","title":"금지된 키스가 시작된 곳","summary":"시가 향과 가죽 냄새가 밴 Price의 어두운 방에서 ${userName}과 Soap이 거칠지만 다정한 키스를 나눴다. 대장의 영역을 침범한 이 은밀한 행위가 둘의 관계를 더 위험하고 짜릿하게 만들 것을 예고한다."}
-{"mood":"📅","title":"비밀 약속을 나눈 곳","summary":"노을이 물드는 옥상에서 Alejandro가 ${userName}의 손을 잡으며 '내일, 여기서'라고 속삭였다. 이 장소가 둘만의 비밀스러운 거점이 될 것을 서로의 떨리는 손끝으로 예감했다."}
+{"mood":"⚡","title":"고구마와 뒷담화의 현장","summary":"군견 Dex의 막사에서 ${userName}가 몰래 군고구마를 나눠먹으며 Ghost에 대한 불만을 털어놓던 중, 이를 엿들은 Ghost에게 현장을 들키고 만다.","promisePlace":null,"future_plan":{"has_plan":false}}
+{"mood":"💕","title":"첫 심장소리를 들은 곳","summary":"${userName}와 TF141이 산부인과 진찰실을 점거하고 초음파 검사를 받았다. 모니터에 작은 심장 박동이 울리자 König의 손이 떨리기 시작했다.","promisePlace":"산부인과","future_plan":{"has_plan":true,"what":"2차 검진 및 초음파","where":"산부인과","when":"2주 뒤"}}
+{"mood":"📅","title":"비밀 약속을 나눈 곳","summary":"노을이 물드는 옥상에서 Alejandro가 ${userName}의 손을 잡으며 '내일, 여기서'라고 속삭였다.","promisePlace":null,"future_plan":{"has_plan":true,"what":"비밀 만남","where":"옥상","when":"내일"}}
 ${recentChat ? `\n[Recent conversation for tone & context]:\n${recentChat}\n` : ''}
 [Current scene to summarize]:
 ${trimmed}${userCtx}`;
@@ -825,6 +997,7 @@ ${trimmed}${userCtx}`;
                 evTitle = parsed.title || parsed.summary.substring(0, 15) + '...';
                 evMood = parsed.mood;
                 dbg(`🤖 LLM Event: "${evTitle}" | "${evText}" (${evMood})`);
+                dbg(`🗓️ LLM future_plan: ${JSON.stringify(parsed.future_plan || 'not present')}, promisePlace: ${parsed.promisePlace || 'null'}`);
                 // ★ 약속 장소 자동 등록 (LLM이 이벤트에서 장소 추출 — 모든 무드)
                 if (parsed.promisePlace && parsed.promisePlace !== 'null' && parsed.promisePlace.toLowerCase() !== 'null') {
                     try {
@@ -845,6 +1018,90 @@ ${trimmed}${userCtx}`;
                         }
                     } catch(e) { dbg('⚠️ Promise place from LLM error:', e.message); }
                 }
+                // ★ 예정 일정 자동 등록 (future_plan 객체 — 분리된 구조)
+                const fp = parsed.future_plan;
+                if (fp?.has_plan && fp.what) {
+                    // ★ where가 null이면 promisePlace를 대신 사용!
+                    const rawWhere = fp.where && fp.where !== 'null' ? fp.where.trim() : null;
+                    const pp = parsed.promisePlace && parsed.promisePlace !== 'null' ? parsed.promisePlace.trim() : null;
+                    const planWhere = rawWhere || pp;
+                    const planWhen = fp.when && fp.when !== 'null' ? fp.when.trim() : '';
+                    let targetLocId = locId;
+                    if (planWhere) {
+                        let targetLoc = lm.findByName(planWhere);
+                        if (!targetLoc && planWhere.length >= 2 && planWhere.length <= 25) {
+                            targetLoc = await lm.addLocation(planWhere);
+                            if (targetLoc) {
+                                targetLoc.tags = ['wantToGo'];
+                                targetLoc._tempAddress = true;
+                                targetLoc.memo = '📅 약속 장소 (주소 미확정)';
+                                await lm.updateLocation(targetLoc.id, { tags: targetLoc.tags, _tempAddress: true, memo: targetLoc.memo });
+                                if (extension_settings[EXTENSION_NAME]?.showDetectToast) wtNotify(`🗓️ 일정: ${fp.what}`, 'new', 3500);
+                            }
+                        }
+                        if (targetLoc) targetLocId = targetLoc.id;
+                    }
+                    const tLoc = lm.locations.find(l => l.id === targetLocId);
+                    if (tLoc) {
+                        if (!tLoc.events) tLoc.events = [];
+                        const isDup = tLoc.events.some(e => e.isPlan && e.text === fp.what);
+                        if (!isDup) {
+                            const planDate = _calcPlanDate(rpDate, planWhen);
+                            tLoc.events.push({
+                                text: fp.what, title: fp.what.substring(0, 20),
+                                mood: '🗓️', isPlan: true, planWhen: planWhen, planDate,
+                                timestamp: Date.now(), rpDate, source: 'auto'
+                            });
+                            await lm.updateLocation(targetLocId, { events: tLoc.events });
+                            dbg(`🗓️ Future plan: "${fp.what}" when="${planWhen}" date="${planDate}" where="${planWhere || 'current'}"`)
+                        }
+                    }
+                    pi.inject(); if (ui?.panelVisible) ui.refresh();
+                }
+                // ★ fallback: plans 배열도 호환 (기존 응답 지원)
+                else if (Array.isArray(parsed.plans) && parsed.plans.length > 0) {
+                    for (const plan of parsed.plans) {
+                        if (!plan.what) continue;
+                        const planWhen = plan.when && plan.when !== 'null' ? plan.when.trim() : '';
+                        const tLoc = lm.locations.find(l => l.id === locId);
+                        if (tLoc) {
+                            if (!tLoc.events) tLoc.events = [];
+                            const isDup = tLoc.events.some(e => e.isPlan && e.text === plan.what);
+                            if (!isDup) {
+                                const planDate = _calcPlanDate(rpDate, planWhen);
+                                tLoc.events.push({
+                                    text: plan.what, title: plan.what.substring(0, 20),
+                                    mood: '🗓️', isPlan: true, planWhen: planWhen, planDate,
+                                    timestamp: Date.now(), rpDate, source: 'auto'
+                                });
+                                await lm.updateLocation(locId, { events: tLoc.events });
+                                dbg(`🗓️ Plan (legacy): "${plan.what}" when="${planWhen}"`)
+                            }
+                        }
+                    }
+                    pi.inject(); if (ui?.panelVisible) ui.refresh();
+                }
+                // ★ promisePlace 잡혔는데 plans 비어있으면 → 자동 plan 생성
+                if (parsed.promisePlace && parsed.promisePlace !== 'null' && parsed.promisePlace.toLowerCase() !== 'null') {
+                    const pp = parsed.promisePlace.trim();
+                    const hasPlansForPlace = Array.isArray(parsed.plans) && parsed.plans.some(p => p.where && p.where.toLowerCase() === pp.toLowerCase());
+                    if (!hasPlansForPlace) {
+                        const ppLoc = lm.findByName(pp);
+                        if (ppLoc) {
+                            if (!ppLoc.events) ppLoc.events = [];
+                            const isDup = ppLoc.events.some(e => e.isPlan && e.text?.includes(pp));
+                            if (!isDup) {
+                                ppLoc.events.push({
+                                    text: `${pp} 방문 예정`, title: `${pp} 방문`,
+                                    mood: '🗓️', isPlan: true, planWhen: '', planWhere: null,
+                                    timestamp: Date.now(), rpDate, source: 'auto'
+                                });
+                                await lm.updateLocation(ppLoc.id, { events: ppLoc.events });
+                                dbg(`🗓️ Auto-plan from promisePlace: "${pp}"`);
+                            }
+                        }
+                    }
+                }
             }
         }
     } catch (e) {
@@ -859,10 +1116,36 @@ ${trimmed}${userCtx}`;
         evTitle = ev.text.length > 15 ? ev.text.substring(0, 15) + '...' : ev.text;
         evMood = ev.mood;
         dbg(`📝 Regex Event: "${evTitle}" | "${evText}" (${evMood})`);
+        // ★ LLM 실패 시 엄격한 regex로 plans 추출 (시간표현 + 행동동사 동시 필요)
+        const planSentences = text.replace(/<[^>]*>/g, '').replace(/<memo>[\s\S]*?<\/memo>/g, '').split(/[.!?。]+/).filter(s => s.trim().length > 10);
+        const timeRx = /(?:내일|모레|일주일|보름|다음\s*주|다음\s*달|(\d+)\s*(?:주|달|개월|일)\s*(?:뒤|후)|이번\s*주말|tomorrow|next\s+(?:week|month)|in\s+(?:two|three|\d+)\s+(?:weeks?|months?|days?)|come\s+back|T\+\d+)/i;
+        const actionRx = /(?:가자|가기로|오자|만나|검진|재검|진료|예약|방문|장보기|go\s+(?:to|back)|visit|return|come\s+back|check[- ]?up|appointment|see\s+(?:you|the\s+doctor))/i;
+        let regexPlanAdded = false;
+        for (const sent of planSentences) {
+            if (regexPlanAdded) break; // 최대 1건만
+            const hasTime = timeRx.exec(sent);
+            const hasAction = actionRx.test(sent);
+            if (hasTime && hasAction) {
+                const when = hasTime[0].trim();
+                const tLoc = lm.locations.find(l => l.id === locId);
+                if (tLoc) {
+                    if (!tLoc.events) tLoc.events = [];
+                    const isDup = tLoc.events.some(e => e.isPlan && e.planWhen === when);
+                    if (!isDup) {
+                        const planDate = _calcPlanDate(rpDate, when);
+                        tLoc.events.push({
+                            text: `예정된 방문`, title: '예정된 방문',
+                            mood: '🗓️', isPlan: true, planWhen: when, planDate,
+                            timestamp: Date.now(), rpDate, source: 'regex'
+                        });
+                        await lm.updateLocation(locId, { events: tLoc.events });
+                        dbg(`🗓️ Strict Regex Plan: when="${when}" date="${planDate}"`);
+                        regexPlanAdded = true;
+                    }
+                }
+            }
+        }
     }
-
-    // ★ RP 날짜 추출 (메타데이터에서)
-    const rpDate = _extractRpDate(text);
 
     if (!loc.events) loc.events = [];
 
@@ -910,6 +1193,80 @@ ${trimmed}${userCtx}`;
         }
     } catch(e) {}
     dbg(`${evMood} Event: "${evText}" @ ${loc.name} (${source})`);
+}
+
+// ========== 예정 일정 regex 추출 (LLM 없이도 작동) ==========
+function _extractPlansRegex(text) {
+    const clean = text.replace(/<[^>]*>/g, '').replace(/```[\s\S]*?```/g, '').replace(/<memo>[\s\S]*?<\/memo>/g, '').trim();
+    const plans = [];
+
+    // 한국어 패턴
+    const koPats = [
+        // "2주 뒤에 산부인과" / "다음달에 검진"
+        /(?:(\d+)\s*(?:주|달|개월|일)\s*(?:뒤|후|뒤에|후에))\s*(?:에?\s*)?(.{1,15}?)(?:에서|에|으로|로)?\s*(?:가자|가기|오자|오기|만나|검진|진료|방문|재검|예약)/g,
+        // "내일/모레/다음주에 ~"
+        /(?:내일|모레|다음\s*주|다음\s*달|이번\s*주말)\s*(?:에?\s*)?(.{1,15}?)(?:에서|에|으로|로)?\s*(?:가자|가기|오자|만나|검진|방문|약속|예약|장보기|쇼핑)/g,
+        // "~월 ~일에 클리닉"
+        /(\d{1,2}월\s*\d{1,2}일)\s*(?:에?\s*)?(.{1,15}?)(?:에서|에)?\s*(?:가자|오자|만나|예약|방문|검진)/g,
+    ];
+
+    // 영어 패턴
+    const enPats = [
+        // "in two weeks" / "in 14 days" / "in a month"
+        /(?:come\s+back|return|visit|go\s+back|be\s+back|see\s+you|check[- ]?up)\s+(?:in|after)\s+([\w\s]{2,20}?)(?:[.,!?]|$)/gi,
+        // "every month" / "every two weeks" / "every appointment" / "every single time"
+        /(every\s+(?:\w+\s+)?(?:week|month|day|year|appointment|time|visit|check[- ]?up)s?)\b/gi,
+        // "next Tuesday" / "next month" / "next week"
+        /(next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year))\b/gi,
+        // "on January 3rd" / "on the 3rd"
+        /(?:on\s+(?:the\s+)?)?(\w+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)\b/gi,
+        // "T+14 DAYS" / "14 days from now"
+        /(?:T\+)?(\d+)\s*(?:days?|weeks?|months?)\s*(?:from\s+now|later|after)?/gi,
+        // ★ 단독 시간 표현: "Two weeks." / "In two weeks" (대화 문맥에서)
+        /(?:in\s+)?(two|three|four|five|six|seven|eight|nine|ten)\s+(weeks?|months?|days?)\b/gi,
+    ];
+
+    // 한국어 패턴 실행
+    for (const pat of koPats) {
+        let m;
+        pat.lastIndex = 0;
+        while ((m = pat.exec(clean)) !== null) {
+            const groups = m.slice(1).filter(Boolean);
+            if (groups.length >= 2) {
+                const when = groups[0].trim();
+                const where = groups[1].trim();
+                if (where.length >= 2 && where.length <= 15) {
+                    plans.push({ what: `${where} 방문 예정`, where, when });
+                }
+            } else if (groups.length === 1) {
+                plans.push({ what: `예정된 일정`, where: null, when: groups[0].trim() });
+            }
+        }
+    }
+
+    // 영어 패턴 실행
+    for (const pat of enPats) {
+        let m;
+        pat.lastIndex = 0;
+        while ((m = pat.exec(clean)) !== null) {
+            const when = m[1]?.trim();
+            if (when && when.length >= 2 && when.length <= 30) {
+                // 숫자+기간이면 "N days/weeks" 형태
+                const numMatch = when.match(/^(\d+)\s*(days?|weeks?|months?)/i);
+                const whenText = numMatch ? `${numMatch[1]} ${numMatch[2]} later` : when;
+                plans.push({ what: `Scheduled appointment`, where: null, when: whenText });
+            }
+        }
+    }
+
+    // 중복 제거
+    const unique = [];
+    const seen = new Set();
+    for (const p of plans) {
+        const key = `${p.when}|${p.where || ''}`;
+        if (!seen.has(key)) { seen.add(key); unique.push(p); }
+    }
+    return unique;
 }
 
 // ========== 이벤트 요약 추출 (감정/사건 키워드 + 타입 분류) ==========

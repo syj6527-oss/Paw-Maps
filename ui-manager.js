@@ -152,15 +152,19 @@ export class UIManager {
             $('#wt-s-llm-status').text('🔄 테스트 중...').css('color', '#5E84E2');
             try {
                 const { callLLM } = await import('./llm-helper.js');
-                const result = await callLLM('Respond with ONLY this JSON: {"test":"ok"}');
+                // 15초 타임아웃
+                const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('15초 타임아웃 — API 키/모델 확인')), 15000));
+                const result = await Promise.race([callLLM('Respond with ONLY this JSON: {"test":"ok"}'), timeout]);
                 if (result && result.includes('ok')) {
                     $('#wt-s-llm-status').text('✅ 연결 성공!').css('color', '#2B8A6E');
                     toastSuccess('🔑 LLM 연결 성공!');
+                } else if (result) {
+                    $('#wt-s-llm-status').text('⚠️ 응답은 왔지만 JSON 아님: ' + result.substring(0, 80)).css('color', '#E07C3A');
                 } else {
-                    $('#wt-s-llm-status').text('⚠️ 응답 이상: ' + (result?.substring(0, 50) || 'empty')).css('color', '#F5A8A8');
+                    $('#wt-s-llm-status').text('⚠️ 빈 응답 — 모델 변경 권장').css('color', '#F5A8A8');
                 }
             } catch(e) {
-                $('#wt-s-llm-status').text('❌ 실패: ' + e.message).css('color', '#F5A8A8');
+                $('#wt-s-llm-status').text('❌ ' + e.message).css('color', '#F5A8A8');
             }
         });
         // 🌍 세계관 이어가기
@@ -1161,7 +1165,7 @@ export class UIManager {
         const events = sub.events || [];
 
         const eventsHtml = events.length ? events.map((ev, i) => {
-            const date = ev.timestamp ? this._fmt(ev.timestamp) : '—';
+            const date = ev.isPlan ? (ev.planDate ? `📌 ${ev.planDate}` : '📌 예정') : (ev.timestamp ? this._fmt(ev.timestamp) : '—');
             const title = ev.title || ev.text?.substring(0, 20) + '...' || '—';
             const fullText = ev.text || '';
             const hasDetail = fullText.length > 0 && fullText !== title;
@@ -1463,6 +1467,137 @@ export class UIManager {
         </div>`;
     }
 
+    // ★ 예정 일정 섹션 HTML (개요/이벤트 탭 공용)
+    _buildPlanSectionHtml(loc) {
+        const plans = (loc.events || []).filter(e => e.isPlan);
+        return `<div style="margin-top:12px;padding-top:10px;border-top:1.5px dashed #E0DDD5">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:8px">
+                <span style="font-size:12px">🗓️</span>
+                <span style="font-size:11px;font-weight:700;color:#B0A898">예정된 일정</span>
+                <span style="font-size:9px;color:#C0B8A8;background:#F0EDE5;padding:1px 6px;border-radius:8px">${plans.length}건</span>
+            </div>
+            ${plans.length ? plans.map((p, i) => `<div class="wt-plan-card" data-plan-idx="${i}" style="border-radius:7px;padding:8px 10px;margin-bottom:4px;background:#FAFAFA;border:1.5px dashed #D5D0C8;opacity:0.6;cursor:pointer;-webkit-tap-highlight-color:transparent">
+                <div style="display:flex;align-items:center;gap:5px">
+                    <span style="font-size:12px">🗓️</span>
+                    <span style="flex:1;font-weight:600;font-size:10.5px;color:#888">${p.text || p.title || ''}</span>
+                    <span class="wt-plan-del" data-plan-idx="${i}" style="cursor:pointer;color:#D0C0B0;font-size:11px;padding:2px 4px">✕</span>
+                </div>
+                ${p.planWhen ? `<div style="font-size:9px;color:#B0A898;margin-top:2px;padding-left:17px">📌 ${p.planDate ? p.planDate + ' (' + p.planWhen + ')' : p.planWhen}</div>` : ''}
+            </div>`).join('')
+            : '<div style="text-align:center;padding:10px;font-size:11px;color:#C0B8A8;font-style:italic">아직 예정된 일정이 없어요</div>'}
+        </div>`;
+    }
+
+    // ★ 사진 갤러리 / 분위기 카드 (사진 있으면 사진, 없으면 이모지)
+    _buildGalleryHtml(loc, style) {
+        const photos = loc.photos || [];
+        const locId = loc.id;
+
+        if (photos.length > 0) {
+            // 사진 그리드
+            const main = photos[0];
+            const side = photos.slice(1, 3);
+            return `<div style="position:relative;margin-bottom:10px">
+                <div style="display:flex;gap:4px;height:140px;border-radius:12px;overflow:hidden">
+                    <div style="flex:2;background:url('${main}') center/cover;border-radius:12px 0 0 12px;cursor:pointer" class="wt-photo-view" data-idx="0"></div>
+                    ${side.length ? `<div style="flex:1;display:flex;flex-direction:column;gap:4px">
+                        ${side.map((p, i) => `<div style="flex:1;background:url('${p}') center/cover;${i === 0 && side.length === 1 ? 'border-radius:0 12px 12px 0' : i === 0 ? 'border-radius:0 12px 0 0' : 'border-radius:0 0 12px 0'};cursor:pointer;position:relative" class="wt-photo-view" data-idx="${i+1}">
+                            ${i === side.length - 1 && photos.length > 3 ? `<div style="position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;border-radius:inherit">+${photos.length - 3}</div>` : ''}
+                        </div>`).join('')}
+                    </div>` : ''}
+                </div>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                    <button class="wt-photo-add" data-locid="${locId}" style="flex:1;padding:6px;background:#F5F4ED;border:1.5px dashed #D8D4C8;border-radius:8px;font-size:11px;color:#9A8A7A;cursor:pointer;font-family:inherit">📷 사진 추가 (${photos.length}/5)</button>
+                    ${photos.length > 0 ? `<button class="wt-photo-del-last" data-locid="${locId}" style="padding:6px 10px;background:#FFF5F5;border:1px solid #F0C0C0;border-radius:8px;font-size:11px;color:#C07070;cursor:pointer;font-family:inherit">🗑</button>` : ''}
+                </div>
+            </div>`;
+        }
+
+        // 사진 없으면 기존 분위기 카드 + 사진 추가 버튼
+        return this._buildMoodCardHtml(loc, style) +
+            `<div style="margin-top:6px;margin-bottom:8px"><button class="wt-photo-add" data-locid="${locId}" style="width:100%;padding:6px;background:#F5F4ED;border:1.5px dashed #D8D4C8;border-radius:8px;font-size:11px;color:#9A8A7A;cursor:pointer;font-family:inherit">📷 사진 추가</button></div>`;
+    }
+
+    // ★ 풀스크린 사진 뷰어 (좌우 넘기기 + 개별 삭제)
+    _showPhotoViewer(locId, startIdx = 0) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc?.photos?.length) return;
+        const self = this;
+        let idx = startIdx;
+
+        const render = () => {
+            const total = loc.photos.length;
+            if (total === 0) { document.getElementById('wt-photo-viewer')?.remove(); return; }
+            if (idx >= total) idx = total - 1;
+            if (idx < 0) idx = 0;
+
+            // ★ 기존 뷰어 제거
+            document.getElementById('wt-photo-viewer')?.remove();
+
+            // ★ 독립 DOM 요소로 생성 (ST 컨테이너 밖!)
+            const overlay = document.createElement('div');
+            overlay.id = 'wt-photo-viewer';
+            overlay.style.cssText = 'position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none';
+
+            overlay.innerHTML = `
+                <div style="position:absolute;top:16px;right:16px;display:flex;gap:8px;z-index:2">
+                    <button id="wt-pv-del" style="padding:8px 14px;background:rgba(255,60,60,.85);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">🗑 삭제</button>
+                    <button id="wt-pv-close" style="padding:8px 14px;background:rgba(255,255,255,.2);border:none;border-radius:10px;color:#fff;font-size:18px;cursor:pointer;font-weight:700">✕</button>
+                </div>
+                ${idx > 0 ? '<button id="wt-pv-prev" style="position:absolute;top:50%;left:10px;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;color:#fff;cursor:pointer;z-index:2">◀</button>' : ''}
+                ${idx < total - 1 ? '<button id="wt-pv-next" style="position:absolute;top:50%;right:10px;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;color:#fff;cursor:pointer;z-index:2">▶</button>' : ''}
+                <img src="${loc.photos[idx]}" style="max-width:90vw;max-height:70vh;object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.5)">
+                <div style="margin-top:14px;color:#fff;font-size:14px;font-weight:600;letter-spacing:1px">${idx + 1} / ${total}</div>
+            `;
+
+            document.documentElement.appendChild(overlay); // ★ <html> 직접 자식으로!
+
+            document.getElementById('wt-pv-close')?.addEventListener('click', () => overlay.remove());
+            document.getElementById('wt-pv-prev')?.addEventListener('click', (e) => { e.stopPropagation(); idx--; render(); });
+            document.getElementById('wt-pv-next')?.addEventListener('click', (e) => { e.stopPropagation(); idx++; render(); });
+            document.getElementById('wt-pv-del')?.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                loc.photos.splice(idx, 1);
+                await self.lm.updateLocation(locId, { photos: loc.photos });
+                if (loc.photos.length === 0) { overlay.remove(); }
+                else { render(); }
+                const savedStage = self._bsStage;
+                self._showBottomSheet(locId);
+                setTimeout(() => self._applyBsStage(savedStage), 50);
+                toastSuccess('🗑 사진 삭제');
+            });
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        };
+        render();
+    }
+
+    // ★ 사진 압축 + base64 변환
+    _compressPhoto(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const MAX = 800;
+                    let w = img.width, h = img.height;
+                    if (w > MAX || h > MAX) {
+                        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+                        else { w = Math.round(w * MAX / h); h = MAX; }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.7));
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
     // ========== 구글맵 스타일 바텀시트 ==========
     _showBottomSheet(locId) {
         const loc = this.lm.locations.find(l => l.id === locId);
@@ -1474,7 +1609,9 @@ export class UIManager {
         const v = loc.visitCount || 0;
         const cur = loc.id === this.lm.currentLocationId;
         const visitLabel = v === 0 ? '새 장소' : `방문 ${v}회`;
-        const events = (loc.events || []).filter(e => e.source !== 'move');
+        const allEvents = (loc.events || []).filter(e => e.source !== 'move');
+        const events = allEvents.filter(e => !e.isPlan);
+        const plans = allEvents.filter(e => e.isPlan);
 
         // 주변 장소
         let nearbyHtml = '';
@@ -1545,13 +1682,14 @@ export class UIManager {
                 <div class="wt-bs-tab" data-tab="rooms" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#B0A898;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px">내부</div>
             </div>
             <div id="wt-bs-tab-overview" style="padding:10px 14px;overflow-y:auto">
-                <!-- 분위기 카드 갤러리 -->
-                ${this._buildMoodCardHtml(loc, style)}
+                <!-- 분위기 카드 / 사진 갤러리 -->
+                ${this._buildGalleryHtml(loc, style)}
                 ${loc.address ? `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📍</span><div>${loc.address}</div></div>` : ''}
                 <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDE5;font-size:11px;color:#5A4030"><span style="font-size:13px;color:#9A8A7A">📊</span><div>방문 ${v}회<div style="font-size:9px;color:#B0A898">첫 ${loc.rpFirstVisited || (loc.firstVisited ? this._fmt(loc.firstVisited) : '—')} · 최근 ${loc.rpLastVisited || (loc.lastVisited ? this._fmt(loc.lastVisited) : '—')}</div></div></div>
                 ${specialHtml}
                 ${nearbyHtml}
                 ${(loc.npcs?.length) ? `<div style="margin-top:8px;padding:8px 10px;background:#F3EEFA;border-left:3px solid #8B6BB4;border-radius:0 8px 8px 0"><div style="font-size:10px;font-weight:600;color:#6B4F91;margin-bottom:3px">👥 터줏대감</div>${loc.npcs.map(n => `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;color:#5A4070"><span style="font-size:12px">${n.type==='animal'?'🐾':'🧑'}</span>${n.name}${n.role?` <span style="font-size:9px;color:#8B6BB4">(${n.role})</span>`:''}<span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span></div>`).join('')}</div>` : ''}
+                ${this._buildPlanSectionHtml(loc)}
                 <!-- T3: 리뷰 미리보기 (개요 안) -->
                 <div id="wt-bs-rv-preview" style="margin-top:10px;padding-top:8px;border-top:1px solid #F0EDE5">
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1564,7 +1702,7 @@ export class UIManager {
                 <!-- T4: 최근 방문 기록 + 기억 링크 -->
                 <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #F0EDE5;margin-top:8px;cursor:pointer;font-size:12px;color:#3C4043;font-weight:500" class="wt-bs-mem-link" data-action="visits">
                     <span>🕐</span>
-                    <div style="flex:1">최근 방문 기록<div style="font-size:10px;color:#9AA0A6;font-weight:400;margin-top:1px">${loc.lastVisited ? this._fmt(loc.lastVisited) : '—'}</div></div>
+                    <div style="flex:1">최근 방문 기록<div style="font-size:10px;color:#9AA0A6;font-weight:400;margin-top:1px">${loc.rpLastVisited || (loc.lastVisited ? this._fmt(loc.lastVisited) : '—')}</div></div>
                     <span style="color:#9AA0A6;font-size:14px">›</span>
                 </div>
                 ${events.length ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #F0EDE5;cursor:pointer;font-size:12px;color:#3C4043;font-weight:500" class="wt-bs-mem-link" data-action="memories">
@@ -1582,6 +1720,7 @@ export class UIManager {
                     <div style="font-size:8px;color:#9AA0A6;text-align:center;margin-top:4px">${events.length ? `이벤트 ${events.length}건 기반` : '데이터 수집 중...'}</div>
                 </div>
                 ${eventsHtml}
+                ${this._buildPlanSectionHtml(loc)}
             </div>
             <div id="wt-bs-tab-review" style="display:none;padding:10px 14px;overflow-y:auto">
                 <div style="text-align:center;padding:8px">
@@ -1648,6 +1787,87 @@ export class UIManager {
                 det.slideToggle(200);
                 arrow.text(det.is(':visible') ? '▼' : '▲');
             }
+        });
+        // ★ 예정 일정 삭제
+        bs.find('.wt-plan-del').on('click', function(e) {
+            e.stopPropagation();
+            const idx = parseInt($(this).data('plan-idx'));
+            const loc = self.lm.locations.find(l => l.id === locId);
+            if (!loc) return;
+            const planEvents = (loc.events || []).filter(ev => ev.isPlan);
+            if (idx >= 0 && idx < planEvents.length) {
+                const target = planEvents[idx];
+                const realIdx = loc.events.indexOf(target);
+                if (realIdx >= 0) {
+                    loc.events.splice(realIdx, 1);
+                    self.lm.updateLocation(locId, { events: loc.events });
+                    self._showBottomSheet(locId); // 리렌더
+                    toastSuccess('✕ 일정 삭제');
+                }
+            }
+        });
+        // ★ 사진 추가 — 숨겨진 file input 사용 (모바일 호환)
+        bs.find('.wt-photo-add').each(function() {
+            const btn = $(this);
+            const lid = btn.data('locid');
+            // 숨김 input 바로 옆에 삽입
+            const inputId = 'wt-photo-input-' + lid;
+            if (!$('#' + inputId).length) {
+                btn.after(`<input type="file" id="${inputId}" accept="image/*" style="display:none">`);
+            }
+            btn.off('click').on('click', (e) => {
+                e.stopPropagation();
+                const loc = self.lm.locations.find(l => l.id === lid);
+                if ((loc?.photos || []).length >= 5) { toastWarn('📷 최대 5장까지!'); return; }
+                $('#' + inputId).trigger('click');
+            });
+            $('#' + inputId).off('change').on('change', async function(ev) {
+                const file = this.files?.[0];
+                if (!file) return;
+                try {
+                    toastSuccess('📷 사진 처리 중...');
+                    const base64 = await self._compressPhoto(file);
+                    const loc = self.lm.locations.find(l => l.id === lid);
+                    if (!loc) return;
+                    if (!loc.photos) loc.photos = [];
+                    loc.photos.push(base64);
+                    await self.lm.updateLocation(lid, { photos: loc.photos });
+                    // ★ 깜빡임 최소화: 갤러리만 교체
+                    const savedStage = self._bsStage;
+                    const bs = $('#wt-bottomsheet');
+                    bs.css('opacity', '0.7');
+                    self._showBottomSheet(lid);
+                    setTimeout(() => { self._applyBsStage(savedStage); bs.css('opacity', '1'); }, 80);
+                    toastSuccess(`📷 사진 추가! (${loc.photos.length}/5)`);
+                } catch(err) {
+                    toastWarn('📷 사진 처리 실패');
+                    console.error('[wt] photo error:', err);
+                }
+                $(this).val('');
+            });
+        });
+        // ★ 사진 삭제 (마지막 사진)
+        bs.find('.wt-photo-del-last').on('click', function(e) {
+            e.stopPropagation();
+            const lid = $(this).data('locid');
+            const loc = self.lm.locations.find(l => l.id === lid);
+            if (!loc?.photos?.length) return;
+            loc.photos.pop();
+            self.lm.updateLocation(lid, { photos: loc.photos });
+            const savedStage = self._bsStage;
+            const bs = $('#wt-bottomsheet');
+            bs.css('opacity', '0.7');
+            self._showBottomSheet(lid);
+            setTimeout(() => { self._applyBsStage(savedStage); bs.css('opacity', '1'); }, 80);
+            toastSuccess('🗑 사진 삭제');
+        });
+        // ★ 사진 풀스크린 뷰어
+        bs.find('.wt-photo-view').on('click', function(e) {
+            e.stopPropagation();
+            const idx = parseInt($(this).data('idx')) || 0;
+            const loc = self.lm.locations.find(l => l.id === locId);
+            if (!loc?.photos?.length) return;
+            self._showPhotoViewer(locId, idx);
         });
         bs.find('#wt-bs-gen-review').on('click', (e) => {
             e.preventDefault();
@@ -2386,32 +2606,47 @@ export class UIManager {
         const dists = this.lm.distances || [];
         const curLocId = this.lm.currentLocationId;
 
-        // 날짜별 그룹핑 (키: 정렬용 timestamp, 값: { label, items })
+        // 날짜별 그룹핑 — ★ rpDate 우선, 없으면 실제 날짜
         const groups = new Map();
-        const _dayKey = (ts) => {
-            const d = new Date(ts);
+        const _dayKey = (mov) => {
+            if (mov.rpDate) {
+                // rpDate: "2024/12/19" → "2024.12.19"
+                return mov.rpDate.replace(/\//g, '.');
+            }
+            const d = new Date(mov.timestamp);
             return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`;
         };
-        const _dayLabel = (ts) => {
-            const d = new Date(ts);
+        const _dayLabel = (mov) => {
+            if (mov.rpDate) {
+                const parts = mov.rpDate.split('/').map(Number);
+                if (parts.length >= 3) {
+                    const d = new Date(parts[0], parts[1]-1, parts[2]);
+                    const wk = ['일','월','화','수','목','금','토'][d.getDay()];
+                    return `${parts[0]}.${parts[1]}.${parts[2]} (${wk})`;
+                }
+                return mov.rpDate;
+            }
+            const d = new Date(mov.timestamp);
             const wk = ['일','월','화','수','목','금','토'][d.getDay()];
             return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} (${wk})`;
         };
 
         for (const mov of movements) {
-            const key = _dayKey(mov.timestamp);
-            if (!groups.has(key)) groups.set(key, { label: _dayLabel(mov.timestamp), items: [], ts: mov.timestamp });
+            const key = _dayKey(mov);
+            if (!groups.has(key)) groups.set(key, { label: _dayLabel(mov), items: [], ts: mov.timestamp, rpDate: mov.rpDate || '' });
             groups.get(key).items.push(mov);
         }
 
-        // 현재 위치도 타임라인에 추가
+        // 현재 위치도 타임라인에 추가 — 최신 rpDate 사용
         const curLoc = locs.find(l => l.id === curLocId);
-        const todayKey = _dayKey(Date.now());
+        const latestRpDate = movements.length ? (movements[0].rpDate || '') : '';
+        const curMov = { toId: curLocId, timestamp: Date.now(), rpDate: latestRpDate, _isCurrent: true };
+        const todayKey = _dayKey(curMov);
         if (curLoc) {
-            if (!groups.has(todayKey)) groups.set(todayKey, { label: _dayLabel(Date.now()), items: [], ts: Date.now() });
+            if (!groups.has(todayKey)) groups.set(todayKey, { label: _dayLabel(curMov), items: [], ts: Date.now(), rpDate: latestRpDate });
             const g = groups.get(todayKey);
             if (!g.items.some(m => m._isCurrent)) {
-                g.items.unshift({ toId: curLocId, timestamp: Date.now(), _isCurrent: true });
+                g.items.unshift(curMov);
             }
         }
 
@@ -2425,7 +2660,8 @@ export class UIManager {
         let timelineHtml = '';
         let dayIdx = 0;
         for (const [dayKey, group] of sorted) {
-            const isToday = dayKey === todayKey;
+            const isToday = dayIdx === 0; // ★ 가장 최근 날짜 = "오늘"
+            const isRpDate = group.rpDate ? true : false;
             const items = group.items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
             // 이 날의 통계
@@ -2505,9 +2741,37 @@ export class UIManager {
             timelineHtml += `<div style="padding:16px;text-align:center;color:#9AA0A6;font-size:11px">— ${sorted.length}일간 ${totalPlaces}곳 방문 · 이벤트 ${totalEvents}건 —</div>`;
         }
 
+        // ★ 예정 일정 모아보기
+        const allPlans = [];
+        for (const loc of this.lm.locations) {
+            if (!loc.events) continue;
+            for (const ev of loc.events) {
+                if (ev.isPlan) allPlans.push({ ...ev, locName: loc.name });
+            }
+        }
+        let planHtml = '';
+        if (allPlans.length) {
+            planHtml = `<div style="margin:0 16px;padding-top:10px;border-top:1.5px dashed #E0DDD5">
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:8px">
+                    <span style="font-size:12px">🗓️</span>
+                    <span style="font-size:11px;font-weight:700;color:#B0A898">예정된 일정</span>
+                    <span style="font-size:9px;color:#C0B8A8;background:#F0EDE5;padding:1px 6px;border-radius:8px">${allPlans.length}건</span>
+                </div>
+                ${allPlans.map(p => `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #F5F5F5;opacity:0.6">
+                    <div style="width:12px;height:12px;border-radius:50%;border:2.5px dashed #B0B0B0;background:#fff;margin-top:3px;flex-shrink:0"></div>
+                    <div>
+                        <div style="font-size:10px;color:#B0B0B0;font-weight:500">${p.planDate ? p.planDate + ' (' + (p.planWhen || '') + ')' : (p.planWhen || '')}</div>
+                        <div style="font-size:13px;font-weight:600;color:#888">${p.locName ? '📍 ' + p.locName : ''}</div>
+                        <div style="font-size:10px;color:#AAA;margin-top:1px">${p.text || ''}</div>
+                    </div>
+                </div>`).join('')}
+            </div>`;
+        }
+
         const html = `<div class="wt-bs-handle" style="display:flex;justify-content:center;padding:18px 0 12px;cursor:pointer;min-height:48px;position:sticky;top:0;z-index:10;background:#fff;border-radius:16px 16px 0 0;-webkit-tap-highlight-color:transparent"><div style="width:36px;height:4px;background:#D4D0C8;border-radius:2px"></div></div>
             <div style="padding:2px 0 0"><div style="font-size:16px;font-weight:800;color:#202124;padding:0 16px 6px">타임라인</div></div>
-            ${timelineHtml}`;
+            ${timelineHtml}
+            ${planHtml}`;
 
         bs.html(html).show().css({ background: '#fff' });
         this._applyBsStage(2);
@@ -3122,7 +3386,7 @@ export class UIManager {
             const realIdx = events.length - 1 - i;
             const mood = ev.mood || '📝';
             const title = ev.title || (ev.text?.length > 15 ? ev.text.substring(0, 15) + '...' : ev.text || '');
-            const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : '');
+            const dateStr = ev.isPlan ? (ev.planDate ? `📌 ${ev.planDate}` : '📌 예정') : (ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : ''));
             const hasDetail = ev.text && ev.text !== title && ev.text.length > 15;
 
             // occurredAt 뱃지 (다른 장소에서 회상된 이벤트)
@@ -3523,92 +3787,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
         }
     }
 
-    // ========== 이벤트 전체 보기 (패널 뷰 전환) ==========
-    _showEventPanel(locId) {
-        const loc = this.lm.locations.find(l => l.id === locId);
-        if (!loc) return;
-        const events = loc.events || [];
-        const ps = this._pinStyle ? this._pinStyle(loc.name) : { emoji: '📍', color: '#5E84E2' };
-
-        // 현재 패널 내용 저장
-        const body = $('#wt-panel-body');
-        if (!this._savedPanelHTML) this._savedPanelHTML = body.html();
-
-        // 이벤트 패널 HTML
-        let evHTML = `
-        <div id="wt-event-panel" style="padding:8px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                <button id="wt-ev-back" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px">←</button>
-                <div style="flex:1">
-                    <div style="font-size:16px;font-weight:800;color:var(--wt-brown,#775537)">${loc.name}</div>
-                    <div style="font-size:11px;color:#9A8A7A">📖 기억 ${events.length}건</div>
-                </div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;padding-right:4px">`;
-
-        if (!events.length) {
-            evHTML += `<div style="text-align:center;padding:24px;color:#B0A898;font-style:italic">아직 기억이 없어요</div>`;
-        } else {
-            [...events].reverse().forEach((ev, i) => {
-                const realIdx = events.length - 1 - i;
-                const mood = ev.mood || '📝';
-                const title = ev.title || (ev.text?.length > 15 ? ev.text.substring(0, 15) + '...' : ev.text || '');
-                const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { month:'numeric', day:'numeric' }) : '');
-                const cardId = `wt-ev-${realIdx}`;
-
-                evHTML += `
-                <div class="wt-ev-card" style="background:var(--wt-surface,#FAFAF5);border-radius:10px;border:1px solid #EAE6DC;overflow:hidden">
-                    <div class="wt-ev-header" data-card="${cardId}" style="display:flex;align-items:center;gap:6px;padding:10px 12px;cursor:pointer">
-                        <span style="font-size:14px">${mood}</span>
-                        <span style="flex:1;font-size:13px;font-weight:600;color:var(--wt-text,#5A4030)">${title}</span>
-                        <span style="font-size:10px;color:#B0A898;white-space:nowrap">${dateStr}</span>
-                        <span class="wt-ev-arrow" style="font-size:10px;color:#B0A898;transition:transform 0.2s">▼</span>
-                        <button class="wt-ev-del" data-eidx="${realIdx}" style="background:none;border:none;font-size:14px;color:#D4A0A0;cursor:pointer;padding:4px 6px;min-width:28px;min-height:28px;display:flex;align-items:center;justify-content:center">✕</button>
-                    </div>
-                    <div id="${cardId}" style="display:none;padding:0 12px 10px;font-size:12px;line-height:1.6;color:#7A7060;white-space:pre-wrap;border-top:1px dashed #EAE6DC">${ev.text || ''}</div>
-                </div>`;
-            });
-        }
-
-        evHTML += `</div></div>`;
-
-        body.html(evHTML);
-
-        // 뒤로가기
-        const self = this;
-        $('#wt-ev-back').on('click', () => {
-            if (self._savedPanelHTML) {
-                body.html(self._savedPanelHTML);
-                self._savedPanelHTML = null;
-                self._rebindPanel();
-                self.refresh();
-            }
-        });
-
-        // 아코디언 토글
-        $('.wt-ev-header').on('click', function(e) {
-            if ($(e.target).hasClass('wt-ev-del')) return; // 삭제 버튼 제외
-            const cardId = $(this).attr('data-card');
-            const content = $(`#${cardId}`);
-            const arrow = $(this).find('.wt-ev-arrow');
-            if (content.is(':visible')) {
-                content.slideUp(200);
-                arrow.css('transform', 'rotate(0deg)');
-            } else {
-                content.slideDown(200);
-                arrow.css('transform', 'rotate(180deg)');
-            }
-        });
-
-        // 삭제 버튼
-        $('.wt-ev-del').on('click', async function(e) {
-            e.stopPropagation();
-            const idx = parseInt($(this).attr('data-eidx'));
-            events.splice(idx, 1);
-            await self.lm.updateLocation(locId, { events });
-            self._showEventPanel(locId); // 새로고침
-        });
-    }
+    // (첫 번째 _showEventPanel 제거됨 — 아래 두 번째만 사용)
 
     // 패널 복귀 시 이벤트 리바인드
     _rebindPanel() {
@@ -3652,7 +3831,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
             [...events].reverse().forEach((ev, i) => {
                 const realIdx = events.length - 1 - i;
                 const mood = ev.mood || '📝';
-                const dateStr = ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { year:'numeric', month:'short', day:'numeric' }) : (ev.date || ''));
+                const dateStr = ev.isPlan ? (ev.planDate ? `📌 ${ev.planDate}` : '📌 예정') : (ev.rpDate || (ev.timestamp ? new Date(ev.timestamp).toLocaleDateString('ko-KR', { year:'numeric', month:'short', day:'numeric' }) : (ev.date || '')));
                 const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' }) : '';
                 const src = ev.source === 'USER' ? '✍️' : '🤖';
 
@@ -3690,6 +3869,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
         if (this._savedPanelHTML) {
             $('#wt-panel-body').html(this._savedPanelHTML);
             this._savedPanelHTML = null;
+            this._rebindPanel();
             this.refresh();
         }
     }
