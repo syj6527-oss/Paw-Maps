@@ -37,18 +37,36 @@ export function wtMascot() { return extension_settings[EXTENSION_NAME]?.fantasyT
 export function wtTreat() { return extension_settings[EXTENSION_NAME]?.fantasyTheme ? '🍖' : '🦴'; }
 
 // ========== 커스텀 알림 (번역기 스타일) ==========
-let _notiEl = null, _notiTimer = null;
+let _notiEl = null, _notiTimer = null, _notiQueue = [];
 export function wtNotify(msg, type = 'move', duration = 3000) {
     if (!_notiEl) {
         _notiEl = document.createElement('div');
         _notiEl.className = 'wt-notification';
-        document.body.appendChild(_notiEl);
+        (document.documentElement || document.body).appendChild(_notiEl);
     }
+    // ★ 현재 표시 중이면 큐에 넣기
+    if (_notiEl.style.top === '12px') {
+        _notiQueue.push({ msg, type, duration });
+        if (_notiQueue.length > 3) _notiQueue.shift(); // 최대 3개 대기
+        return;
+    }
+    _showNoti(msg, type, duration);
+}
+function _showNoti(msg, type, duration) {
     clearTimeout(_notiTimer);
     _notiEl.className = `wt-notification wt-noti-${type}`;
     _notiEl.textContent = msg;
     _notiEl.style.top = '12px';
-    _notiTimer = setTimeout(() => { _notiEl.style.top = '-60px'; }, duration);
+    _notiTimer = setTimeout(() => {
+        _notiEl.style.top = '-60px';
+        // ★ 큐에 다음 알림 있으면 0.4초 후 표시
+        setTimeout(() => {
+            if (_notiQueue.length > 0) {
+                const next = _notiQueue.shift();
+                _showNoti(next.msg, next.type, next.duration);
+            }
+        }, 400);
+    }, duration);
 }
 export function toastWarn(msg) { wtNotify(msg, 'warn', 3000); }
 export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
@@ -274,6 +292,7 @@ async function scanMessage(text, source = 'USER') {
                         if (lm.currentLocationId !== parentLoc.id) await lm.moveTo(parentLoc.id, rpDate);
                         await lm.moveToSub(sub.id);
                         dbg(`🏠 Meta sub-location: "${parentLoc.name} > ${subName}"`);
+                        if (s.showDetectToast) wtNotify(`🏠 ${parentLoc.name} > ${subName}`, 'move', 2500);
                         pi.inject(); if (ui.panelVisible) ui.refresh();
                         await _tryEvent(text, sub.id, source);
                         return true;
@@ -293,6 +312,7 @@ async function scanMessage(text, source = 'USER') {
                     await lm.moveToSub(sub.id);
                     const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
                     dbg(`🏠 Sub-location: "${curLoc?.name} > ${metaClean}"`);
+                    if (s.showDetectToast) wtNotify(`🏠 ${curLoc?.name} > ${metaClean}`, 'move', 2500);
                     pi.inject();
                     await _tryEvent(text, sub.id, source);
                     return true;
@@ -402,6 +422,7 @@ async function scanMessage(text, source = 'USER') {
                 await lm.moveToSub(sub.id);
                 const curLoc = lm.locations.find(l => l.id === lm.currentLocationId);
                 dbg(`🏠 Sub-location: "${curLoc?.name} > ${np}"`);
+                if (s.showDetectToast) wtNotify(`🏠 ${curLoc?.name} > ${np}`, 'move', 2500);
                 pi.inject();
                 await _tryEvent(text, sub.id, source); // ★ 이벤트는 서브에 저장!
                 return true;
