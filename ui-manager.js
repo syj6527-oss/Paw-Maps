@@ -3005,7 +3005,16 @@ export class UIManager {
         });
 
         const list = $('#wt-search-results').empty();
-        if (!matches.length) { list.html('<div class="wt-search-empty">일치하는 장소 없음</div>').show(); return; }
+        if (!matches.length) {
+            // ★ 로컬 결과 없으면 → Leaflet 모드에서 자동 주소 검색!
+            if (this.leafletRenderer?.map) {
+                list.html('<div class="wt-search-empty">등록된 장소 없음 — 주소 검색 중...</div>').show();
+                this._doAddrSearch(q);
+                return;
+            }
+            list.html('<div class="wt-search-empty">일치하는 장소 없음</div>').show();
+            return;
+        }
 
         for (const loc of matches) {
             const isCur = loc.id === this.lm.currentLocationId;
