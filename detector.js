@@ -483,7 +483,9 @@ export class LocationDetector {
             'arousal','erection','penetration','rhythm','pace','intensity','friction',
             // ★ 음식/물건 + placeWord 조합 오탐 방지
             'chocolate','coffee','protein','candy','snack','energy','cereal','granola',
-            'iron','steel','crow','towel','mini','wet','dry','cold','hot','raw'];
+            'iron','steel','crow','towel','mini','wet','dry','cold','hot','raw',
+            'sleep','asleep','awake','rest','nap','dream','wake','eat','drink','cook',
+            'walk','talk','watch','wait','sit','stand','run','hide','fight','work'];
         if (skipEn.includes(lower)) return true;
         if (place.length <= 1) return true;
         return false;

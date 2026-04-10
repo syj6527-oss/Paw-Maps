@@ -1139,8 +1139,8 @@ ${trimmed}${userCtx}`;
         dbg(`📝 Regex Event: "${evTitle}" | "${evText}" (${evMood})`);
         // ★ LLM 실패 시 엄격한 regex로 plans 추출 (시간표현 + 행동동사 동시 필요)
         const planSentences = text.replace(/<[^>]*>/g, '').replace(/<memo>[\s\S]*?<\/memo>/g, '').split(/[.!?。]+/).filter(s => s.trim().length > 10);
-        const timeRx = /(?:내일|모레|일주일|보름|다음\s*주|다음\s*달|(\d+)\s*(?:주|달|개월|일)\s*(?:뒤|후)|이번\s*주말|tomorrow|next\s+(?:week|month)|in\s+(?:two|three|\d+)\s+(?:weeks?|months?|days?)|come\s+back|T\+\d+)/i;
-        const actionRx = /(?:가자|가기로|오자|만나|검진|재검|진료|예약|방문|장보기|go\s+(?:to|back)|visit|return|come\s+back|check[- ]?up|appointment|see\s+(?:you|the\s+doctor))/i;
+        const timeRx = /(?:내일|모레|일주일|보름|다음\s*주|다음\s*달|(\d+)\s*(?:주|달|개월|일)\s*(?:뒤|후)|이번\s*주말|tomorrow|next\s+(?:week|month)|in\s+(?:two|three|\d+)\s+(?:weeks?|months?|days?)|come\s+back|T\+\d+|at\s+\d{4}\b|by\s+\d{4}\b|\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)|오전|오후|저녁|아침)/i;
+        const actionRx = /(?:가자|가기로|오자|만나|검진|재검|진료|예약|방문|장보기|이사|옮기|go\s+(?:to|back)|visit|return|come\s+back|check[- ]?up|appointment|see\s+(?:you|the\s+doctor)|move\s+(?:the|our|to)|transfer|pack|wheels\s+up|gear\s+up|이동|출발|떠나)/i;
         let regexPlanAdded = false;
         for (const sent of planSentences) {
             if (regexPlanAdded) break; // 최대 1건만
