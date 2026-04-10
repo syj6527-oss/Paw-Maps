@@ -45,7 +45,7 @@ export function wtNotify(msg, type = 'move', duration = 3000) {
         (document.documentElement || document.body).appendChild(_notiEl);
     }
     // ★ 현재 표시 중이면 큐에 넣기
-    if (_notiEl.style.top === '12px') {
+    if (_notiEl.style.display === 'block' && _notiEl.style.top === '12px') {
         _notiQueue.push({ msg, type, duration });
         if (_notiQueue.length > 3) _notiQueue.shift(); // 최대 3개 대기
         return;
@@ -56,16 +56,18 @@ function _showNoti(msg, type, duration) {
     clearTimeout(_notiTimer);
     _notiEl.className = `wt-notification wt-noti-${type}`;
     _notiEl.textContent = msg;
+    _notiEl.style.display = 'block';
     _notiEl.style.top = '12px';
     _notiTimer = setTimeout(() => {
-        _notiEl.style.top = '-60px';
-        // ★ 큐에 다음 알림 있으면 0.4초 후 표시
+        _notiEl.style.top = '-100px';
+        // ★ transition 끝난 후 완전 숨김 + 큐 처리
         setTimeout(() => {
+            _notiEl.style.display = 'none';
             if (_notiQueue.length > 0) {
                 const next = _notiQueue.shift();
                 _showNoti(next.msg, next.type, next.duration);
             }
-        }, 400);
+        }, 450);
     }, duration);
 }
 export function toastWarn(msg) { wtNotify(msg, 'warn', 3000); }
