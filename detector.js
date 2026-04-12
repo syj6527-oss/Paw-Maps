@@ -164,6 +164,7 @@ export class LocationDetector {
             'back','just','then','still','already','finally','eventually',
             'nearby','near','around','along','across','over','under','behind',
             'quickly','slowly','suddenly','further','closer',
+            'damn','goddamn','fucking','fuckin','freaking','bloody','stupid','holy',
         ];
 
         // 인명 호칭 (bug 21)
@@ -330,7 +331,7 @@ export class LocationDetector {
                 const before = sent.substring(0, idx).trim().split(/\s+/).filter(Boolean);
                 const actual = sent.substring(idx, idx + m[0].length).trim();
                 let name = actual;
-                const mods = before.slice(-2).filter(w => !this.skipMods.includes(w.toLowerCase()) && !w.includes('-') && w.length > 1);
+                const mods = before.slice(-2).filter(w => !this.skipMods.includes(w.toLowerCase()) && !this._isSkip(w) && !w.includes('-') && w.length > 1);
                 if (mods.length) name = mods.join(' ') + ' ' + actual;
                 name = name.charAt(0).toUpperCase() + name.slice(1);
                 if (name.length >= 3 && name.length <= 30 && !this.lm.findByName(name)) {
@@ -371,6 +372,8 @@ export class LocationDetector {
             let name = m[0].trim();
             const words = name.split(/\s+/);
             if (words.length > 1 && this.skipMods.includes(words[0].toLowerCase())) name = words.slice(1).join(' ');
+            // ★ 음식/사물 + placeWord 조합 스킵 ("Chocolate bar", "Iron bar", "Towel rack")
+            if (words.length > 1 && this._isSkip(words[0])) continue;
             // ★ 선행 관사/접속사 제거 ("And gynecology clinic" → "gynecology clinic")
             name = name.replace(/^(?:And|The|A|An|Or|But|In|On|At|Of|For|By|To)\s+/i, '');
             name = name.charAt(0).toUpperCase() + name.slice(1);
@@ -448,6 +451,10 @@ export class LocationDetector {
         if (this.skipKo.includes(lower)) return true;
         // 영어 2글자 이하 → 무조건 스킵 (장소명은 최소 3글자)
         if (/^[a-zA-Z]+$/.test(place) && place.length <= 2) return true;
+        // ★ 영어 -ly 부사 → 무조건 스킵 (terribly, quickly, slowly...)
+        // 단, 실제 지명은 제외 (Sicily, Beverly, Holly, Bali...)
+        const lyExceptions = new Set(['sicily','beverly','holly','bali','italy','family','rally','alley','valley','assembly','embassy']);
+        if (/^[a-zA-Z]+ly$/i.test(place) && place.length >= 5 && !lyExceptions.has(lower)) return true;
         // 영어 일반 명사/대명사/관사/접미사 필터
         const skipEn = ['the','a','an','this','that','here','there','where','my','your','his','her',
             'place','somewhere','anywhere','nowhere','outside','inside','back','front','home',
@@ -477,6 +484,8 @@ export class LocationDetector {
             'chair','table','desk','bed','sofa','couch','door','window','wall','floor',
             'plate','cup','mug','glass','bottle','bowl','spoon','fork','paper','card',
             'bag','box','case','pack','kit','vest','mask','hood','helmet','boot','glove',
+            'toe','finger','hand','arm','leg','foot','head','face','eye','ear','nose','mouth','lip','neck','shoulder','knee','chest','chin',
+            'clear','clean','dark','bright','warm','cold','hot','cool','wet','dry','loud','quiet','soft','rough','sharp','dull','tight','loose',
             // ★ 성인 RP 오탐 방지
             'cum','climax','orgasm','thrust','moan','groan','pant','gasp','shudder',
             'breast','chest','thigh','hip','groin','crotch','nipple','cock','dick',
@@ -485,7 +494,10 @@ export class LocationDetector {
             'chocolate','coffee','protein','candy','snack','energy','cereal','granola',
             'iron','steel','crow','towel','mini','wet','dry','cold','hot','raw',
             'sleep','asleep','awake','rest','nap','dream','wake','eat','drink','cook',
-            'walk','talk','watch','wait','sit','stand','run','hide','fight','work'];
+            'walk','talk','watch','wait','sit','stand','run','hide','fight','work',
+            'fix','fixed','fixing','break','broken','clean','open','close','lock','pull','push',
+            'terribly','horribly','incredibly','absolutely','completely','entirely','perfectly',
+            'slowly','quickly','quietly','loudly','gently','roughly','softly','hardly','barely'];
         if (skipEn.includes(lower)) return true;
         if (place.length <= 1) return true;
         return false;
