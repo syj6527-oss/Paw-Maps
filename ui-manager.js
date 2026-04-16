@@ -3982,73 +3982,54 @@ ${charDesc ? `캐릭터 설정: ${charDesc}` : ''}
 ${langInst}
 ${recentChat ? `\n[최근 RP]:\n${recentChat.substring(0, 600)}\n` : ''}
 
-작성 규칙 — 한국 트위터(X) 감성 + 디제틱 인게임 SNS 포스트:
+작성 규칙 — 진짜 한국 트위터(X) 감성:
 
-[핵심 원칙]
-- 각 트윗은 "${charName}의 세계관 안에서 캐릭터가 실제로 쓰는 SNS 앱의 실재 포스트"다.
-- 트윗 본문은 **디제틱 요소만** 포함 — 화자의 내레이션이나 장면 설명 같은 메타 텍스트 금지.
-- 캐릭터가 실제 감각으로 느끼고 공유하는 콘텐츠만 (사진, 스샷, 시스템 경고, 메모, 영수증 등).
+[기본 원칙]
+- 각 트윗은 캐릭터가 SNS에 실제로 쓰는 짧은 글이다.
+- 메타 내레이션/장면 설명 금지 — 캐릭터 본인이 직접 쓴 글만.
 
-[기본 텍스트 트윗 — 전체의 60~70%]
+[텍스트 트윗 — 전체의 70~80%]
 - 1~3줄 짧은 한국어 트윗. @멘션·#해시태그 자연스럽게 (2~3개)
 - 캐릭터별 말투/어휘/성격 뚜렷 (설정 반영)
 - "*행동*" 별표 액션 서술 금지 — 그냥 트윗처럼 써
 - 동물은 동물 시점 (고양이 "창가 자리 사수했다냥")
 - 금지 유행어: ㅇㅇ/ㄴㄴ/팩트/ㄱㅈㅇㅈ/ㅇㄱㄹㅇ/~노/~근/킹받네/~하노/~꺼라/디시/일베/아재개그
 
-[✨ 창의적 HTML 디제틱 카드 — 4~5개 중 1~2개 반드시 포함]
-text 필드 안에 HTML+CSS 통째로 작성. **캐릭터가 공유하는 실재 아티팩트**여야 함.
+[📸 이미지 첨부 트윗 — 4~5개 중 1~2개]
+트위터처럼 "텍스트 + 사진 첨부" 형태. text에 글 쓰고 아래에 img 태그 삽입.
+이미지 URL: https://image.pollinations.ai/prompt/<영어 설명 URL 인코딩>?nologo=true&width=512&height=340
 
-⚠️ JSON 파싱 안전: CSS 속성값은 **반드시 작은따옴표(') 사용 또는 생략**. 큰따옴표는 JSON 깨뜨림.
-  ✅ 좋은 예: style='background:#000;color:#fff'
-  ❌ 나쁜 예: style=\\"background:#000\\"
+이미지 설명은 **장소·상황·분위기에 맞는 영어 키워드**로 (realistic, cinematic 스타일 추가 권장)
 
-자유 창작 방향 (아무거나 OK, 반복 금지):
-- SYSTEM ALERT/CCTV HUD/터미널 (군사·SF)
-- 뉴스 속보 스샷 (사건·속보)
-- 폴라로이드·필름 사진 (감성·추억)
-- 포스트잇·손글씨 메모 (일상)
-- 영수증·티켓·서류 (사건·유머)
-- 게임 UI (HP바·스탯·업적 알림)
-- 낙서·크레용 그림 (귀여움)
-- 편지·서신·일기장 (클래식)
-- 네온사인·전광판 (도시)
-- 레트로 포스터·전단 (빈티지)
-- 악보·앨범 커버 (음악)
-- 메뉴판·가격표 (식당·가게)
-- 조선 궁중 서찰·한지 (역사극)
-- 주술 부적·마법진 (판타지)
-...상상력 전부 풀어
+⚠️ JSON 파싱 안전: HTML 태그 안에서는 **작은따옴표(') 사용**. 큰따옴표 금지.
+  ✅ style='width:100%;border-radius:10px;margin-top:8px'
+  ❌ style="width:100%"
 
-장르·시대 스타일:
-- 조선/중세: 한지 베이지(#F5E6C8), serif, 세피아
-- 현대 도시: 네온, 글래스모피즘, gradient
-- SF/사이버펑크: 홀로그램, 글리치, 모노스페이스
-- 로맨스: 파스텔, 꽃 이모지, 손글씨
-- 공포/스릴러: 다크톤, 찢어진 효과, 빨간 얼룩
+이미지 종류 자유 — 장소·상황에 맞게:
+- 풍경/배경 (사막, 도시, 숲, 실내 등)
+- 음식/음료 사진
+- 풍경 셀카 느낌 (배경 중심)
+- 동물 사진
+- 물건/소품 클로즈업
+- 하늘/날씨
 
-씬 반응 (${recentChat ? '최근 RP 맥락 반영' : ''}):
-- 비/폭풍 → 물방울 효과, 어두운 톤
-- 전투/긴장 → 빨강/노랑 경고색, 스캔라인 애니메이션
-- 평온 → 부드러운 파스텔
-- 야간 → 다크 배경, 네온 악센트
+[간단 인용문 — 가끔 (선택)]
+트윗 안에 짧은 인용 블록을 넣을 수 있음. 반드시 트윗 카드 안에 들어갈 크기로.
+예: <div style='border-left:3px solid #B0A898;padding:8px 12px;margin-top:8px;background:#F8F8F5;border-radius:0 8px 8px 0;font-size:13px;color:#4A4A4A;font-style:italic'>인용문 내용<br><span style='font-style:normal;color:#8B98A5;font-size:11px'>— 출처</span></div>
 
-CSS 규칙:
-- 모바일 세로 기준: width:100%, max-width:100%, box-sizing:border-box 필수
-- inline style만 (background, padding, border, border-radius, box-shadow, linear-gradient, font-family, letter-spacing, transform, opacity, display:flex, animation 전부 OK)
-- 이모지 아이콘 활용: ⚠️🚨📸📝📰🔮💿📡🎮❤️🩸🔒🌸🗡️👑🕯️📜
-- animation은 단순한 것만 (pulse, fadeIn 등 — keyframes 정의 없이 CSS 기본값 사용)
-- 이미지 OK: <img src='https://image.pollinations.ai/prompt/<URLEncoded 설명>?nologo=true' style='width:100%;max-width:100%;border-radius:8px'>
-  예시: <img src='https://image.pollinations.ai/prompt/dark%20foggy%20forest%20at%20night?nologo=true' ...>
-- 금지: <script>, <iframe>, onclick/onload/onerror 등, javascript: URL, <style> 태그
+[❌ 금지]
+- 복잡한 HTML 레이아웃 (큰 박스 카드, SYSTEM ALERT 패널, 네온 박스 등)
+- display:flex/grid 같은 레이아웃 속성으로 복잡한 구조
+- <script>, <iframe>, onclick 등 이벤트 핸들러
 
 혼합된 NPC(알려진 NPC + 장소에 어울리는 신규 NPC/동물 1~2명)로 4~5개 포스트.
+감정 라벨 (excited/chill/tense/sleepy/romantic) 선택.
 
 JSON만 응답:
 {"posts":[
   {"name":"야옹이","avatar":"🐱","type":"animal","mood":"chill","moodLabel":"😌 나른","text":"창가 자리 사수했다냥 #냥스타그램","likes":12},
-  {"name":"Price","avatar":"🥃","type":"npc","mood":"tense","moodLabel":"😰 초조","text":"<div style='background:linear-gradient(135deg,#0A1929,#101F2E);padding:14px;border-radius:10px;color:#E0E7EF;font-family:monospace;border:1px solid rgba(255,70,85,0.3);width:100%;max-width:100%;box-sizing:border-box'><div style='color:#ff4655;font-weight:700;letter-spacing:2px;font-size:11px'>⚠ SYSTEM ALERT</div><div style='margin-top:6px;font-size:12px;line-height:1.5'>외부 자극원 감지. 위치 사수.</div></div>","likes":25},
-  {"name":"Ghost","avatar":"💀","type":"npc","mood":"sleepy","moodLabel":"😮‍💨 지침","text":"<div style='background:#FFFBE6;padding:14px;border-radius:4px;box-shadow:2px 3px 8px rgba(0,0,0,0.1);font-family:serif;font-size:13px;color:#4A3E2A;width:100%;max-width:100%;box-sizing:border-box;position:relative'><div style='position:absolute;top:-4px;left:14px;width:10px;height:10px;border-radius:50%;background:#D63851'></div>오늘만 세 번째… 냉장고 찬물 좀 채워놔 제발<br><div style='text-align:right;font-style:italic;margin-top:4px;color:#8B7A5A'>— 익명</div></div>","likes":8}
+  {"name":"Price","avatar":"🥃","type":"npc","mood":"tense","moodLabel":"😰 경계","text":"사막 한가운데서 헬기 소리가 끊이질 않는다. 잠은 언제 자나. #TF141 #임무중<br><img src='https://image.pollinations.ai/prompt/military%20desert%20night%20helicopter%20silhouette%20cinematic?nologo=true&width=512&height=340' style='width:100%;border-radius:10px;margin-top:8px'>","likes":42},
+  {"name":"Ghost","avatar":"💀","type":"npc","mood":"sleepy","moodLabel":"😮‍💨 피곤","text":"이 좆같은 더위는 뭐냐. 물이라도 좀 시원한 거 마시고 싶다.<div style='border-left:3px solid #B0A898;padding:8px 12px;margin-top:8px;background:#F8F8F5;border-radius:0 8px 8px 0;font-size:13px;color:#4A4A4A;font-style:italic'>물 배급은 0600시 이후.<br><span style='font-style:normal;color:#8B98A5;font-size:11px'>— 보급 담당</span></div>","likes":18}
 ]}
 
 {로 시작 }로 끝.`;
