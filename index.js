@@ -76,7 +76,7 @@ export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
 const defaults = {
     enabled:true, autoDetect:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
-    debugMode:false, mapMode:'node', fantasyTheme:false,
+    debugMode:false, mapMode:'leaflet', fantasyTheme:false,
     eventLang:'auto', // auto=RP언어, ko=한국어, en=English
     worldContinuity:false, // 세계관 이어가기 (캐릭터 기반 저장)
 };
@@ -203,6 +203,19 @@ async function scanMessage(text, source = 'USER') {
                     if (lm.currentLocationId) { await _tryEvent(text, lm.currentLocationId, source); return true; }
                     return false;
                 }
+                // ★ v0.6.0: 영어 단일 단어 오탐 필터 (facility/scattered/blood 등)
+                const metaLow = metaLoc.toLowerCase().trim();
+                const singleWordBlacklist = new Set([
+                    'facility','facilities','scattered','blood','bloody','flesh','torn','broken','damaged','destroyed','ruined','burning','burnt','frozen','shattered','wounded','injured','dead','dying','silent','empty','crowded','abandoned','deserted','forgotten','hidden','secret','mysterious','unknown','familiar','strange','weird','normal','usual','regular','sudden','random','various','several','countless','numerous','endless','infinite','massive','huge','tiny','small','big','giant','enormous','distant','nearby','inside','outside','above','below','beyond','within','across','through','around','beside','behind','ahead',
+                    'attack','defense','retreat','advance','fight','battle','war','peace','escape','rescue','mission','operation','briefing','debrief','training','exercise','practice','drill','patrol','watch','guard','duty','shift',
+                    'anger','rage','fury','fear','terror','panic','shock','horror','pain','agony','sorrow','grief','joy','happiness','love','hate','calm','peace','chaos','silence','noise','darkness','brightness','warmth','coldness',
+                    'somewhere','anywhere','nowhere','everywhere','place','area','zone','spot','location','position','scene','setting',
+                ]);
+                if (/^[a-zA-Z\s]+$/.test(metaLow) && singleWordBlacklist.has(metaLow)) {
+                    dbg(`🚫 Meta loc is common English word (blacklist): "${metaLoc}" → skip`);
+                    if (lm.currentLocationId) { await _tryEvent(text, lm.currentLocationId, source); return true; }
+                    return false;
+                }
 
                 // ★ 영어 욕설/감탄사 접두 제거 — "Damn barracks" → "barracks"
                 metaLoc = metaLoc.replace(/^(?:damn|fucking|fuckin|freaking|goddamn|bloody|stupid|shit|holy)\s+/i, '').trim();
@@ -237,13 +250,7 @@ async function scanMessage(text, source = 'USER') {
                 const aliasHit = lm.locations.find(l => {
                     return (l.aliases || []).some(a => {
                         const al = a.toLowerCase();
-                        if (al.length < 2) return false;
-                        // 영어 별칭은 단어 경계 체크 (database ≠ base)
-                        if (/^[a-z\s]+$/.test(al)) {
-                            const rx = new RegExp('\\b' + al.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-                            return rx.test(metaLower_pre);
-                        }
-                        return metaLower_pre.includes(al);
+                        return al.length >= 2 && metaLower_pre.includes(al);
                     });
                 });
                 if (aliasHit) {
@@ -528,6 +535,14 @@ async function init() {
         if (extension_settings[EXTENSION_NAME][k] === undefined) extension_settings[EXTENSION_NAME][k] = v;
     }
     extension_settings[EXTENSION_NAME].debugMode = false;
+    // ★ v0.6.0 마이그레이션: 기존 'node' 유저 → 'leaflet' 강제 전환 (한 번만)
+    if (!extension_settings[EXTENSION_NAME]._migrated_v06) {
+        if (extension_settings[EXTENSION_NAME].mapMode === 'node') {
+            extension_settings[EXTENSION_NAME].mapMode = 'leaflet';
+            console.log(`[${EXTENSION_NAME}] 🎉 v0.6.0 migration: mapMode node → leaflet`);
+        }
+        extension_settings[EXTENSION_NAME]._migrated_v06 = true;
+    }
     saveSettingsDebounced();
 
     db = new WorldTrackerDB(); await db.open();
@@ -1038,13 +1053,14 @@ If no significant event (just walking, sitting, daily routine): {"mood":null,"su
 Pay SPECIAL ATTENTION to any future promises, appointments, or plans mentioned in the dialogue (e.g., "Let's go to X tomorrow", "Come back in two weeks", "내일 마트 가자", "2주 뒤에 재검").
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"mood":"💕","title":"ultra-short hook max 15chars","summary":"detailed 2-sentence summary","promisePlace":"named location characters plan to visit (or null)","future_plan":{"has_plan":true,"what":"what they plan to do","where":"destination name or null","when":"time expression as-is: 2주 뒤, tomorrow, 오늘 저녁, next week, 1월 3일, every month, etc."},"npc_interactions":[{"name":"NPC name","delta":0.5,"reason":"short reason"}]}
+{"mood":"💕","title":"ultra-short hook max 15chars","summary":"detailed 2-sentence summary","promisePlace":"named location characters plan to visit (or null)","future_plan":{"has_plan":true,"what":"what they plan to do","where":"destination name or null","when":"time expression as-is: 2주 뒤, tomorrow, 오늘 저녁, next week, 1월 3일, every month, etc."},"npc_interactions":[{"name":"NPC name","delta":0.5,"reason":"short reason"}],"community_updates":[{"name":"NPC or animal name","avatar":"emoji","type":"npc|animal","mood":"excited|chill|tense|romantic|sleepy","moodLabel":"🔥 신남","text":"Twitter-style 1-2 sentence post with @mentions, #hashtags, *actions*"}]}
 
 Mood types: 💕=romantic/emotional 📅=promise/future ⚡=conflict/danger
 title: Write like 'OO한 곳' or 'OO이 시작된 곳'. Capture emotional significance, not literal dialogue.
 promisePlace: ANY named store/city/building characters discuss visiting. Be AGGRESSIVE. Write ONLY the place name, or null.
 future_plan: ALWAYS check for this. If ANY character mentions going somewhere, doing something later, making an appointment, scheduling a visit, or promising to return — set has_plan: true and fill what/where/when.
 npc_interactions: Track how NPCs/animals interact with ${userName}. delta: +0.5 friendly/kind, +1 life-saving/deeply bonding, -0.5 rude/hostile, -1 betrayal/attack. Only include NPCs who ACTIVELY interact in this scene. Omit if no NPC interactions.
+community_updates: Twitter-style real-time Korean posts capturing what NPCs/animals are doing RIGHT NOW in this scene. Generate 1-3 posts (only for NPCs who are visibly active). Write like real Korean Twitter/X: no *asterisked actions*, just natural Korean sentences showing their current state/feeling. Match each character's voice/personality. Use @mentions, #hashtags. NEVER use Korean male-forum slang (ㅇㅇ/ㄴㄴ/팩트/ㅇㄱㄹㅇ/~노/~근/킹받네/디시체 등 금지). Omit if no NPCs are active.
 
 Examples:
 {"mood":"⚡","title":"고구마와 뒷담화의 현장","summary":"군견 Dex의 막사에서 ${userName}가 몰래 군고구마를 나눠먹으며 Ghost에 대한 불만을 털어놓던 중, 이를 엿들은 Ghost에게 현장을 들키고 만다.","promisePlace":null,"future_plan":{"has_plan":false},"npc_interactions":[{"name":"Dex","delta":0.5,"reason":"간식 나눠먹음"},{"name":"Ghost","delta":-0.5,"reason":"뒷담화 들킴"}]}
@@ -1174,6 +1190,29 @@ ${trimmed}${userCtx}`;
                         const delta = Math.max(-1, Math.min(1, ni.delta));
                         await lm.updateNpcAffinity(locId, ni.name, delta);
                         dbg(`💗 NPC interaction: "${ni.name}" ${delta > 0 ? '+' : ''}${delta} (${ni.reason || ''})`);
+                    }
+                    if (ui?.panelVisible) ui.refresh();
+                }
+                // ★ 💬 커뮤니티 실시간 피드 자동 업데이트 (v0.6.0 NEW — 양방향 연동!)
+                if (Array.isArray(parsed.community_updates) && parsed.community_updates.length) {
+                    for (const cu of parsed.community_updates) {
+                        if (!cu?.name || !cu?.text) continue;
+                        // 멘션/해시태그 추출
+                        const mentions = (cu.text.match(/@([A-Za-z가-힣0-9_]+)/g) || []).map(m => m.substring(1));
+                        const hashtags = (cu.text.match(/#([A-Za-z가-힣0-9_]+)/g) || []).map(h => h.substring(1));
+                        await lm.addCommunityPost(locId, {
+                            name: cu.name,
+                            avatar: cu.avatar || '👤',
+                            type: cu.type || 'npc',
+                            mood: cu.mood || '',
+                            moodLabel: cu.moodLabel || '',
+                            text: cu.text,
+                            mentions,
+                            hashtags,
+                            likes: 0,
+                            rpDate,
+                        });
+                        dbg(`💬 Community post: ${cu.name} — "${cu.text.substring(0, 40)}..."`);
                     }
                     if (ui?.panelVisible) ui.refresh();
                 }

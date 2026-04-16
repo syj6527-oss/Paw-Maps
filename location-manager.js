@@ -453,7 +453,7 @@ export class LocationManager {
         if (existing) {
             existing.count = (existing.count || 1) + 1;
             existing.lastSeen = Date.now();
-            await this.db.saveLocation(loc);
+            await this.db.putLocation(loc);
             return false; // 기존 NPC 카운트 업
         }
         loc.npcs.push({
@@ -469,7 +469,7 @@ export class LocationManager {
             lastSeen: Date.now(),
             count: 1,
         });
-        await this.db.saveLocation(loc);
+        await this.db.putLocation(loc);
         console.log(`[${EXTENSION_NAME}] 🧑 NPC added: "${npc.name}" (${npc.type}) → ${loc.name}`);
         return true; // 새 NPC
     }
@@ -480,7 +480,7 @@ export class LocationManager {
         const npc = loc.npcs.find(n => n.name.toLowerCase() === npcName.toLowerCase());
         if (!npc) return false;
         Object.assign(npc, updates);
-        await this.db.saveLocation(loc);
+        await this.db.putLocation(loc);
         return true;
     }
 
@@ -491,7 +491,7 @@ export class LocationManager {
         if (!npc) return;
         npc.affinity = Math.max(1, Math.min(5, (npc.affinity || 3) + delta));
         npc.lastSeen = Date.now();
-        await this.db.saveLocation(loc);
+        await this.db.putLocation(loc);
         console.log(`[${EXTENSION_NAME}] 💗 NPC affinity: "${npc.name}" ${delta > 0 ? '+' : ''}${delta} → ${npc.affinity}`);
     }
 
@@ -499,6 +499,58 @@ export class LocationManager {
         const loc = this.locations.find(l => l.id === locId);
         if (!loc?.npcs) return;
         loc.npcs = loc.npcs.filter(n => n.name.toLowerCase() !== npcName.toLowerCase());
-        await this.db.saveLocation(loc);
+        await this.db.putLocation(loc);
+    }
+
+    // ========== 💬 커뮤니티 피드 (v0.6.0 NEW) ==========
+    async addCommunityPost(locId, post) {
+        const loc = this.locations.find(l => l.id === locId);
+        if (!loc) return false;
+        if (!loc.community) loc.community = [];
+        loc.community.unshift({
+            id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: post.name,
+            handle: post.handle || `@${post.name.toLowerCase().replace(/\s+/g, '_')}`,
+            avatar: post.avatar || '👤',
+            type: post.type || 'npc', // 'npc' | 'animal' | 'user'
+            mood: post.mood || '',
+            moodLabel: post.moodLabel || '',
+            text: post.text,
+            mentions: post.mentions || [],
+            hashtags: post.hashtags || [],
+            likes: post.likes || 0,
+            replies: post.replies || [],
+            retweetOf: post.retweetOf || null,
+            timestamp: Date.now(),
+            rpDate: post.rpDate || '',
+        });
+        // 최대 30개 유지
+        if (loc.community.length > 30) loc.community = loc.community.slice(0, 30);
+        await this.db.putLocation(loc);
+        return true;
+    }
+
+    async updateCommunityPost(locId, postId, updates) {
+        const loc = this.locations.find(l => l.id === locId);
+        if (!loc?.community) return false;
+        const post = loc.community.find(p => p.id === postId);
+        if (!post) return false;
+        Object.assign(post, updates);
+        await this.db.putLocation(loc);
+        return true;
+    }
+
+    async removeCommunityPost(locId, postId) {
+        const loc = this.locations.find(l => l.id === locId);
+        if (!loc?.community) return;
+        loc.community = loc.community.filter(p => p.id !== postId);
+        await this.db.putLocation(loc);
+    }
+
+    async clearCommunity(locId) {
+        const loc = this.locations.find(l => l.id === locId);
+        if (!loc) return;
+        loc.community = [];
+        await this.db.putLocation(loc);
     }
 }

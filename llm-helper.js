@@ -23,26 +23,30 @@ function _getApiConfig() {
 
         let type = null, key = null, model = null, url = null;
 
-        // ★ 여러 경로에서 API 키 탐색
+        // ★ 여러 경로에서 API 키 탐색 (window.oai 등 안전 접근)
+        const _oai = (typeof window !== 'undefined' && window.oai) || {};
+        const _chatCompletion = (typeof window !== 'undefined' && window.chat_completion_source) || (typeof window !== 'undefined' && window.chatCompletion) || null;
+        const _mainApi = (typeof window !== 'undefined' && window.main_api) || null;
+
         // Google (Gemini)
-        const gKey = oai?.api_key_makersuite
-            || window.api_key_makersuite
+        const gKey = _oai.api_key_makersuite
+            || (typeof window !== 'undefined' && window.api_key_makersuite)
             || document.getElementById('api_key_makersuite')?.value
             || '';
-        const gModel = oai?.google_model
-            || window.google_model
+        const gModel = _oai.google_model
+            || (typeof window !== 'undefined' && window.google_model)
             || document.getElementById('model_google_select')?.value
             || 'gemini-2.0-flash';
 
         // OpenAI
-        const oKey = oai?.api_key_openai
-            || window.api_key_openai
+        const oKey = _oai.api_key_openai
+            || (typeof window !== 'undefined' && window.api_key_openai)
             || document.getElementById('api_key_openai')?.value
             || '';
 
         // OpenRouter
-        const orKey = oai?.api_key_openrouter
-            || window.api_key_openrouter
+        const orKey = _oai.api_key_openrouter
+            || (typeof window !== 'undefined' && window.api_key_openrouter)
             || document.getElementById('api_key_openrouter')?.value
             || '';
 
@@ -54,7 +58,7 @@ function _getApiConfig() {
         });
 
         // Google 우선 (유저가 Gemini 사용)
-        if (gKey && (chatCompletion === 'makersuite' || mainApi === 'openai')) {
+        if (gKey && (_chatCompletion === 'makersuite' || _mainApi === 'openai')) {
             type = 'google'; key = gKey; model = gModel;
         }
         // 명시적 Google 체크 (chatCompletion 없어도)
@@ -62,15 +66,15 @@ function _getApiConfig() {
             type = 'google'; key = gKey; model = gModel;
         }
         // OpenAI
-        else if (oKey && (chatCompletion === 'openai' || !chatCompletion)) {
+        else if (oKey && (_chatCompletion === 'openai' || !_chatCompletion)) {
             type = 'openai'; key = oKey;
-            model = oai?.openai_model || 'gpt-4o-mini';
-            url = oai?.openai_reverse_proxy || 'https://api.openai.com/v1';
+            model = _oai.openai_model || 'gpt-4o-mini';
+            url = _oai.openai_reverse_proxy || 'https://api.openai.com/v1';
         }
         // OpenRouter
         else if (orKey) {
             type = 'openai'; key = orKey;
-            model = oai?.openrouter_model || '';
+            model = _oai.openrouter_model || '';
             url = 'https://openrouter.ai/api/v1';
         }
 
@@ -106,10 +110,19 @@ async function _callGoogle(key, model, prompt) {
             const data = await res.json();
             dbg('🔧 Google raw:', JSON.stringify(data).substring(0, 300));
             const parts = data?.candidates?.[0]?.content?.parts || [];
+            // ★ JSON으로 시작하는 part 우선 선택 (RP 텍스트 part 거부)
+            for (const part of parts) {
+                if (part.text && part.text.trim().startsWith('{')) {
+                    dbg(`🔧 Google OK (JSON mode, ${part.text.length}c, starts with {)`);
+                    return part.text;
+                }
+            }
+            // JSON으로 시작하는 게 없으면 { 포함하는 걸로 fallback
             for (const part of parts) {
                 if (part.text && part.text.includes('{')) {
-                    dbg(`🔧 Google OK (JSON mode, part ${parts.indexOf(part)}, ${part.text.length}c)`);
-                    return part.text;
+                    const jsonStart = part.text.indexOf('{');
+                    dbg(`🔧 Google OK (JSON mode, ${part.text.length}c, { at ${jsonStart})`);
+                    return part.text.substring(jsonStart);
                 }
             }
             dbg(`⚠️ Google JSON mode: no JSON found in ${parts.length} parts`);
@@ -130,10 +143,18 @@ async function _callGoogle(key, model, prompt) {
         if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
         const data2 = await res2.json();
         const parts2 = data2?.candidates?.[0]?.content?.parts || [];
+        // ★ JSON으로 시작하는 part 우선
         for (const part of parts2) {
-            if (part.text && part.text.includes('{')) {
+            if (part.text && part.text.trim().startsWith('{')) {
                 dbg(`🔧 Google API OK (fallback, ${part.text.length}c)`);
                 return part.text;
+            }
+        }
+        for (const part of parts2) {
+            if (part.text && part.text.includes('{')) {
+                const jsonStart = part.text.indexOf('{');
+                dbg(`🔧 Google API OK (fallback, { at ${jsonStart})`);
+                return part.text.substring(jsonStart);
             }
         }
         dbg(`⚠️ Google fallback: no JSON in parts either`);
@@ -182,14 +203,44 @@ async function _callClaude(key, model, prompt, url) {
     return data?.content?.[0]?.text || '';
 }
 
+// r27: Google API 503/과부하 때 다른 Gemini 모델로 자동 폴백
+async function _callGoogleWithFallback(key, primaryModel, prompt) {
+    try {
+        return await _callGoogle(key, primaryModel, prompt);
+    } catch(e) {
+        const msg = e?.message || '';
+        // 서버 과부하/타임아웃 계열 에러만 모델 폴백 시도
+        if (/\b(503|429|500|502|504)\b|AbortError|timeout|overload/i.test(msg)) {
+            const fallbacks = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash']
+                .filter(m => m !== primaryModel);
+            for (const fm of fallbacks) {
+                try {
+                    dbg(`🔁 ${primaryModel} 과부하 → ${fm} 시도`);
+                    const r = await _callGoogle(key, fm, prompt);
+                    if (r) { dbg(`✅ ${fm} 성공!`); return r; }
+                } catch(e2) {
+                    dbg(`⚠️ ${fm} 도 실패: ${e2.message?.substring(0, 60)}`);
+                    continue;
+                }
+            }
+            throw new Error(`Google 서버 과부하 — 모든 Gemini 모델 폴백 실패. 1~2분 후 다시 시도해주세요. (마지막: ${msg.substring(0, 80)})`);
+        }
+        throw e;
+    }
+}
+
 // ========== 메인 호출 함수 ==========
 export async function callLLM(prompt) {
+    // ★ 마지막 에러 저장 (디버깅용)
+    window._wtLastLLMError = null;
+
     // ★ 방법 1: 직접 API 호출 (확장 설정 키 또는 ST 변수)
     const cfg = _getApiConfig();
     if (cfg) {
         try {
+            dbg(`🔧 LLM calling ${cfg.type} (${cfg.model}), prompt ${prompt.length}c`);
             let result = '';
-            if (cfg.type === 'google') result = await _callGoogle(cfg.key, cfg.model, prompt);
+            if (cfg.type === 'google') result = await _callGoogleWithFallback(cfg.key, cfg.model, prompt);
             else if (cfg.type === 'openai') result = await _callOpenAI(cfg.key, cfg.model, prompt, cfg.url);
             else if (cfg.type === 'claude') result = await _callClaude(cfg.key, cfg.model, prompt, cfg.url);
 
@@ -197,13 +248,17 @@ export async function callLLM(prompt) {
                 dbg(`🔧 LLM direct OK (${result.length}c)`);
                 return result;
             }
+            window._wtLastLLMError = 'LLM returned empty result';
+            dbg('⚠️ LLM direct returned empty');
         } catch(e) {
+            window._wtLastLLMError = e.message;
             dbg('⚠️ LLM direct failed:', e.message);
         }
+    } else {
+        window._wtLastLLMError = 'No API config (key missing?)';
     }
 
     // ★ 방법 2: Fallback — generateQuietPrompt (본체 모델, 컨텍스트 포함)
-    // ⚠️ 주의: RP 컨텍스트 포함되므로 JSON 응답이 아니면 거부!
     try {
         const ctx = getContext();
         const gen = ctx?.generateQuietPrompt;
@@ -211,17 +266,19 @@ export async function callLLM(prompt) {
             const { runWithoutAutoDetect } = await import('./index.js');
             const result = await runWithoutAutoDetect(() => gen({ prompt }), 2500);
             if (result) {
-                // ★ JSON 검증 — RP 이어쓰기 거부
                 if (result.includes('{') && result.includes('}')) {
                     dbg('🔧 LLM fallback (generateQuietPrompt) OK');
                     return result;
                 } else {
+                    window._wtLastLLMError = 'Fallback returned non-JSON';
                     dbg('⚠️ LLM fallback returned non-JSON (RP continuation?), rejecting');
                     return null;
                 }
             }
+            window._wtLastLLMError = 'Fallback returned null';
         }
     } catch(e) {
+        window._wtLastLLMError = 'Fallback: ' + e.message;
         dbg('⚠️ LLM fallback failed:', e.message);
     }
 
