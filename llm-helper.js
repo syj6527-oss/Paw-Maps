@@ -115,7 +115,7 @@ async function _callGoogle(key, model, prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     const _fetch = (body) => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 20000); // 20초 타임아웃
+        const timer = setTimeout(() => ctrl.abort(), 45000); // 45초 타임아웃 (모바일 대응)
         return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal }).finally(() => clearTimeout(timer));
     };
 
@@ -294,7 +294,7 @@ async function _callVertex(sa, region, model, prompt) {
 
     const _fetch = (body) => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 20000);
+        const timer = setTimeout(() => ctrl.abort(), 45000);
         return fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -383,7 +383,7 @@ async function _callVertexApiKey(apiKey, model, prompt) {
     const endpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent`;
     const _fetch = (body) => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 20000);
+        const timer = setTimeout(() => ctrl.abort(), 45000);
         return fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -554,8 +554,21 @@ export async function callLLM(prompt) {
                     dbg('🔧 LLM fallback (generateQuietPrompt) OK');
                     return result;
                 } else {
-                    window._wtLastLLMError = 'Fallback returned non-JSON';
-                    dbg('⚠️ LLM fallback returned non-JSON (RP continuation?), rejecting');
+                    // v0.7.7: JSON 아니면 한번 더 재시도 — 프롬프트 앞에 강한 지시 추가
+                    dbg('⚠️ LLM fallback returned non-JSON, retrying with stricter instruction...');
+                    try {
+                        const strictPrompt = `[SYSTEM: Output raw JSON only. No prose, no narration, no story. Start with { and end with }. Nothing else.]\n\n${prompt}`;
+                        const retry = await runWithoutAutoDetect(() => gen({ prompt: strictPrompt }), 2500);
+                        if (retry && retry.includes('{') && retry.includes('}')) {
+                            dbg('🔧 LLM fallback retry OK');
+                            return retry;
+                        }
+                        window._wtLastLLMError = 'Fallback retry also returned non-JSON';
+                        dbg('⚠️ LLM fallback retry also non-JSON');
+                    } catch(e2) {
+                        window._wtLastLLMError = 'Fallback retry: ' + e2.message;
+                        dbg('⚠️ LLM fallback retry failed:', e2.message);
+                    }
                     return null;
                 }
             }

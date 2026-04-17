@@ -202,7 +202,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.7.6</span></b>
+                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.7.7</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -227,10 +227,10 @@ export class UIManager {
                     <label style="white-space:nowrap">🌐 AI 출력 언어</label>
                     <select id="wt-s-eventlang" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="auto">🔄 자동 (RP 언어 감지)</option><option value="ko">🇰🇷 한국어 고정</option><option value="en">🇺🇸 English fixed</option></select>
                 </div>
-                <div class="wt-s-row" style="display:flex;align-items:center;gap:6px" title="실시간/리뷰 생성 개수 — 토큰 사용량 조절">
+                <div class="wt-s-row" style="display:flex;align-items:center;gap:6px" title="실시간/리뷰 생성 개수 — 모바일에서 타임아웃 나면 🌱 가벼움 권장">
                     <label style="white-space:nowrap">📏 생성 분량</label>
                     <select id="wt-s-genSize" class="text_pole wt-select" style="flex:1;font-size:11px">
-                        <option value="light">🌱 가벼움 (토큰 절약)</option>
+                        <option value="light">🌱 가벼움 (모바일 권장)</option>
                         <option value="normal" selected>⚖️ 기본</option>
                         <option value="rich">🌿 풍성함 (토큰 ↑)</option>
                     </select>
@@ -2060,7 +2060,7 @@ export class UIManager {
                     💡 현재 장소를 중심으로 주변 등록된 장소들의 관계를 보여줍니다. 도보 거리 기준.
                 </div>
             </div>
-            <!-- 🟢 실시간 탭 (v0.7.6 NEW) — 커뮤니티 피드 인라인 -->
+            <!-- 🟢 실시간 탭 (v0.7.7 NEW) — 커뮤니티 피드 인라인 -->
             <div id="wt-bs-tab-community" style="display:none;overflow-y:auto;position:relative;background:#fff">
                 <!-- Sticky 헤더: 개수 + ⛶ 전체화면 + ✨ 새 반응 -->
                 <div id="wt-bs-comm-sticky" style="position:sticky;top:0;z-index:5;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #EFF3F4">
@@ -2295,10 +2295,10 @@ export class UIManager {
         };
         bs.find('.wt-bs-comm-gen').on('click touchend', commGenHandler);
 
-        // v0.7.6: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
+        // v0.7.7: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
         bs.find('.wt-bs-comm-gen-inline, .wt-bs-comm-fab').on('click touchend', commGenHandler);
 
-        // v0.7.6: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
+        // v0.7.7: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
         bs.find('.wt-bs-comm-fs').on('click touchend', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -2319,7 +2319,7 @@ export class UIManager {
             _commMoreLock = true;
             setTimeout(() => _commMoreLock = false, 500);
             window._wtDlog?.('click FIRE COMM → community tab', '#0f8');
-            // v0.7.6: 오버레이 대신 🟢 실시간 탭으로 전환
+            // v0.7.7: 오버레이 대신 🟢 실시간 탭으로 전환
             const curBs = $('#wt-bottomsheet');
             const commTab = curBs.find('.wt-bs-tab[data-tab="community"]');
             if (commTab.length) {
@@ -4483,6 +4483,10 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                 // r27: Google 과부하 전용 안내
                 if (/503|429|500|502|504|과부하|overload/i.test(err)) {
                     toastWarn(`⚠️ Google 서버 과부하 중 (503). 1~2분 후 다시 시도해주세요`);
+                } else if (/abort|timeout|타임아웃/i.test(err)) {
+                    toastWarn(`⚠️ 응답 시간 초과. 설정 → 📏 생성 분량을 🌱 가벼움으로 바꿔보세요`);
+                } else if (/non-JSON|Fallback/i.test(err)) {
+                    toastWarn(`⚠️ LLM 응답 실패. API 키를 설정했는지 확인해주세요 (설정 → 🔑 LLM API 키)`);
                 } else {
                     toastWarn(`⚠️ LLM 응답 없음: ${err}`);
                 }
@@ -4510,7 +4514,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                 // 멘션/해시태그 추출
                 const mentions = (p.text.match(/@([A-Za-z가-힣0-9_]+)/g) || []).map(m => m.substring(1));
                 const hashtags = (p.text.match(/#([A-Za-z가-힣0-9_]+)/g) || []).map(h => h.substring(1));
-                // v0.7.6: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
+                // v0.7.7: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
                 const cleanReplies = Array.isArray(p.replies) ? p.replies.slice(0, 3).filter(r => r && r.text).map(r => ({
                     name: r.name || '익명',
                     handle: r.handle || '',
@@ -4537,7 +4541,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 닫힌 상태에서 바텀시트의 미니피드만 갱신할 때만 _showBottomSheet 호출
             if (!this._commOverlayOpen) {
                 const prevStage = this._bsStage || 2;
-                // v0.7.6: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
+                // v0.7.7: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
                 const prevTab = $('#wt-bottomsheet .wt-bs-tab').filter(function() {
                     return $(this).css('borderBottomColor') !== 'rgba(0, 0, 0, 0)' && $(this).css('borderBottomColor') !== 'transparent';
                 }).data('tab') || 'overview';
@@ -4730,7 +4734,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }, { passive: true });
     }
 
-    // v0.7.6: 생성 분량 설정 — 토큰 사용량 조절
+    // v0.7.7: 생성 분량 설정 — 토큰 사용량 조절
     // 반환: { community: {min, max, label, minImages}, review: {min, max} }
     _getGenSize() {
         const s = extension_settings[EXTENSION_NAME];
@@ -4754,7 +4758,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         };
     }
 
-    // v0.7.6: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
+    // v0.7.7: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
     // context: 'community' | 'event' | 'review' | 'summary' — 맥락별로 살짝 다른 힌트 제공
     _getLangInstruction(context = 'generic') {
         const s = extension_settings[EXTENSION_NAME];
@@ -4776,7 +4780,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
              + 'If mixed or unclear → default to Korean. Never mix languages within a single post.';
     }
 
-    // v0.7.6: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
+    // v0.7.7: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
     _firstGrapheme(s) {
         if (!s) return '👤';
         try {
@@ -4797,9 +4801,9 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             sleepy: 'background:#EDE7F6;color:#4527A0',
         };
         const moodStyle = moodColors[p.mood] || 'background:#F7F9F9;color:#536471';
-        // v0.7.6: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
+        // v0.7.7: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
         const avatarChar = this._firstGrapheme(p.avatar || (p.type === 'animal' ? '🐾' : '👤'));
-        // v0.7.6: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
+        // v0.7.7: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
         const replies = Array.isArray(p.replies) ? p.replies : [];
         const repliesHtml = replies.length ? `<div style="margin-top:8px;margin-left:-4px;border-left:2px solid #EFF3F4;padding-left:10px">
             ${replies.map(r => {
@@ -5338,7 +5342,7 @@ CRITICAL: Start with { end with }`;
             // ★ 최근 채팅 맥락 (리뷰 품질 향상 — 톤/말투/관계 흡수)
             const recentChat = getRecentChatContext(2500);
 
-            // v0.7.6: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
+            // v0.7.7: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
             const reviewGen = this._getGenSize().review;
             const visits = loc.visitCount || 0;
             // 방문 많을수록 최대치 가까이, 적으면 최소치 가까이
