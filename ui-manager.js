@@ -202,7 +202,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.7.4</span></b>
+                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.7.6</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -226,6 +226,14 @@ export class UIManager {
                 <div class="wt-s-row" style="display:flex;align-items:center;gap:6px" title="이벤트/리뷰/실시간 반응에 공통 적용">
                     <label style="white-space:nowrap">🌐 AI 출력 언어</label>
                     <select id="wt-s-eventlang" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="auto">🔄 자동 (RP 언어 감지)</option><option value="ko">🇰🇷 한국어 고정</option><option value="en">🇺🇸 English fixed</option></select>
+                </div>
+                <div class="wt-s-row" style="display:flex;align-items:center;gap:6px" title="실시간/리뷰 생성 개수 — 토큰 사용량 조절">
+                    <label style="white-space:nowrap">📏 생성 분량</label>
+                    <select id="wt-s-genSize" class="text_pole wt-select" style="flex:1;font-size:11px">
+                        <option value="light">🌱 가벼움 (토큰 절약)</option>
+                        <option value="normal" selected>⚖️ 기본</option>
+                        <option value="rich">🌿 풍성함 (토큰 ↑)</option>
+                    </select>
                 </div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>🔑 LLM API 키 (리뷰/이벤트 생성용)</label></div>
@@ -294,6 +302,7 @@ export class UIManager {
         $('#wt-s-inject').on('change', () => { s.aiInjection ? this.pi?.inject() : this.pi?.clear(); });
         $('#wt-s-mem').val(s?.memoryMode||'natural').on('change', () => { s.memoryMode=$('#wt-s-mem').val(); saveSettingsDebounced(); this.pi?.inject(); });
         $('#wt-s-eventlang').val(s?.eventLang||'auto').on('change', () => { s.eventLang=$('#wt-s-eventlang').val(); saveSettingsDebounced(); });
+        $('#wt-s-genSize').val(s?.genSize||'normal').on('change', () => { s.genSize=$('#wt-s-genSize').val(); saveSettingsDebounced(); });
         // 🧠 감지 모델 프로필 로드
         this._loadProfiles();
         $('#wt-s-profile').on('change', () => { $('#wt-s-profile-status').text('⚠️ 미저장').css('color','#F5A8A8'); });
@@ -2051,7 +2060,7 @@ export class UIManager {
                     💡 현재 장소를 중심으로 주변 등록된 장소들의 관계를 보여줍니다. 도보 거리 기준.
                 </div>
             </div>
-            <!-- 🟢 실시간 탭 (v0.7.4 NEW) — 커뮤니티 피드 인라인 -->
+            <!-- 🟢 실시간 탭 (v0.7.6 NEW) — 커뮤니티 피드 인라인 -->
             <div id="wt-bs-tab-community" style="display:none;overflow-y:auto;position:relative;background:#fff">
                 <!-- Sticky 헤더: 개수 + ⛶ 전체화면 + ✨ 새 반응 -->
                 <div id="wt-bs-comm-sticky" style="position:sticky;top:0;z-index:5;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #EFF3F4">
@@ -2286,10 +2295,10 @@ export class UIManager {
         };
         bs.find('.wt-bs-comm-gen').on('click touchend', commGenHandler);
 
-        // v0.7.4: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
+        // v0.7.6: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
         bs.find('.wt-bs-comm-gen-inline, .wt-bs-comm-fab').on('click touchend', commGenHandler);
 
-        // v0.7.4: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
+        // v0.7.6: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
         bs.find('.wt-bs-comm-fs').on('click touchend', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -2310,7 +2319,7 @@ export class UIManager {
             _commMoreLock = true;
             setTimeout(() => _commMoreLock = false, 500);
             window._wtDlog?.('click FIRE COMM → community tab', '#0f8');
-            // v0.7.4: 오버레이 대신 🟢 실시간 탭으로 전환
+            // v0.7.6: 오버레이 대신 🟢 실시간 탭으로 전환
             const curBs = $('#wt-bottomsheet');
             const commTab = curBs.find('.wt-bs-tab[data-tab="community"]');
             if (commTab.length) {
@@ -4074,6 +4083,9 @@ export class UIManager {
             const evSummary = (loc.events || []).slice(-2).map(e => `${e.mood||'📝'} ${e.title||e.text?.substring(0,30)}`).join(', ') || 'none';
             const s = extension_settings[EXTENSION_NAME];
             const langInst = this._getLangInstruction('community');
+            const gen = this._getGenSize().community;
+            const countLabel = gen.label;  // "7~9개"
+            const minImg = gen.minImages;  // 4
 
             const prompt = `이 장소 주변에서 흘러나오는 **트위터 실시간 피드**를 생성해줘. 지역/장소 해시태그로 모인 **익명의 아무나**가 쓴 글들이다.
 
@@ -4102,21 +4114,56 @@ ${recentChat ? `\n[최근 RP 맥락 — 이거 적극 활용해서 '목격담·�
 "이 장소 + 주변 지역을 공유하는 사람들"이 각자 살아가며 올리는 트윗.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
-👥 구성 (4~5개 포스트)
+👥 구성 (${countLabel} 포스트)
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
 **전부 익명 유저/동물만 작성!** (등록된 캐릭터·NPC가 트윗을 직접 쓰는 건 금지)
 단, 트윗 **내용 안에서는** 유저("${userName}")나 캐릭터("${charName}")에 대한 목격담·뒷얘기를 적극적으로 다뤄도 됨.
 
-구성:
-- **일반 익명 트윗 1~2개** — 이 장소 관련 일상/불평/관찰 (유저·캐릭터 언급 없음)
-- **🌍 현지 색깔 트윗 1~2개** — 그 나라/지역 특색 (음식·문화·날씨·언어) 반영 ★
-- **🔥 목격담·뒷얘기 트윗 1~2개** — 익명 유저가 "방금 ${charName}이랑 ${userName}이 ~하던데..." 같은 현장 중계
-- **익명 동물 1개** — 길고양이, 들개, 까마귀, 비둘기 등 (type:"animal")
+구성 (총 ${countLabel} 포스트):
+- **🏛️ 해당 장소 특화 트윗 2~3개** ★★★ (최우선!) — "${loc.name}" 자체에 대한 경험담/후기/정보 공유
+- **🌍 현지 색깔 트윗 1~2개** — 그 나라/지역 특색 (음식·문화·날씨·언어) 반영
+- **🔥 목격담·뒷얘기 트윗 0~2개** — 익명 유저가 "방금 ${charName}이랑 ${userName}이 ~하던데..." 같은 현장 중계 (RP 맥락 있을 때만)
+- **💭 일반 익명 트윗 1개** — 동네 관련 일상/불평
+- **🐱 익명 동물 1개** — 길고양이, 들개, 까마귀, 비둘기 등 (type:"animal")
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
-🔥 목격담·뒷얘기 트윗 (핵심 재미 요소!)
+🏛️ 해당 장소 특화 트윗 (⭐ 최우선 핵심 기능!) 
 ━━━━━━━━━━━━━━━━━━━━━━━━
+
+**"${loc.name}" 이 장소 자체에 대한 트윗 2~3개를 반드시 넣어줘.**
+이게 이 피드의 가장 중요한 포인트! "이 동네"로 퉁치지 말고 **장소 이름을 직접 해시태그나 본문에 언급**.
+
+**장소 유형별 트윗 예시 (참고만, 현재 장소에 맞게 새로 써!):**
+
+📍 [카페/식당/술집]
+- 메뉴 평가: "${loc.name} 아메리카노 맛있네... 산미 있는 스타일 좋아하면 추천 #${loc.name}"
+- 분위기: "${loc.name} 2층 창가 자리 진짜 명당임ㅠㅠ 공부하기 딱"
+- 직원 후기: "${loc.name} 알바생 존잘;;; 커피 주면서 웃는데 심장 내려앉음 #${loc.name}"
+- 꿀팁: "${loc.name} 10시 이후 가면 사람 없어서 좋음 방금 왔는데 나밖에 없어ㅋㅋ"
+- 불평: "${loc.name} 와이파이 왜이렇게 느림? 여기서 일 못하겠다"
+
+📍 [관광지/명소]
+- 감상: "런던아이 진짜 미쳤다... 사진 안 담기는 게 아쉬울뿐 #런던아이"
+- 팁: "런던아이 앞 장사꾼 진짜 조심하셈 막 덥석덥석 따라옴"
+- 추천: "런던아이 해질녘에 타면 개예뻐요 진짜 추천"
+- 인증샷: "런던아이 왔음 인증<img>"
+
+📍 [공원/자연]
+- 날씨/분위기: "한강공원 오늘 바람 대박 시원... 치맥 각 치맥"
+- 명당: "여의도공원 벤치 중 ○○쪽이 제일 조용함 알아두셈"
+- 이벤트: "한강공원 오늘 사람 미쳤네 뭐 행사 있나봄"
+
+📍 [집/방/사적 공간] — 이런 경우 장소 특화 대신 일반 트윗으로!
+
+**작성 규칙:**
+- 해시태그 #${loc.name} 적극 활용 (이게 피드를 묶는 키!)
+- **구체적 디테일** — 메뉴명, 구역, 시간대, 직원 특징 등
+- **진짜 방문자 톤** — "${loc.name} 갔다왔는데 ~", "${loc.name} 다녀옴", "지금 ${loc.name}에 있는데 ~"
+- **리뷰·팁·불평·자랑 다양하게** 섞기
+- 장소가 실제 유명 관광지면 **진짜 그 장소의 특징** 반영 (런던아이=해지는 풍경, 에펠탑=야간 조명 등)
+- 장소가 가상/판타지면 **그 세계관의 분위기** 반영
+
 
 **[최근 RP 맥락]을 적극 활용해서** 익명의 제3자가 유저/캐릭터의 현장을 목격한 것처럼 중계하는 트윗.
 장면 하나 잡아서 익명 관찰자 시점으로 풀어.
@@ -4144,10 +4191,10 @@ ${recentChat ? `\n[최근 RP 맥락 — 이거 적극 활용해서 '목격담·�
 "아까 ${charName}이 ${userName} 머리 쓰다듬어주는 거 봤는데 나 녹음ㅠㅠ"
 
 **⚠️ 주의:**
-- 목격담은 **4~5개 중 1~2개**만. 너무 많으면 어색함.
+- 목격담은 **${countLabel} 중 0~2개**만. 너무 많으면 어색함.
 - **RP에 이 장소에서의 장면이 없으면 목격담 완전 생략!** 억지로 만들지 말고 일반 트윗 + 현지색으로 대체.
 - 캐릭터/유저가 "어디 갔다"는 **현재 장소와 무관한 다른 장소** 언급 금지 (예: 현재 장소가 "교내카페"인데 "사막 쪽으로 갔다" ← 금지)
-- **RP 맥락이 아예 없거나 짧아도 반드시 4~5개 포스트를 생성해야 함.** 일반 익명 트윗·현지색·동물로만 채워도 OK. 절대 빈 배열 반환 금지!
+- **RP 맥락이 아예 없거나 짧아도 반드시 ${countLabel} 포스트를 생성해야 함.** 일반 익명 트윗·현지색·동물로만 채워도 OK. 절대 빈 배열 반환 금지!
 - 등록 캐릭터가 직접 트윗을 쓰는 건 절대 금지 (관찰자만).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4370,7 +4417,7 @@ ${recentChat ? `\n[최근 RP 맥락 — 이거 적극 활용해서 '목격담·�
 답글 구조: {"name":"...", "handle":"@...", "avatar":"...", "text":"..."}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
-📸 이미지 첨부 (필수! 4~5개 중 **최소 2~3개** 이미지 포함)
+📸 이미지 첨부 (필수! ${countLabel} 중 **최소 ${minImg}개** 이미지 포함)
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
 트위터는 사진이 생명이다. 글만 있는 타임라인은 지루해. 반드시 **절반 이상**에 이미지 붙여.
@@ -4416,10 +4463,12 @@ JSON 출력 예시 — **이건 형식/구조만 참고해. 내용은 절대 따
 (아래 [플레이스홀더]는 실제로는 이 장소의 나라/지역 특색으로 교체)
 
 {"posts":[
+  {"name":"[장소방문객]","handle":"@[장소_visitor]","avatar":"[장소연상이모지]","type":"anon","mood":"romantic","moodLabel":"😊 기쁨","text":"[\"${loc.name}\" 경험담/후기/감상] #${loc.name}<br><img src='https://image.pollinations.ai/prompt/[영어_장소_키워드]?nologo=true&width=512&height=340' style='width:100%;border-radius:10px;margin-top:8px'>","likes":18,"replies":[{"name":"[공감닉]","handle":"@[핸들]","avatar":"[이모지]","text":"[공감/질문 답글]"},{"name":"[정보러]","handle":"@[핸들2]","avatar":"💡","text":"[추가 정보]"}]},
+  {"name":"[장소단골]","handle":"@[장소_regular]","avatar":"☕","type":"anon","mood":"chill","moodLabel":"😌 나른","text":"[\"${loc.name}\" 꿀팁/메뉴 추천/명당 정보] #${loc.name}","likes":12,"replies":[{"name":"[궁금닉]","handle":"@[핸들]","avatar":"👀","text":"[질문]"}]},
+  {"name":"[장소불평러]","handle":"@[장소_complaint]","avatar":"😤","type":"anon","mood":"tense","moodLabel":"😵 멘붕","text":"[\"${loc.name}\"에 대한 불평/아쉬운점] #${loc.name}<br><img src='https://image.pollinations.ai/prompt/[장소_영어키워드]?nologo=true&width=512&height=340' style='width:100%;border-radius:10px;margin-top:8px'>","likes":8,"replies":[]},
   {"name":"[지역특화_닉네임]","handle":"@[지역_핸들]","avatar":"[지역연상이모지]","type":"anon","mood":"romantic","moodLabel":"😊 기쁨","text":"[현지 음식/문화 관련 심쿵 일화]<br><img src='https://image.pollinations.ai/prompt/[영어_현지고증_키워드]?nologo=true&width=512&height=340' style='width:100%;border-radius:10px;margin-top:8px'>","likes":9,"replies":[{"name":"[공감닉]","handle":"@[핸들]","avatar":"[이모지]","text":"[짧은 공감 답글]"}]},
   {"name":"[장소구경꾼]","handle":"@[watcher_핸들]","avatar":"👀","type":"anon","mood":"excited","moodLabel":"🔥 목격","text":"방금 ${charName}이 [목격 장면] 미친;; [반응]","likes":12,"replies":[{"name":"[궁금닉]","handle":"@[핸들]","avatar":"👀","text":"헐 뭐라고요??"}]},
-  {"name":"[일반익명]","handle":"@[핸들]","avatar":"🤔","type":"anon","mood":"tense","moodLabel":"😵 멘붕","text":"[이 장소 관련 불평이나 일상]<br><img src='https://image.pollinations.ai/prompt/[영어_키워드]?nologo=true&width=512&height=340' style='width:100%;border-radius:10px;margin-top:8px'>","likes":7,"replies":[]},
-  {"name":"[혼잣말닉]","handle":"@[핸들]","avatar":"🌙","type":"anon","mood":"sleepy","moodLabel":"😮‍💨 피곤","text":"[짧은 혼잣말이나 밈]","likes":4,"replies":[{"name":"[공감닉]","handle":"@[핸들]","avatar":"🫠","text":"[공감]"}]},
+  {"name":"[혼잣말닉]","handle":"@[핸들]","avatar":"🌙","type":"anon","mood":"sleepy","moodLabel":"😮‍💨 피곤","text":"[짧은 혼잣말이나 동네 일상]","likes":4,"replies":[{"name":"[공감닉]","handle":"@[핸들]","avatar":"🫠","text":"[공감]"}]},
   {"name":"[동물이름_번호]","handle":"@[animal_핸들]","avatar":"[동물이모지]","type":"animal","mood":"chill","moodLabel":"😌 나른","text":"[동물 시점 일상]<br><img src='https://image.pollinations.ai/prompt/[동물_장소_영어키워드]?nologo=true&width=512&height=340' style='width:100%;border-radius:10px;margin-top:8px'>","likes":6,"replies":[{"name":"[덕후]","handle":"@[핸들]","avatar":"[이모지]","text":"귀여움ㅠㅠ"}]}
 ]}
 
@@ -4461,7 +4510,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                 // 멘션/해시태그 추출
                 const mentions = (p.text.match(/@([A-Za-z가-힣0-9_]+)/g) || []).map(m => m.substring(1));
                 const hashtags = (p.text.match(/#([A-Za-z가-힣0-9_]+)/g) || []).map(h => h.substring(1));
-                // v0.7.4: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
+                // v0.7.6: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
                 const cleanReplies = Array.isArray(p.replies) ? p.replies.slice(0, 3).filter(r => r && r.text).map(r => ({
                     name: r.name || '익명',
                     handle: r.handle || '',
@@ -4488,7 +4537,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 닫힌 상태에서 바텀시트의 미니피드만 갱신할 때만 _showBottomSheet 호출
             if (!this._commOverlayOpen) {
                 const prevStage = this._bsStage || 2;
-                // v0.7.4: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
+                // v0.7.6: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
                 const prevTab = $('#wt-bottomsheet .wt-bs-tab').filter(function() {
                     return $(this).css('borderBottomColor') !== 'rgba(0, 0, 0, 0)' && $(this).css('borderBottomColor') !== 'transparent';
                 }).data('tab') || 'overview';
@@ -4681,7 +4730,31 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }, { passive: true });
     }
 
-    // v0.7.4: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
+    // v0.7.6: 생성 분량 설정 — 토큰 사용량 조절
+    // 반환: { community: {min, max, label, minImages}, review: {min, max} }
+    _getGenSize() {
+        const s = extension_settings[EXTENSION_NAME];
+        const size = s?.genSize || 'normal';
+        if (size === 'light') {
+            return {
+                community: { min: 4, max: 5, label: '4~5개', minImages: 2 },
+                review:    { min: 2, max: 3 },
+            };
+        }
+        if (size === 'rich') {
+            return {
+                community: { min: 10, max: 12, label: '10~12개', minImages: 6 },
+                review:    { min: 5, max: 7 },
+            };
+        }
+        // normal (default)
+        return {
+            community: { min: 7, max: 9, label: '7~9개', minImages: 4 },
+            review:    { min: 3, max: 5 },
+        };
+    }
+
+    // v0.7.6: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
     // context: 'community' | 'event' | 'review' | 'summary' — 맥락별로 살짝 다른 힌트 제공
     _getLangInstruction(context = 'generic') {
         const s = extension_settings[EXTENSION_NAME];
@@ -4703,7 +4776,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
              + 'If mixed or unclear → default to Korean. Never mix languages within a single post.';
     }
 
-    // v0.7.4: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
+    // v0.7.6: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
     _firstGrapheme(s) {
         if (!s) return '👤';
         try {
@@ -4724,9 +4797,9 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             sleepy: 'background:#EDE7F6;color:#4527A0',
         };
         const moodStyle = moodColors[p.mood] || 'background:#F7F9F9;color:#536471';
-        // v0.7.4: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
+        // v0.7.6: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
         const avatarChar = this._firstGrapheme(p.avatar || (p.type === 'animal' ? '🐾' : '👤'));
-        // v0.7.4: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
+        // v0.7.6: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
         const replies = Array.isArray(p.replies) ? p.replies : [];
         const repliesHtml = replies.length ? `<div style="margin-top:8px;margin-left:-4px;border-left:2px solid #EFF3F4;padding-left:10px">
             ${replies.map(r => {
@@ -5265,25 +5338,17 @@ CRITICAL: Start with { end with }`;
             // ★ 최근 채팅 맥락 (리뷰 품질 향상 — 톤/말투/관계 흡수)
             const recentChat = getRecentChatContext(2500);
 
-            // 방문횟수 보정 리뷰 수 (최소 3개 보장, 3~5개 중심)
+            // v0.7.6: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
+            const reviewGen = this._getGenSize().review;
             const visits = loc.visitCount || 0;
-            let weights;
-            if (visits <= 2) {
-                // 3~5개: [3]=50%, [4]=30%, [5]=20%
-                weights = [0.50, 0.80, 1.0];
-            } else if (visits <= 5) {
-                // 3~6개: [3]=25%, [4]=35%, [5]=25%, [6]=15%
-                weights = [0.25, 0.60, 0.85, 1.0];
-            } else {
-                // 4~7개: [4]=30%, [5]=35%, [6]=20%, [7]=15%
-                weights = [0.30, 0.65, 0.85, 1.0];
-            }
+            // 방문 많을수록 최대치 가까이, 적으면 최소치 가까이
+            const visitBoost = Math.min(1, visits / 10); // 0~1
+            const range = reviewGen.max - reviewGen.min;
             const rnd = Math.random();
-            const baseCount = visits <= 5 ? 3 : 4;
-            let reviewCount = baseCount;
-            for (let i = 0; i < weights.length; i++) {
-                if (rnd < weights[i]) { reviewCount = baseCount + i; break; }
-            }
+            // 방문 부스트에 따라 확률 분포를 max 쪽으로 기울임
+            const adjustedRnd = rnd * (1 - visitBoost * 0.4) + visitBoost * 0.4;
+            let reviewCount = reviewGen.min + Math.floor(adjustedRnd * (range + 1));
+            reviewCount = Math.max(reviewGen.min, Math.min(reviewGen.max, reviewCount));
             // ★ 터줏대감 목록 (리뷰어로 활용)
             const npcList = (loc.npcs || []).map(n => `"${n.name}"(${n.role || n.type})`).join(', ');
 
