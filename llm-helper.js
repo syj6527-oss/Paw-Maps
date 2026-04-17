@@ -601,6 +601,24 @@ export function getRecentChatContext(maxChars = 2000) {
 }
 
 // ========== JSON 파싱 헬퍼 ==========
+
+// HTML 태그 속성의 큰따옴표를 작은따옴표로 변환 (LLM이 JSON 이스케이프 실수 보완)
+// 예: "text":"... <img src=\"url\" style=\"...\"> ..." → "text":"... <img src='url' style='...'> ..."
+// 단, JSON 구조의 "는 건드리지 않음 — text 필드 값 내부의 HTML 태그 부분만 처리
+function _repairHtmlQuotes(jsonStr) {
+    // "text":"..." 필드 값 내부만 타겟. 이스케이프된 \" 또는 raw "를 태그 속성 자리에서 치환
+    // 패턴: <tag attr="value">  또는 <tag attr=\"value\"> → '로 변환
+    return jsonStr.replace(
+        /"(text|body|content)"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
+        (match, key, value) => {
+            // value 내부에서 HTML 태그 속성의 큰따옴표 치환
+            // 패턴1: 이스케이프된 \" (JSON 내부에서 표기되는 방식)
+            let fixed = value.replace(/\\"/g, "'");
+            return `"${key}":"${fixed}"`;
+        }
+    );
+}
+
 export function parseLLMJson(raw) {
     if (!raw) return null;
     let text = typeof raw === 'string' ? raw : JSON.stringify(raw);
@@ -612,7 +630,21 @@ export function parseLLMJson(raw) {
     // ★ 1차: 완전한 JSON 매칭
     let match = text.match(/\{[\s\S]*\}/);
     if (match) {
-        try { return JSON.parse(match[0]); } catch(e) { /* fall through to repair */ }
+        try { return JSON.parse(match[0]); } catch(e) {
+            dbg('⚠️ 1차 파싱 실패, HTML 따옴표 복구 시도:', e.message.substring(0, 100));
+            // ★ 1.5차: HTML 속성의 잘못된 큰따옴표를 작은따옴표로 복구 후 재시도
+            // 예: "text":"... <img src="url" style="..."> ..."  →  "text":"... <img src='url' style='...'> ..."
+            const repaired = _repairHtmlQuotes(match[0]);
+            if (repaired !== match[0]) {
+                try {
+                    const parsed = JSON.parse(repaired);
+                    dbg('🔧 HTML 따옴표 복구 성공');
+                    return parsed;
+                } catch(e2) {
+                    dbg('⚠️ HTML 따옴표 복구 후에도 실패:', e2.message.substring(0, 100));
+                }
+            }
+        }
     }
 
     // ★ 2차: 잘린 JSON 복구 (닫는 } 없는 경우 포함)
