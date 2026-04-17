@@ -202,7 +202,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.6.4</span></b>
+                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.6.5</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -246,6 +246,7 @@ export class UIManager {
                             <option value="asia-northeast1">asia-northeast1 (일본)</option>
                             <option value="asia-northeast3">asia-northeast3 (서울)</option>
                             <option value="asia-southeast1">asia-southeast1</option>
+                            <option value="global">🌐 global (일부 모델만 지원)</option>
                         </select>
                     </div>
                     <div class="wt-s-row">
@@ -2050,7 +2051,7 @@ export class UIManager {
                     💡 현재 장소를 중심으로 주변 등록된 장소들의 관계를 보여줍니다. 도보 거리 기준.
                 </div>
             </div>
-            <!-- 🟢 실시간 탭 (v0.6.4 NEW) — 커뮤니티 피드 인라인 -->
+            <!-- 🟢 실시간 탭 (v0.6.5 NEW) — 커뮤니티 피드 인라인 -->
             <div id="wt-bs-tab-community" style="display:none;overflow-y:auto;position:relative;background:#fff">
                 <!-- Sticky 헤더: 개수 + ⛶ 전체화면 + ✨ 새 반응 -->
                 <div id="wt-bs-comm-sticky" style="position:sticky;top:0;z-index:5;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #EFF3F4">
@@ -2285,10 +2286,10 @@ export class UIManager {
         };
         bs.find('.wt-bs-comm-gen').on('click touchend', commGenHandler);
 
-        // v0.6.4: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
+        // v0.6.5: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
         bs.find('.wt-bs-comm-gen-inline, .wt-bs-comm-fab').on('click touchend', commGenHandler);
 
-        // v0.6.4: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
+        // v0.6.5: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
         bs.find('.wt-bs-comm-fs').on('click touchend', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -2309,7 +2310,7 @@ export class UIManager {
             _commMoreLock = true;
             setTimeout(() => _commMoreLock = false, 500);
             window._wtDlog?.('click FIRE COMM → community tab', '#0f8');
-            // v0.6.4: 오버레이 대신 🟢 실시간 탭으로 전환
+            // v0.6.5: 오버레이 대신 🟢 실시간 탭으로 전환
             const curBs = $('#wt-bottomsheet');
             const commTab = curBs.find('.wt-bs-tab[data-tab="community"]');
             if (commTab.length) {
@@ -4254,7 +4255,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 닫힌 상태에서 바텀시트의 미니피드만 갱신할 때만 _showBottomSheet 호출
             if (!this._commOverlayOpen) {
                 const prevStage = this._bsStage || 2;
-                // v0.6.4: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
+                // v0.6.5: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
                 const prevTab = $('#wt-bottomsheet .wt-bs-tab').filter(function() {
                     return $(this).css('borderBottomColor') !== 'rgba(0, 0, 0, 0)' && $(this).css('borderBottomColor') !== 'transparent';
                 }).data('tab') || 'overview';
@@ -4447,7 +4448,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }, { passive: true });
     }
 
-    // v0.6.4: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
+    // v0.6.5: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
     _firstGrapheme(s) {
         if (!s) return '👤';
         try {
@@ -4468,7 +4469,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             sleepy: 'background:#EDE7F6;color:#4527A0',
         };
         const moodStyle = moodColors[p.mood] || 'background:#F7F9F9;color:#536471';
-        // v0.6.4: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
+        // v0.6.5: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
         const avatarChar = this._firstGrapheme(p.avatar || (p.type === 'animal' ? '🐾' : '👤'));
         return `<div style="padding:12px 16px;border-bottom:1px solid #EFF3F4;display:flex;gap:12px;align-items:flex-start">
             <div style="width:40px;height:40px;min-width:40px;border-radius:50%;background:${p.type==='animal'?'#FFF8E1':'#E8F0FE'};display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;flex-shrink:0;overflow:hidden;text-align:center">${avatarChar}</div>

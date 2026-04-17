@@ -288,7 +288,9 @@ async function _callVertex(sa, region, model, prompt) {
     const projectId = sa.project_id;
     const loc = region || 'us-central1';
     const token = await _getVertexAccessToken(sa);
-    const endpoint = `https://${loc}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${loc}/publishers/google/models/${model}:generateContent`;
+    // global은 prefix 없는 엔드포인트 사용, 나머지는 regional
+    const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+    const endpoint = `https://${host}/v1/projects/${projectId}/locations/${loc}/publishers/google/models/${model}:generateContent`;
 
     const _fetch = (body) => {
         const ctrl = new AbortController();
