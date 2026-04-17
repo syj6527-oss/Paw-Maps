@@ -124,7 +124,7 @@ async function _callGoogle(key, model, prompt) {
         const res = await _fetch({
             systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: 4096, responseMimeType: 'application/json' },
         });
         if (res.ok) {
             const data = await res.json();
@@ -158,7 +158,7 @@ async function _callGoogle(key, model, prompt) {
     try {
         const res2 = await _fetch({
             contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: 4096 },
         });
         if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
         const data2 = await res2.json();
@@ -311,7 +311,7 @@ async function _callVertex(sa, region, model, prompt) {
         const res = await _fetch({
             systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: 4096, responseMimeType: 'application/json' },
         });
         if (res.ok) {
             const data = await res.json();
@@ -345,7 +345,7 @@ async function _callVertex(sa, region, model, prompt) {
     try {
         const res2 = await _fetch({
             contents: [{ role: 'user', parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: 4096 },
         });
         if (!res2.ok) throw new Error(`Vertex API ${res2.status}: ${res2.statusText}`);
         const data2 = await res2.json();
@@ -400,7 +400,7 @@ async function _callVertexApiKey(apiKey, model, prompt) {
         const res = await _fetch({
             systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: 4096, responseMimeType: 'application/json' },
         });
         if (res.ok) {
             const data = await res.json();
@@ -429,7 +429,7 @@ async function _callVertexApiKey(apiKey, model, prompt) {
     try {
         const res2 = await _fetch({
             contents: [{ role: 'user', parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: 4096 },
         });
         if (!res2.ok) throw new Error(`Vertex(key) API ${res2.status}: ${res2.statusText}`);
         const data2 = await res2.json();
@@ -512,7 +512,13 @@ async function _callGoogleWithFallback(key, primaryModel, prompt) {
 }
 
 // ========== 메인 호출 함수 ==========
-export async function callLLM(prompt) {
+export async function callLLM(prompt, options = {}) {
+    // v0.7.9: options.temperature 지원 (기본 0.7, 커뮤니티는 0.95 권장)
+    const temp = options.temperature ?? 0.7;
+    if (temp !== 0.7) {
+        // 전역 오버라이드 플래그로 임시 적용 — 이번 호출만
+        window._wtTempOverride = temp;
+    }
     // ★ 마지막 에러 저장 (디버깅용)
     window._wtLastLLMError = null;
 
