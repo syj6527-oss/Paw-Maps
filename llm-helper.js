@@ -11,6 +11,26 @@ function _getApiConfig() {
     try {
         // ★ 1순위: 우리 확장 설정에 저장된 API 키
         const s = extension_settings?.[EXTENSION_NAME];
+        // ★ Vertex AI: SA JSON 또는 API 키 (자동 판별)
+        if (s?.llmProvider === 'vertex') {
+            const model = s.llmModel || 'gemini-2.0-flash';
+            // 우선 SA JSON 체크 (풀 권한)
+            if (s?.vertexSaJson) {
+                const sa = _parseServiceAccount(s.vertexSaJson);
+                if (sa) {
+                    const region = s.vertexRegion || 'us-central1';
+                    dbg('🔧 LLM using Vertex AI (SA):', sa.project_id, region, model);
+                    return { type: 'vertex', sa, region, model };
+                }
+            }
+            // SA JSON 없거나 파싱 실패 → API 키 방식으로 폴백
+            if (s?.llmApiKey) {
+                dbg('🔧 LLM using Vertex AI (API key):', model);
+                return { type: 'vertex_key', key: s.llmApiKey, model };
+            }
+            dbg('⚠️ Vertex: neither SA JSON nor API key set');
+            return null;
+        }
         if (s?.llmApiKey) {
             const provider = s.llmProvider || 'google';
             const model = s.llmModel || (provider === 'google' ? 'gemini-2.0-flash' : provider === 'openai' ? 'gpt-4o-mini' : '');
@@ -164,6 +184,266 @@ async function _callGoogle(key, model, prompt) {
     }
 }
 
+// ========== Vertex AI (Gemini) 직접 호출 ==========
+// Service Account JSON → JWT (RS256) → OAuth access token → Vertex API
+
+// base64url 인코딩 (일반 base64에서 +/= 치환)
+function _base64UrlEncode(input) {
+    let b64;
+    if (typeof input === 'string') {
+        b64 = btoa(unescape(encodeURIComponent(input)));
+    } else {
+        // ArrayBuffer / Uint8Array
+        const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        b64 = btoa(binary);
+    }
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// PEM 형식의 private key를 Web Crypto CryptoKey로 임포트
+async function _importPrivateKey(pem) {
+    // PEM 헤더/푸터 제거 + 개행 제거
+    const pemContents = pem
+        .replace(/-----BEGIN [^-]+-----/, '')
+        .replace(/-----END [^-]+-----/, '')
+        .replace(/\s+/g, '');
+    // base64 → ArrayBuffer
+    const binaryString = atob(pemContents);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+    // PKCS#8 ("BEGIN PRIVATE KEY") — Google SA 키는 PKCS#8
+    return crypto.subtle.importKey(
+        'pkcs8',
+        bytes.buffer,
+        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+}
+
+// Service Account JSON으로부터 access token 받기 (1시간 유효)
+// 메모리 캐시로 5분 여유 두고 재사용
+const _vertexTokenCache = new Map(); // key: client_email, value: {token, exp}
+
+async function _getVertexAccessToken(sa) {
+    const cacheKey = sa.client_email;
+    const cached = _vertexTokenCache.get(cacheKey);
+    const now = Math.floor(Date.now() / 1000);
+    if (cached && cached.exp > now + 300) {
+        dbg('🔧 Vertex token cache hit (exp in ' + (cached.exp - now) + 's)');
+        return cached.token;
+    }
+
+    // JWT payload
+    const iat = now;
+    const exp = iat + 3600;
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const payload = {
+        iss: sa.client_email,
+        scope: 'https://www.googleapis.com/auth/cloud-platform',
+        aud: sa.token_uri || 'https://oauth2.googleapis.com/token',
+        exp: exp,
+        iat: iat,
+    };
+
+    const headerB64 = _base64UrlEncode(JSON.stringify(header));
+    const payloadB64 = _base64UrlEncode(JSON.stringify(payload));
+    const toSign = `${headerB64}.${payloadB64}`;
+
+    // RS256 서명
+    const key = await _importPrivateKey(sa.private_key);
+    const sigBuffer = await crypto.subtle.sign(
+        { name: 'RSASSA-PKCS1-v1_5' },
+        key,
+        new TextEncoder().encode(toSign)
+    );
+    const sigB64 = _base64UrlEncode(new Uint8Array(sigBuffer));
+    const jwt = `${toSign}.${sigB64}`;
+
+    // OAuth 토큰 교환
+    const tokenUri = sa.token_uri || 'https://oauth2.googleapis.com/token';
+    const res = await fetch(tokenUri, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+    });
+    if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`OAuth token exchange failed (${res.status}): ${errText.substring(0, 200)}`);
+    }
+    const data = await res.json();
+    if (!data.access_token) throw new Error('OAuth response missing access_token');
+
+    _vertexTokenCache.set(cacheKey, { token: data.access_token, exp });
+    dbg('🔧 Vertex token obtained (valid 1hr)');
+    return data.access_token;
+}
+
+async function _callVertex(sa, region, model, prompt) {
+    if (!sa?.client_email || !sa?.private_key || !sa?.project_id) {
+        throw new Error('Invalid service account: missing client_email/private_key/project_id');
+    }
+    const projectId = sa.project_id;
+    const loc = region || 'us-central1';
+    const token = await _getVertexAccessToken(sa);
+    const endpoint = `https://${loc}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${loc}/publishers/google/models/${model}:generateContent`;
+
+    const _fetch = (body) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 20000);
+        return fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+        }).finally(() => clearTimeout(timer));
+    };
+
+    // 1차: JSON 강제
+    try {
+        const res = await _fetch({
+            systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+        });
+        if (res.ok) {
+            const data = await res.json();
+            dbg('🔧 Vertex raw:', JSON.stringify(data).substring(0, 300));
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            for (const part of parts) {
+                if (part.text && part.text.trim().startsWith('{')) {
+                    dbg(`🔧 Vertex OK (JSON mode, ${part.text.length}c)`);
+                    return part.text;
+                }
+            }
+            for (const part of parts) {
+                if (part.text && part.text.includes('{')) {
+                    const jsonStart = part.text.indexOf('{');
+                    dbg(`🔧 Vertex OK (JSON mode, { at ${jsonStart})`);
+                    return part.text.substring(jsonStart);
+                }
+            }
+            dbg(`⚠️ Vertex JSON mode: no JSON found in ${parts.length} parts`);
+        } else {
+            const errBody = await res.text().catch(() => '');
+            dbg(`⚠️ Vertex JSON mode: ${res.status} ${errBody.substring(0, 200)}`);
+            // 401은 토큰 만료 가능성 — 캐시 무효화
+            if (res.status === 401) _vertexTokenCache.delete(sa.client_email);
+        }
+    } catch(e) {
+        dbg(`⚠️ Vertex JSON mode error: ${e.message}`);
+    }
+
+    // 2차: fallback
+    try {
+        const res2 = await _fetch({
+            contents: [{ role: 'user', parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        });
+        if (!res2.ok) throw new Error(`Vertex API ${res2.status}: ${res2.statusText}`);
+        const data2 = await res2.json();
+        const parts2 = data2?.candidates?.[0]?.content?.parts || [];
+        for (const part of parts2) {
+            if (part.text && part.text.trim().startsWith('{')) return part.text;
+        }
+        for (const part of parts2) {
+            if (part.text && part.text.includes('{')) return part.text.substring(part.text.indexOf('{'));
+        }
+        return parts2[0]?.text || '';
+    } catch(e) {
+        throw new Error(`Vertex API both attempts failed: ${e.message}`);
+    }
+}
+
+// Service Account JSON 파싱 (문자열 → 객체)
+function _parseServiceAccount(jsonStr) {
+    if (!jsonStr) return null;
+    try {
+        const sa = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+        if (sa.type !== 'service_account') return null;
+        if (!sa.client_email || !sa.private_key || !sa.project_id) return null;
+        return sa;
+    } catch(e) {
+        dbg('⚠️ Service account JSON parse failed:', e.message);
+        return null;
+    }
+}
+
+// ========== Vertex AI Express (API 키 방식) ==========
+// 서비스 계정 JSON 없이 짧은 API 키로 호출 — 2026년 정식 지원
+// 엔드포인트는 AI Studio와 달리 project/location 없음, 헤더로 인증
+async function _callVertexApiKey(apiKey, model, prompt) {
+    const endpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent`;
+    const _fetch = (body) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 20000);
+        return fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'x-goog-api-key': apiKey,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+        }).finally(() => clearTimeout(timer));
+    };
+
+    // 1차: JSON 강제
+    try {
+        const res = await _fetch({
+            systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+        });
+        if (res.ok) {
+            const data = await res.json();
+            dbg('🔧 Vertex(key) raw:', JSON.stringify(data).substring(0, 300));
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            for (const part of parts) {
+                if (part.text && part.text.trim().startsWith('{')) {
+                    dbg(`🔧 Vertex(key) OK (JSON mode, ${part.text.length}c)`);
+                    return part.text;
+                }
+            }
+            for (const part of parts) {
+                if (part.text && part.text.includes('{')) {
+                    return part.text.substring(part.text.indexOf('{'));
+                }
+            }
+        } else {
+            const errBody = await res.text().catch(() => '');
+            dbg(`⚠️ Vertex(key) JSON mode: ${res.status} ${errBody.substring(0, 200)}`);
+        }
+    } catch(e) {
+        dbg(`⚠️ Vertex(key) JSON mode error: ${e.message}`);
+    }
+
+    // 2차: fallback
+    try {
+        const res2 = await _fetch({
+            contents: [{ role: 'user', parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        });
+        if (!res2.ok) throw new Error(`Vertex(key) API ${res2.status}: ${res2.statusText}`);
+        const data2 = await res2.json();
+        const parts2 = data2?.candidates?.[0]?.content?.parts || [];
+        for (const part of parts2) {
+            if (part.text && part.text.trim().startsWith('{')) return part.text;
+        }
+        for (const part of parts2) {
+            if (part.text && part.text.includes('{')) return part.text.substring(part.text.indexOf('{'));
+        }
+        return parts2[0]?.text || '';
+    } catch(e) {
+        throw new Error(`Vertex(key) API both attempts failed: ${e.message}`);
+    }
+}
+
 // ========== OpenAI / OpenRouter 직접 호출 ==========
 async function _callOpenAI(key, model, prompt, url) {
     const endpoint = `${url}/chat/completions`;
@@ -241,6 +521,8 @@ export async function callLLM(prompt) {
             dbg(`🔧 LLM calling ${cfg.type} (${cfg.model}), prompt ${prompt.length}c`);
             let result = '';
             if (cfg.type === 'google') result = await _callGoogleWithFallback(cfg.key, cfg.model, prompt);
+            else if (cfg.type === 'vertex') result = await _callVertex(cfg.sa, cfg.region, cfg.model, prompt);
+            else if (cfg.type === 'vertex_key') result = await _callVertexApiKey(cfg.key, cfg.model, prompt);
             else if (cfg.type === 'openai') result = await _callOpenAI(cfg.key, cfg.model, prompt, cfg.url);
             else if (cfg.type === 'claude') result = await _callClaude(cfg.key, cfg.model, prompt, cfg.url);
 

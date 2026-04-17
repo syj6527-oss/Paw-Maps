@@ -202,7 +202,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.6.2</span></b>
+                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.6.4</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -230,8 +230,28 @@ export class UIManager {
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>🔑 LLM API 키 (리뷰/이벤트 생성용)</label></div>
                 <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
-                    <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:90px;font-size:11px"><option value="google">Gemini</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
+                    <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:100px;font-size:11px"><option value="google">Gemini</option><option value="vertex">Vertex AI</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
                     <input type="password" id="wt-s-llm-key" class="text_pole" placeholder="API 키 입력..." style="flex:1;font-size:11px;padding:6px 8px"/>
+                </div>
+                <!-- Vertex AI 전용 필드 (provider=vertex일 때만 표시) -->
+                <div id="wt-s-vertex-fields" style="display:none;margin-top:4px">
+                    <div class="wt-s-row" style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+                        <label style="white-space:nowrap;font-size:10px">📍 Region</label>
+                        <select id="wt-s-vertex-region" class="text_pole wt-select" style="flex:1;font-size:11px">
+                            <option value="us-central1">us-central1</option>
+                            <option value="us-east4">us-east4</option>
+                            <option value="us-west1">us-west1</option>
+                            <option value="europe-west1">europe-west1</option>
+                            <option value="europe-west4">europe-west4</option>
+                            <option value="asia-northeast1">asia-northeast1 (일본)</option>
+                            <option value="asia-northeast3">asia-northeast3 (서울)</option>
+                            <option value="asia-southeast1">asia-southeast1</option>
+                        </select>
+                    </div>
+                    <div class="wt-s-row">
+                        <textarea id="wt-s-vertex-sa" class="text_pole" placeholder='[옵션 1] 서비스 계정 JSON 전체 붙여넣기 (project_id/private_key 포함)' style="width:100%;min-height:64px;max-height:140px;font-size:10px;font-family:monospace;padding:6px;resize:vertical"></textarea>
+                    </div>
+                    <span style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px;margin-bottom:4px">💡 <b>옵션 1:</b> Google Cloud IAM → 서비스 계정 → JSON 키 다운로드 → 전체 붙여넣기 (region 선택 필요)<br>💡 <b>옵션 2:</b> 위 JSON 비워두고 아래 API 키 입력란에 Vertex API 키만 입력 (Express mode)</span>
                 </div>
                 <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
                     <select id="wt-s-llm-model" class="text_pole wt-select" style="flex:1;font-size:11px"></select>
@@ -292,6 +312,12 @@ export class UIManager {
                 { value: 'gemini-2.5-pro', label: '🧠 Gemini 2.5 Pro (고품질)' },
                 { value: 'gemini-2.0-flash-lite', label: '💨 Gemini 2.0 Flash Lite (최저비용)' },
             ],
+            vertex: [
+                { value: 'gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash (추천)' },
+                { value: 'gemini-2.0-flash', label: '⚡ Gemini 2.0 Flash' },
+                { value: 'gemini-2.5-pro', label: '🧠 Gemini 2.5 Pro (고품질)' },
+                { value: 'gemini-2.0-flash-lite', label: '💨 Gemini 2.0 Flash Lite (최저비용)' },
+            ],
             openai: [
                 { value: 'gpt-4o-mini', label: '⚡ GPT-4o Mini (추천)' },
                 { value: 'gpt-4o', label: '🧠 GPT-4o (고품질)' },
@@ -312,18 +338,55 @@ export class UIManager {
             // 저장된 모델 복원
             if (s?.llmModel) sel.val(s.llmModel);
         };
+        // Vertex AI 필드 토글 — Vertex 모드에서도 API 키 입력란 유지 (Express mode 지원)
+        const _toggleVertexFields = (provider) => {
+            const isVertex = provider === 'vertex';
+            $('#wt-s-vertex-fields').toggle(isVertex);
+            // API 키 placeholder 변경
+            $('#wt-s-llm-key').attr('placeholder', isVertex ? 'Vertex API 키 (Express mode, JSON 대신)' : 'API 키 입력...');
+        };
         $('#wt-s-llm-provider').val(s?.llmProvider || 'google');
         _populateModels(s?.llmProvider || 'google');
+        _toggleVertexFields(s?.llmProvider || 'google');
         $('#wt-s-llm-key').val(s?.llmApiKey || '');
-        if (s?.llmApiKey) $('#wt-s-llm-status').text('✅ API 키 설정됨').css('color', '#2B8A6E');
+        $('#wt-s-vertex-sa').val(s?.vertexSaJson || '');
+        $('#wt-s-vertex-region').val(s?.vertexRegion || 'us-central1');
+        // 상태 표시
+        if (s?.llmProvider === 'vertex' && s?.vertexSaJson) {
+            $('#wt-s-llm-status').text('✅ Vertex AI 서비스 계정 설정됨').css('color', '#2B8A6E');
+        } else if (s?.llmProvider === 'vertex' && s?.llmApiKey) {
+            $('#wt-s-llm-status').text('✅ Vertex API 키 (Express mode)').css('color', '#2B8A6E');
+        } else if (s?.llmApiKey) {
+            $('#wt-s-llm-status').text('✅ API 키 설정됨').css('color', '#2B8A6E');
+        }
         $('#wt-s-llm-provider').on('change', () => {
             s.llmProvider = $('#wt-s-llm-provider').val();
             _populateModels(s.llmProvider);
+            _toggleVertexFields(s.llmProvider);
             s.llmModel = $('#wt-s-llm-model').val();
             saveSettingsDebounced();
         });
         $('#wt-s-llm-key').on('change', () => { s.llmApiKey = $('#wt-s-llm-key').val().trim(); saveSettingsDebounced(); $('#wt-s-llm-status').text(s.llmApiKey ? '✅ 저장됨' : '미설정').css('color', s.llmApiKey ? '#2B8A6E' : '#9A8A7A'); });
         $('#wt-s-llm-model').on('change', () => { s.llmModel = $('#wt-s-llm-model').val(); saveSettingsDebounced(); });
+        // Vertex SA JSON 저장 + 검증
+        $('#wt-s-vertex-sa').on('change blur', () => {
+            const raw = $('#wt-s-vertex-sa').val().trim();
+            s.vertexSaJson = raw;
+            saveSettingsDebounced();
+            if (!raw) {
+                $('#wt-s-llm-status').text('미설정').css('color', '#9A8A7A');
+                return;
+            }
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed.type !== 'service_account') throw new Error('type이 service_account 아님');
+                if (!parsed.client_email || !parsed.private_key || !parsed.project_id) throw new Error('필수 필드 누락 (client_email/private_key/project_id)');
+                $('#wt-s-llm-status').text(`✅ SA 저장됨 (${parsed.project_id})`).css('color', '#2B8A6E');
+            } catch(e) {
+                $('#wt-s-llm-status').text('⚠️ JSON 파싱 실패: ' + e.message).css('color', '#F5A8A8');
+            }
+        });
+        $('#wt-s-vertex-region').on('change', () => { s.vertexRegion = $('#wt-s-vertex-region').val(); saveSettingsDebounced(); });
         $('#wt-s-llm-test').on('click', async () => {
             $('#wt-s-llm-status').text('🔄 테스트 중...').css('color', '#5E84E2');
             try {
@@ -1987,7 +2050,7 @@ export class UIManager {
                     💡 현재 장소를 중심으로 주변 등록된 장소들의 관계를 보여줍니다. 도보 거리 기준.
                 </div>
             </div>
-            <!-- 🟢 실시간 탭 (v0.6.2 NEW) — 커뮤니티 피드 인라인 -->
+            <!-- 🟢 실시간 탭 (v0.6.4 NEW) — 커뮤니티 피드 인라인 -->
             <div id="wt-bs-tab-community" style="display:none;overflow-y:auto;position:relative;background:#fff">
                 <!-- Sticky 헤더: 개수 + ⛶ 전체화면 + ✨ 새 반응 -->
                 <div id="wt-bs-comm-sticky" style="position:sticky;top:0;z-index:5;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #EFF3F4">
@@ -2222,10 +2285,10 @@ export class UIManager {
         };
         bs.find('.wt-bs-comm-gen').on('click touchend', commGenHandler);
 
-        // v0.6.2: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
+        // v0.6.4: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
         bs.find('.wt-bs-comm-gen-inline, .wt-bs-comm-fab').on('click touchend', commGenHandler);
 
-        // v0.6.2: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
+        // v0.6.4: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
         bs.find('.wt-bs-comm-fs').on('click touchend', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -2246,7 +2309,7 @@ export class UIManager {
             _commMoreLock = true;
             setTimeout(() => _commMoreLock = false, 500);
             window._wtDlog?.('click FIRE COMM → community tab', '#0f8');
-            // v0.6.2: 오버레이 대신 🟢 실시간 탭으로 전환
+            // v0.6.4: 오버레이 대신 🟢 실시간 탭으로 전환
             const curBs = $('#wt-bottomsheet');
             const commTab = curBs.find('.wt-bs-tab[data-tab="community"]');
             if (commTab.length) {
@@ -4191,7 +4254,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 닫힌 상태에서 바텀시트의 미니피드만 갱신할 때만 _showBottomSheet 호출
             if (!this._commOverlayOpen) {
                 const prevStage = this._bsStage || 2;
-                // v0.6.2: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
+                // v0.6.4: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
                 const prevTab = $('#wt-bottomsheet .wt-bs-tab').filter(function() {
                     return $(this).css('borderBottomColor') !== 'rgba(0, 0, 0, 0)' && $(this).css('borderBottomColor') !== 'transparent';
                 }).data('tab') || 'overview';
@@ -4384,7 +4447,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }, { passive: true });
     }
 
-    // v0.6.2: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
+    // v0.6.4: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
     _firstGrapheme(s) {
         if (!s) return '👤';
         try {
@@ -4405,7 +4468,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             sleepy: 'background:#EDE7F6;color:#4527A0',
         };
         const moodStyle = moodColors[p.mood] || 'background:#F7F9F9;color:#536471';
-        // v0.6.2: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
+        // v0.6.4: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
         const avatarChar = this._firstGrapheme(p.avatar || (p.type === 'animal' ? '🐾' : '👤'));
         return `<div style="padding:12px 16px;border-bottom:1px solid #EFF3F4;display:flex;gap:12px;align-items:flex-start">
             <div style="width:40px;height:40px;min-width:40px;border-radius:50%;background:${p.type==='animal'?'#FFF8E1':'#E8F0FE'};display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;flex-shrink:0;overflow:hidden;text-align:center">${avatarChar}</div>
