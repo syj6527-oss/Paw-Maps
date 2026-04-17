@@ -556,6 +556,12 @@ export async function callLLM(prompt, options = {}) {
             const { runWithoutAutoDetect } = await import('./index.js');
             const result = await runWithoutAutoDetect(() => gen({ prompt }), 2500);
             if (result) {
+                // v0.7.11: RP 마커 감지 — <memo>, OOC, yaml 캐릭터카드 등 있으면 즉시 거부
+                if (_isRpContinuation(result)) {
+                    window._wtLastLLMError = 'Fallback returned RP story (API 키 설정 권장)';
+                    dbg('🚫 Fallback returned RP continuation — rejecting and asking user to set API key');
+                    return null;
+                }
                 if (result.includes('{') && result.includes('}')) {
                     dbg('🔧 LLM fallback (generateQuietPrompt) OK');
                     return result;
@@ -563,8 +569,14 @@ export async function callLLM(prompt, options = {}) {
                     // v0.7.7: JSON 아니면 한번 더 재시도 — 프롬프트 앞에 강한 지시 추가
                     dbg('⚠️ LLM fallback returned non-JSON, retrying with stricter instruction...');
                     try {
-                        const strictPrompt = `[SYSTEM: Output raw JSON only. No prose, no narration, no story. Start with { and end with }. Nothing else.]\n\n${prompt}`;
+                        const strictPrompt = `[SYSTEM: Output raw JSON only. No prose, no narration, no story. Start with { and end with }. Nothing else. DO NOT continue the roleplay. DO NOT generate <memo>, <phone_trigger>, OOC, or any story text.]\n\n${prompt}`;
                         const retry = await runWithoutAutoDetect(() => gen({ prompt: strictPrompt }), 2500);
+                        // v0.7.11: 재시도 결과도 RP 마커 체크
+                        if (retry && _isRpContinuation(retry)) {
+                            window._wtLastLLMError = 'Fallback retry also returned RP story';
+                            dbg('🚫 Fallback retry also RP — giving up');
+                            return null;
+                        }
                         if (retry && retry.includes('{') && retry.includes('}')) {
                             dbg('🔧 LLM fallback retry OK');
                             return retry;
@@ -620,6 +632,44 @@ export function getRecentChatContext(maxChars = 2000) {
 }
 
 // ========== JSON 파싱 헬퍼 ==========
+
+// v0.7.11: Fallback 응답이 RP 이어쓰기인지 감지 (JSON 생성 실패 시 자동 거부용)
+// 반환: true면 RP 응답 (거부해야 함), false면 정상 응답
+function _isRpContinuation(text) {
+    if (!text || text.length < 100) return false;
+
+    // 1. 명확한 RP/ST 시스템 마커 — 하나라도 있으면 확실히 RP
+    const hardMarkers = [
+        /<memo\b/i,              // <memo> 태그
+        /<\/memo>/i,
+        /<phone_trigger\b/i,      // <phone_trigger> 태그
+        /<world_info\b/i,
+        /<char_sheet\b/i,
+        /\bOOC\s*[:：]/i,         // OOC: 표시
+        /\(OOC\s*[:：]/i,         // (OOC:
+        /```yaml\s*\n[\s\S]*?(Time|Characters|Location)\s*[:：]/i, // ```yaml 블록에 캐릭터 카드
+        /\*\*\*\s*\n/,            // *** 구분선 (RP 장면 전환)
+    ];
+    for (const m of hardMarkers) {
+        if (m.test(text)) {
+            dbg('🚫 RP marker detected:', m.source.substring(0, 40));
+            return true;
+        }
+    }
+
+    // 2. JSON이 전혀 없는데 긴 서술형 문장들 — RP 가능성 높음
+    const hasJsonStart = /^\s*(```\s*json\s*\n?)?[\s\n]*\{/.test(text);
+    if (!hasJsonStart) {
+        // JSON으로 시작 안 함 + 긴 서술 문장들이면 RP 판정
+        const longNarrativeSentences = (text.match(/[.!?]\s+[A-Z가-힣]/g) || []).length;
+        if (longNarrativeSentences > 5) {
+            dbg('🚫 RP-style narrative detected: ' + longNarrativeSentences + ' long sentences without JSON');
+            return true;
+        }
+    }
+
+    return false;
+}
 
 // HTML 태그 속성의 큰따옴표를 작은따옴표로 변환 (LLM이 JSON 이스케이프 실수 보완)
 // 예: "text":"... <img src=\"url\" style=\"...\"> ..." → "text":"... <img src='url' style='...'> ..."

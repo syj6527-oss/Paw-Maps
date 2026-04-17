@@ -202,7 +202,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.7.10</span></b>
+                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.7.11</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -2064,7 +2064,7 @@ export class UIManager {
                     💡 현재 장소를 중심으로 주변 등록된 장소들의 관계를 보여줍니다. 도보 거리 기준.
                 </div>
             </div>
-            <!-- 🟢 실시간 탭 (v0.7.10 NEW) — 커뮤니티 피드 인라인 -->
+            <!-- 🟢 실시간 탭 (v0.7.11 NEW) — 커뮤니티 피드 인라인 -->
             <div id="wt-bs-tab-community" style="display:none;overflow-y:auto;position:relative;background:#fff">
                 <!-- Sticky 헤더: 개수 + ⛶ 전체화면 + ✨ 새 반응 -->
                 <div id="wt-bs-comm-sticky" style="position:sticky;top:0;z-index:5;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #EFF3F4">
@@ -2299,10 +2299,10 @@ export class UIManager {
         };
         bs.find('.wt-bs-comm-gen').on('click touchend', commGenHandler);
 
-        // v0.7.10: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
+        // v0.7.11: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
         bs.find('.wt-bs-comm-gen-inline, .wt-bs-comm-fab').on('click touchend', commGenHandler);
 
-        // v0.7.10: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
+        // v0.7.11: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
         bs.find('.wt-bs-comm-fs').on('click touchend', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -2323,7 +2323,7 @@ export class UIManager {
             _commMoreLock = true;
             setTimeout(() => _commMoreLock = false, 500);
             window._wtDlog?.('click FIRE COMM → community tab', '#0f8');
-            // v0.7.10: 오버레이 대신 🟢 실시간 탭으로 전환
+            // v0.7.11: 오버레이 대신 🟢 실시간 탭으로 전환
             const curBs = $('#wt-bottomsheet');
             const commTab = curBs.find('.wt-bs-tab[data-tab="community"]');
             if (commTab.length) {
@@ -4083,7 +4083,7 @@ export class UIManager {
             const charName = ctx.name2 || 'Character';
             const charDesc = (ctx.characters?.[ctx.characterId]?.description || '').substring(0, 150);
             const recentChat = getRecentChatContext(800); // 줄임 (1500 → 800)
-            // v0.7.10: NPC 목록 나열 버그 방지 — 최대 2명만 전달 (주 캐릭터 기준으로 관련도 높은 NPC 우선)
+            // v0.7.11: NPC 목록 나열 버그 방지 — 최대 2명만 전달 (주 캐릭터 기준으로 관련도 높은 NPC 우선)
             const allNpcs = loc.npcs || [];
             const topNpcs = allNpcs.slice(0, 2); // 최근 등록순 2명만
             const npcList = topNpcs.length > 0
@@ -4505,14 +4505,14 @@ JSON 출력 예시 — **이건 형식/구조만 참고해. 내용은 절대 따
 
 JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
 
-            // v0.7.10: 창의성 ↑ — 커뮤니티는 temperature 0.95로 다양한 톤 유도
-            // v0.7.10: maxTokens도 분량에 맞춰 (기본 4096은 7~9개 생성에 부족 → 잘림)
+            // v0.7.11: 창의성 ↑ — 커뮤니티는 temperature 0.95로 다양한 톤 유도
+            // v0.7.11: maxTokens도 분량에 맞춰 (기본 4096은 7~9개 생성에 부족 → 잘림)
             window._wtTempOverride = 0.95;
             window._wtMaxTokensOverride = gen.maxTokens;
             const result = await callLLM(prompt);
             window._wtTempOverride = null; // 원복
             window._wtMaxTokensOverride = null;
-            // v0.7.10: 디버그 로그 모달용 저장
+            // v0.7.11: 디버그 로그 모달용 저장
             window._wtLastRawResponse = result || '';
             window._wtLastErrorAt = new Date().toLocaleString('ko-KR');
             if (!result) {
@@ -4523,6 +4523,8 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                     toastWarn(`⚠️ Google 서버 과부하 중 (503). 1~2분 후 다시 시도해주세요`);
                 } else if (/abort|timeout|타임아웃/i.test(err)) {
                     toastWarn(`⚠️ 응답 시간 초과. 📏 생성 분량 → 🌱 가벼움 권장 (🐛 버튼으로 로그 확인)`);
+                } else if (/RP story|RP 이어쓰기|RP continuation/i.test(err)) {
+                    toastWarn(`⚠️ 본체 AI가 RP로 답변함. 설정 → 🔑 LLM API 키 등록 필요 (Google AI Studio 무료)`);
                 } else if (/non-JSON|Fallback/i.test(err)) {
                     toastWarn(`⚠️ LLM 응답 실패. API 키 확인 (설정 → 🐛 디버그 로그)`);
                 } else {
@@ -4533,7 +4535,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             }
             const parsed = parseLLMJson(result);
             if (!parsed?.posts || !Array.isArray(parsed.posts)) {
-                // v0.7.10: 모바일 대응 — raw response를 window에 저장해 디버그 뷰어에서 볼 수 있게
+                // v0.7.11: 모바일 대응 — raw response를 window에 저장해 디버그 뷰어에서 볼 수 있게
                 window._wtLastRawResponse = result || '';
                 window._wtLastErrorType = 'parse_failed';
                 window._wtLastErrorAt = new Date().toLocaleString('ko-KR');
@@ -4559,7 +4561,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                 // 멘션/해시태그 추출
                 const mentions = (p.text.match(/@([A-Za-z가-힣0-9_]+)/g) || []).map(m => m.substring(1));
                 const hashtags = (p.text.match(/#([A-Za-z가-힣0-9_]+)/g) || []).map(h => h.substring(1));
-                // v0.7.10: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
+                // v0.7.11: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
                 const cleanReplies = Array.isArray(p.replies) ? p.replies.slice(0, 3).filter(r => r && r.text).map(r => ({
                     name: r.name || '익명',
                     handle: r.handle || '',
@@ -4586,7 +4588,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 닫힌 상태에서 바텀시트의 미니피드만 갱신할 때만 _showBottomSheet 호출
             if (!this._commOverlayOpen) {
                 const prevStage = this._bsStage || 2;
-                // v0.7.10: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
+                // v0.7.11: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
                 const prevTab = $('#wt-bottomsheet .wt-bs-tab').filter(function() {
                     return $(this).css('borderBottomColor') !== 'rgba(0, 0, 0, 0)' && $(this).css('borderBottomColor') !== 'transparent';
                 }).data('tab') || 'overview';
@@ -4779,7 +4781,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }, { passive: true });
     }
 
-    // v0.7.10: 모바일용 — 마지막 LLM 응답 + 에러를 화면 내 모달로 표시
+    // v0.7.11: 모바일용 — 마지막 LLM 응답 + 에러를 화면 내 모달로 표시
     _showDebugLogModal() {
         $('#wt-debug-modal').remove();
         const raw = window._wtLastRawResponse || '(아직 LLM 응답 없음)';
@@ -4848,7 +4850,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
-    // v0.7.10: 생성 분량 설정 — 토큰 사용량 조절
+    // v0.7.11: 생성 분량 설정 — 토큰 사용량 조절
     // 반환: { community: {min, max, label, minImages, maxTokens}, review: {min, max, maxTokens} }
     _getGenSize() {
         const s = extension_settings[EXTENSION_NAME];
@@ -4872,7 +4874,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         };
     }
 
-    // v0.7.10: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
+    // v0.7.11: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
     // context: 'community' | 'event' | 'review' | 'summary' — 맥락별로 살짝 다른 힌트 제공
     _getLangInstruction(context = 'generic') {
         const s = extension_settings[EXTENSION_NAME];
@@ -4894,7 +4896,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
              + 'If mixed or unclear → default to Korean. Never mix languages within a single post.';
     }
 
-    // v0.7.10: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
+    // v0.7.11: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
     _firstGrapheme(s) {
         if (!s) return '👤';
         try {
@@ -4915,9 +4917,9 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             sleepy: 'background:#EDE7F6;color:#4527A0',
         };
         const moodStyle = moodColors[p.mood] || 'background:#F7F9F9;color:#536471';
-        // v0.7.10: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
+        // v0.7.11: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
         const avatarChar = this._firstGrapheme(p.avatar || (p.type === 'animal' ? '🐾' : '👤'));
-        // v0.7.10: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
+        // v0.7.11: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
         const replies = Array.isArray(p.replies) ? p.replies : [];
         const repliesHtml = replies.length ? `<div style="margin-top:8px;margin-left:-4px;border-left:2px solid #EFF3F4;padding-left:10px">
             ${replies.map(r => {
@@ -5456,7 +5458,7 @@ CRITICAL: Start with { end with }`;
             // ★ 최근 채팅 맥락 (리뷰 품질 향상 — 톤/말투/관계 흡수)
             const recentChat = getRecentChatContext(2500);
 
-            // v0.7.10: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
+            // v0.7.11: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
             const reviewGen = this._getGenSize().review;
             const visits = loc.visitCount || 0;
             // 방문 많을수록 최대치 가까이, 적으면 최소치 가까이
@@ -5497,7 +5499,7 @@ OUTPUT THIS EXACT FORMAT (valid JSON, no markdown, no explanation):
 
 CRITICAL: Start your response with { and end with }. Nothing else.`;
 
-            // v0.7.10: 리뷰도 분량 설정에 맞춰 토큰 한도 조정
+            // v0.7.11: 리뷰도 분량 설정에 맞춰 토큰 한도 조정
             window._wtMaxTokensOverride = reviewGen.maxTokens;
             let result = await callLLM(prompt);
             window._wtMaxTokensOverride = null;
