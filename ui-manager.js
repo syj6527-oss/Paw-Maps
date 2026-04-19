@@ -202,7 +202,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.8.10</span></b>
+                <b>🐶 World Tracker <span class="wt-version" style="cursor:default;user-select:none">v0.8.11</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -828,11 +828,12 @@ export class UIManager {
     // ========== 문장 드래그 → 이벤트 저장 ==========
     _setupTextSelection() {
         let _selBtn = null;
-        let _selText = '';  // v0.8.10: 텍스트를 외부 변수로 보관 (selection 해제돼도 유지)
+        let _selText = '';  // v0.8.11: 텍스트를 외부 변수로 보관 (selection 해제돼도 유지)
+        let _selMesId = null;  // v0.8.11: 선택된 메시지의 인덱스 (장소 추적용)
         const self = this;
-        const removeBtn = () => { if (_selBtn) { _selBtn.remove(); _selBtn = null; _selText = ''; } };
+        const removeBtn = () => { if (_selBtn) { _selBtn.remove(); _selBtn = null; _selText = ''; _selMesId = null; } };
 
-        // v0.8.10: selectionchange 이벤트 사용 → 드래그 직후 바로 감지 (이전: mouseup/touchend 사각지대)
+        // v0.8.11: selectionchange 이벤트 사용 → 드래그 직후 바로 감지 (이전: mouseup/touchend 사각지대)
         //   디바운스로 빈번한 발동 방지
         let _selCheckTimer = null;
         const _checkSelection = () => {
@@ -840,12 +841,12 @@ export class UIManager {
             _selCheckTimer = setTimeout(() => {
                 const sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0) {
-                    // v0.8.10: 버튼이 이미 떠있으면 유지 (유저가 버튼 탭 준비 중일 수 있음)
+                    // v0.8.11: 버튼이 이미 떠있으면 유지 (유저가 버튼 탭 준비 중일 수 있음)
                     return;
                 }
                 const text = sel.toString()?.trim();
                 if (!text || text.length < 5 || text.length > 300) {
-                    // v0.8.10: 텍스트 없어도 버튼 유지 (selection 해제로 인한 잘못된 제거 방지)
+                    // v0.8.11: 텍스트 없어도 버튼 유지 (selection 해제로 인한 잘못된 제거 방지)
                     return;
                 }
 
@@ -853,23 +854,27 @@ export class UIManager {
                 const range = sel.getRangeAt(0);
                 const container = range.commonAncestorContainer;
                 const node = container.nodeType === 1 ? container : container.parentElement;
-                if (!node || !node.closest('#chat .mes_text')) { removeBtn(); return; }
+                const mesTextEl = node?.closest('#chat .mes_text');
+                if (!mesTextEl) { removeBtn(); return; }
 
                 if (!self.lm.currentLocationId && !self.lm.locations.length) return;
                 const s = extension_settings[EXTENSION_NAME];
                 if (!s?.enabled) return;
 
                 removeBtn();
-                _selText = text;  // v0.8.10: 텍스트 저장 → 버튼 탭할 때 사용
+                _selText = text;  // v0.8.11: 텍스트 저장 → 버튼 탭할 때 사용
+                // v0.8.11: 선택된 메시지 인덱스 추출 (장소 자동 매칭용)
+                const mesDiv = mesTextEl.closest('.mes[mesid]');
+                _selMesId = mesDiv ? parseInt(mesDiv.getAttribute('mesid'), 10) : null;
 
                 const rect = range.getBoundingClientRect();
                 const vw = window.innerWidth;
                 const vh = window.innerHeight;
 
-                // v0.8.10: 선택 영역 우측 끝에 작은 원형 플로팅 버튼 (40x40)
+                // v0.8.11: 선택 영역 우측 끝에 작은 원형 플로팅 버튼 (40x40)
                 //   네이티브 선택 메뉴(복사/공유/번역)와 위치 겹치지 않게 가로로 살짝 벗어남
                 //   하단 확장 아이콘도 피함 (선택 영역 세로 중앙 기준)
-                // v0.8.10: 여유 공간 증가 (8→20px) — 너무 붙어있다는 피드백 반영
+                // v0.8.11: 여유 공간 증가 (8→20px) — 너무 붙어있다는 피드백 반영
                 const btnSize = 40;
                 const gap = 20;       // 선택 영역과 버튼 사이 여백 (증가)
                 const margin = 8;     // 화면 경계 여백
@@ -891,7 +896,7 @@ export class UIManager {
                 </div>
                 <style>@keyframes wtSelBtnPop { 0% { transform: scale(0.3); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }</style>`);
 
-                // v0.8.10: pointerdown 사용 — click/touchend 경쟁 회피 + 반응성 ↑
+                // v0.8.11: pointerdown 사용 — click/touchend 경쟁 회피 + 반응성 ↑
                 //   중복 발동 방지 락 + preventDefault로 브라우저 기본 동작 차단
                 let _btnFired = false;
                 const fireEvent = (ev) => {
@@ -899,26 +904,27 @@ export class UIManager {
                     ev.stopPropagation();
                     if (_btnFired) return;
                     _btnFired = true;
-                    const textToSave = _selText;  // v0.8.10: 저장된 텍스트 사용 (selection 해제돼도 OK)
-                    if (textToSave) self._saveSelectionAsEvent(textToSave);
+                    const textToSave = _selText;  // v0.8.11: 저장된 텍스트 사용 (selection 해제돼도 OK)
+                    const mesIdToSave = _selMesId;  // v0.8.11: 메시지 인덱스
+                    if (textToSave) self._saveSelectionAsEvent(textToSave, mesIdToSave);
                     removeBtn();
                     try { window.getSelection()?.removeAllRanges(); } catch(_){}
                 };
                 _selBtn[0].addEventListener('pointerdown', fireEvent, { passive: false });
                 // 폴백: pointerdown 미지원 환경 (구형 브라우저)
                 _selBtn[0].addEventListener('click', fireEvent);
-                // v0.8.10: body의 transform 회피를 위해 documentElement에 append
+                // v0.8.11: body의 transform 회피를 위해 documentElement에 append
                 document.documentElement.appendChild(_selBtn[0]);
                 setTimeout(removeBtn, 5000);
             }, 150);  // 150ms 디바운스 — selectionchange 연속 발동 방지
         };
 
-        // v0.8.10: selectionchange 이벤트 등록 (드래그 직후 바로 감지)
+        // v0.8.11: selectionchange 이벤트 등록 (드래그 직후 바로 감지)
         document.addEventListener('selectionchange', _checkSelection);
         // 백업: touchend/mouseup 시에도 체크 (selectionchange가 일부 환경에서 늦을 수 있음)
         $(document).on('mouseup touchend', '#chat .mes_text', _checkSelection);
 
-        // v0.8.10: 외부 터치 감지 — pointerdown 사용 + 버튼 영역이면 완전 무시
+        // v0.8.11: 외부 터치 감지 — pointerdown 사용 + 버튼 영역이면 완전 무시
         document.addEventListener('pointerdown', (e) => {
             if (!_selBtn) return;
             // 버튼 자체 또는 그 자식이면 무시 (버튼 클릭이 여기서 소모되지 않게)
@@ -927,18 +933,52 @@ export class UIManager {
         }, true);  // capture phase에서 먼저 처리
     }
 
-    _saveSelectionAsEvent(text) {
-        const curLoc = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
-        if (!curLoc && !this.lm.locations.length) { toastWarn('장소를 먼저 등록해주세요'); return; }
+    // v0.8.11: 드래그된 메시지의 mesid를 기반으로 "해당 시점의 장소" 추적
+    //   로직: 해당 메시지 또는 이전 메시지에서 마지막으로 감지된 장소 찾기
+    _findLocationForMessage(mesId) {
+        if (mesId == null) return null;
+        // 모든 장소 중 events/firstMentionMesId/lastMentionMesId 등 메시지 참조 있는 것 탐색
+        //   → mesId 이하에서 가장 최근에 언급된 장소
+        let best = null;
+        let bestMesId = -1;
+        for (const loc of this.lm.locations) {
+            const refs = [
+                loc.firstMentionMesId,
+                loc.lastMentionMesId,
+                ...(loc.events || []).map(e => e.mesId).filter(v => v != null),
+            ].filter(v => typeof v === 'number' && v <= mesId);
+            if (refs.length === 0) continue;
+            const latestRef = Math.max(...refs);
+            if (latestRef > bestMesId) {
+                bestMesId = latestRef;
+                best = loc;
+            }
+        }
+        if (best) dbg && dbg(`📍 mesid=${mesId} → 추정 장소: "${best.name}" (ref=${bestMesId})`);
+        return best;
+    }
 
-        if (this.lm.locations.length > 1) {
-            this._showEventLocationPicker(text);
+    async _saveSelectionAsEvent(text, mesId = null) {
+        if (!this.lm.locations.length) { toastWarn('장소를 먼저 등록해주세요'); return; }
+
+        // v0.8.11: 메시지 인덱스로 장소 자동 추적 시도
+        let targetLoc = null;
+        if (mesId != null) {
+            targetLoc = this._findLocationForMessage(mesId);
+        }
+        // 못 찾으면: 현재 활성 장소 → 그것도 없으면 선택창
+        if (!targetLoc) {
+            targetLoc = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
+        }
+
+        if (!targetLoc && this.lm.locations.length > 1) {
+            this._showEventLocationPicker(text, mesId);
         } else {
-            this._doSaveEvent(curLoc || this.lm.locations[0], text);
+            await this._doSaveEvent(targetLoc || this.lm.locations[0], text, mesId);
         }
     }
 
-    _showEventLocationPicker(text) {
+    _showEventLocationPicker(text, mesId = null) {
         $('#wt-evpick-overlay').remove();
         const locs = this.lm.locations;
         const curId = this.lm.currentLocationId;
@@ -956,23 +996,99 @@ export class UIManager {
         </div>`);
         $('body').append(overlay);
         const self = this;
-        overlay.find('.wt-evpick-btn').on('click', function() {
+        overlay.find('.wt-evpick-btn').on('click', async function() {
             const loc = self.lm.locations.find(l => l.id === $(this).attr('data-lid'));
-            if (loc) self._doSaveEvent(loc, text);
+            if (loc) await self._doSaveEvent(loc, text, mesId);
             overlay.remove();
         });
         overlay.find('#wt-evpick-cancel').on('click', () => overlay.remove());
         setTimeout(() => overlay.remove(), 10000);
     }
 
-    _doSaveEvent(loc, text) {
+    // v0.8.11: 하이브리드 저장 — 100자 미만은 그대로, 이상은 AI 요약 + mood + title
+    async _doSaveEvent(loc, text, mesId = null) {
         const events = loc.events || [];
         const date = new Date().toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
-        let summary = text.trim();
-        if (summary.length > 80) summary = summary.substring(0, 80) + '...';
-        events.push({ text: summary, date, timestamp: Date.now(), source: 'selection' });
-        this.lm.updateLocation(loc.id, { events });
-        toastSuccess(`📝 "${loc.name}"에 이벤트 저장!`);
+        const trimmed = text.trim();
+
+        // 짧은 텍스트: 즉시 저장 (LLM 호출 없음)
+        if (trimmed.length < 100) {
+            const summary = trimmed.length > 80 ? trimmed.substring(0, 80) + '...' : trimmed;
+            events.push({
+                text: summary,
+                title: null,
+                mood: '📝',
+                date,
+                timestamp: Date.now(),
+                mesId: mesId ?? undefined,
+                source: 'selection',
+            });
+            this.lm.updateLocation(loc.id, { events });
+            toastSuccess(`📝 "${loc.name}"에 이벤트 저장!`);
+            return;
+        }
+
+        // 긴 텍스트: AI 요약 (mood + title + 2문장 요약)
+        toastSuccess(`🤖 AI가 요약 중...`);
+        try {
+            const ctx = getContext();
+            const userName = ctx?.name1 || 'User';
+            const charName = ctx?.name2 || 'Character';
+            const langInst = this._getLangInstruction('event');
+            const prompt = `Summarize this RP scene excerpt as a place-event memory. ${langInst}
+Character info: protagonist="${userName}", main character="${charName}".
+Respond with ONLY JSON: {"mood":"💕 or 📅 or ⚡ or 🥺 or ✨","title":"hook max 15chars","summary":"detailed 2-sentence summary"}
+If mundane: {"mood":null}
+
+Text: ${trimmed.substring(0, 1500)}`;
+
+            window._wtMaxTokensOverride = 512;
+            const result = await callLLM(prompt);
+            window._wtMaxTokensOverride = null;
+
+            let evTitle = null, evText = null, evMood = '📝';
+            if (result) {
+                const p = parseLLMJson(result);
+                if (p?.summary) {
+                    evText = p.summary;
+                    evTitle = p.title || p.summary.substring(0, 15) + '...';
+                    evMood = p.mood || '📝';
+                }
+            }
+            // LLM 실패 폴백
+            if (!evText) {
+                evText = trimmed.length > 80 ? trimmed.substring(0, 80) + '...' : trimmed;
+                evTitle = trimmed.substring(0, 15) + '...';
+            }
+
+            events.push({
+                text: evText,
+                title: evTitle,
+                mood: evMood,
+                date,
+                timestamp: Date.now(),
+                mesId: mesId ?? undefined,
+                source: 'selection',
+            });
+            if (events.length > 20) events.splice(0, events.length - 20);
+            await this.lm.updateLocation(loc.id, { events });
+            toastSuccess(`${evMood} "${loc.name}"에 이벤트 저장! (${evTitle || '요약됨'})`);
+        } catch(e) {
+            dbg && dbg('⚠️ drag summary LLM error:', e.message);
+            // 완전 실패 시 폴백
+            const summary = trimmed.length > 80 ? trimmed.substring(0, 80) + '...' : trimmed;
+            events.push({
+                text: summary,
+                title: null,
+                mood: '📝',
+                date,
+                timestamp: Date.now(),
+                mesId: mesId ?? undefined,
+                source: 'selection',
+            });
+            this.lm.updateLocation(loc.id, { events });
+            toastWarn(`📝 AI 요약 실패 — 원문으로 저장 ("${loc.name}")`);
+        }
     }
 
     // ========== 패널 열기/닫기 ==========
@@ -2134,7 +2250,7 @@ export class UIManager {
                     💡 현재 장소를 중심으로 주변 등록된 장소들의 관계를 보여줍니다. 도보 거리 기준.
                 </div>
             </div>
-            <!-- 🟢 실시간 탭 (v0.8.10 NEW) — 커뮤니티 피드 인라인 -->
+            <!-- 🟢 실시간 탭 (v0.8.11 NEW) — 커뮤니티 피드 인라인 -->
             <div id="wt-bs-tab-community" style="display:none;overflow-y:auto;position:relative;background:#fff">
                 <!-- Sticky 헤더: 개수 + ⛶ 전체화면 + ✨ 새 반응 -->
                 <div id="wt-bs-comm-sticky" style="position:sticky;top:0;z-index:5;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #EFF3F4">
@@ -2181,7 +2297,7 @@ export class UIManager {
             $(this).css({ color, borderBottomColor: color });
             bs.find('[id^="wt-bs-tab-"]').hide();
             bs.find(`#wt-bs-tab-${tab}`).show();
-            // v0.8.10: 활성 탭 DOM 속성에 저장 (삭제 후 재렌더 시 복원용)
+            // v0.8.11: 활성 탭 DOM 속성에 저장 (삭제 후 재렌더 시 복원용)
             bs.attr('data-active-tab', tab);
             // 이벤트/리뷰/커뮤니티 탭은 full로 확장
             if (tab !== 'overview' && self._bsStage < 3) self._applyBsStage(3);
@@ -2216,7 +2332,7 @@ export class UIManager {
             if (!loc) return;
             const realIdx = (loc.events || []).findIndex(ev => ev.timestamp === evTs);
             if (realIdx >= 0) {
-                // v0.8.10: 삭제 전 활성 탭 저장 → 재렌더 후 복원
+                // v0.8.11: 삭제 전 활성 탭 저장 → 재렌더 후 복원
                 const prevTab = self._getActiveBsTab();
                 loc.events.splice(realIdx, 1);
                 self.lm.updateLocation(lid, { events: loc.events });
@@ -2236,7 +2352,7 @@ export class UIManager {
             const lid = curBs?.getAttribute('data-id');
             if (!lid) return;
             if (!confirm('분위기 지수를 리셋할까요?\n(이후 이벤트만 차트에 반영됩니다)')) return;
-            // v0.8.10: 활성 탭 유지
+            // v0.8.11: 활성 탭 유지
             const prevTab = self._getActiveBsTab();
             self.lm.updateLocation(lid, { moodResetAt: Date.now() });
             self._refreshBsKeepTab(lid, prevTab);
@@ -2261,7 +2377,7 @@ export class UIManager {
                 const target = planEvents[idx];
                 const realIdx = loc.events.indexOf(target);
                 if (realIdx >= 0) {
-                    // v0.8.10: 활성 탭 유지
+                    // v0.8.11: 활성 탭 유지
                     const prevTab = self._getActiveBsTab();
                     loc.events.splice(realIdx, 1);
                     self.lm.updateLocation(lid, { events: loc.events });
@@ -2375,10 +2491,10 @@ export class UIManager {
         };
         bs.find('.wt-bs-comm-gen').on('click touchend', commGenHandler);
 
-        // v0.8.10: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
+        // v0.8.11: 🟢 실시간 탭 내부 버튼들 (인라인 ✨ 새 반응 + 우하단 FAB) — 동일 핸들러
         bs.find('.wt-bs-comm-gen-inline, .wt-bs-comm-fab').on('click touchend', commGenHandler);
 
-        // v0.8.10: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
+        // v0.8.11: ⛶ 전체화면 버튼 → 기존 풀스크린 오버레이 호출
         bs.find('.wt-bs-comm-fs').on('click touchend', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -2399,7 +2515,7 @@ export class UIManager {
             _commMoreLock = true;
             setTimeout(() => _commMoreLock = false, 500);
             window._wtDlog?.('click FIRE COMM → community tab', '#0f8');
-            // v0.8.10: 오버레이 대신 🟢 실시간 탭으로 전환
+            // v0.8.11: 오버레이 대신 🟢 실시간 탭으로 전환
             const curBs = $('#wt-bottomsheet');
             const commTab = curBs.find('.wt-bs-tab[data-tab="community"]');
             if (commTab.length) {
@@ -2599,11 +2715,11 @@ export class UIManager {
     _bsDragStartH = 0;
     _bsDragging = false;
 
-    // v0.8.10: 현재 활성 바텀시트 탭 반환 (events/review/community/rooms/nodemap/overview)
+    // v0.8.11: 현재 활성 바텀시트 탭 반환 (events/review/community/rooms/nodemap/overview)
     _getActiveBsTab() {
         const bs = document.getElementById('wt-bottomsheet');
         if (!bs) return 'overview';
-        // v0.8.10: 저장된 data 속성 우선 사용 (:visible 감지보다 안정적)
+        // v0.8.11: 저장된 data 속성 우선 사용 (:visible 감지보다 안정적)
         const saved = bs.getAttribute('data-active-tab');
         if (saved) return saved;
         // 폴백: visibility 기반 감지
@@ -2619,7 +2735,7 @@ export class UIManager {
         return active;
     }
 
-    // v0.8.10: 바텀시트 재렌더 + 이전 탭 복원 (이벤트/일정 삭제 등에서 사용)
+    // v0.8.11: 바텀시트 재렌더 + 이전 탭 복원 (이벤트/일정 삭제 등에서 사용)
     _refreshBsKeepTab(lid, prevTab) {
         this._showBottomSheet(lid);
         setTimeout(() => {
@@ -4188,7 +4304,7 @@ export class UIManager {
             const ctx = getContext();
             const userName = ctx.name1 || 'User';
             let charName = ctx.name2 || 'Character';
-            // v0.8.10: 그룹챗 감지 — charName에 쉼표 있거나 ctx.groupId 존재 시
+            // v0.8.11: 그룹챗 감지 — charName에 쉼표 있거나 ctx.groupId 존재 시
             //   → 최근 발화자 1명으로 대체, 다른 멤버는 보조 정보로
             let groupMembers = [];
             const isGroupChat = !!ctx.groupId || /,/.test(charName);
@@ -4207,7 +4323,7 @@ export class UIManager {
             }
             const charDesc = (ctx.characters?.[ctx.characterId]?.description || '').substring(0, 150);
             const recentChat = getRecentChatContext(800); // 줄임 (1500 → 800)
-            // v0.8.10: NPC 목록 나열 버그 방지 — 최대 2명만 전달 (주 캐릭터 기준으로 관련도 높은 NPC 우선)
+            // v0.8.11: NPC 목록 나열 버그 방지 — 최대 2명만 전달 (주 캐릭터 기준으로 관련도 높은 NPC 우선)
             const allNpcs = loc.npcs || [];
             const topNpcs = allNpcs.slice(0, 2); // 최근 등록순 2명만
             const npcList = topNpcs.length > 0
@@ -4220,7 +4336,7 @@ export class UIManager {
             const countLabel = gen.label;  // "7~9개"
             const minImg = gen.minImages;  // 4
 
-            // v0.8.10: 현지 정보 보강 — 설정에 따라 POI 검색 실행
+            // v0.8.11: 현지 정보 보강 — 설정에 따라 POI 검색 실행
             const enrichMode = s?.locationEnrichment || 'off';
             let poiContext = '';
             if (enrichMode === 'nominatim' && loc.lat && loc.lng) {
@@ -4639,9 +4755,9 @@ JSON 출력 예시 — **이건 형식/구조만 참고해. 내용은 절대 따
 
 JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
 
-            // v0.8.10: 창의성 ↑ — 커뮤니티는 temperature 0.95로 다양한 톤 유도
-            // v0.8.10: maxTokens도 분량에 맞춰 (기본 4096은 7~9개 생성에 부족 → 잘림)
-            // v0.8.10: Gemini 2.5 Pro는 thinking이 출력 토큰 차지 → 2배 증량
+            // v0.8.11: 창의성 ↑ — 커뮤니티는 temperature 0.95로 다양한 톤 유도
+            // v0.8.11: maxTokens도 분량에 맞춰 (기본 4096은 7~9개 생성에 부족 → 잘림)
+            // v0.8.11: Gemini 2.5 Pro는 thinking이 출력 토큰 차지 → 2배 증량
             const modelName = s?.llmModel || '';
             const isProModel = /pro/i.test(modelName);
             window._wtTempOverride = 0.95;
@@ -4650,8 +4766,8 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             const result = await callLLM(prompt);
             window._wtTempOverride = null; // 원복
             window._wtMaxTokensOverride = null;
-            window._wtUseGrounding = false; // v0.8.10: grounding 플래그 원복
-            // v0.8.10: 디버그 로그 모달용 저장
+            window._wtUseGrounding = false; // v0.8.11: grounding 플래그 원복
+            // v0.8.11: 디버그 로그 모달용 저장
             window._wtLastRawResponse = result || '';
             window._wtLastErrorAt = new Date().toLocaleString('ko-KR');
             if (!result) {
@@ -4668,7 +4784,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                         toastWarn(`⚠️ 응답 시간 초과. 📏 생성 분량 → 🌱 가벼움 권장 (🐛 버튼으로 로그 확인)`);
                     }
                 } else if (/RP story|RP 이어쓰기|RP continuation/i.test(err)) {
-                    // v0.8.10: Pro 모델이면 더 구체적인 안내
+                    // v0.8.11: Pro 모델이면 더 구체적인 안내
                     const m = s?.llmModel || '';
                     if (/pro/i.test(m)) {
                         toastWarn(`⚠️ Gemini Pro는 thinking이 길어 응답 실패 가능. ⚡ Gemini 2.5 Flash로 변경 권장`);
@@ -4685,7 +4801,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             }
             const parsed = parseLLMJson(result);
             if (!parsed?.posts || !Array.isArray(parsed.posts)) {
-                // v0.8.10: 모바일 대응 — raw response를 window에 저장해 디버그 뷰어에서 볼 수 있게
+                // v0.8.11: 모바일 대응 — raw response를 window에 저장해 디버그 뷰어에서 볼 수 있게
                 window._wtLastRawResponse = result || '';
                 window._wtLastErrorType = 'parse_failed';
                 window._wtLastErrorAt = new Date().toLocaleString('ko-KR');
@@ -4711,7 +4827,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                 // 멘션/해시태그 추출
                 const mentions = (p.text.match(/@([A-Za-z가-힣0-9_]+)/g) || []).map(m => m.substring(1));
                 const hashtags = (p.text.match(/#([A-Za-z가-힣0-9_]+)/g) || []).map(h => h.substring(1));
-                // v0.8.10: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
+                // v0.8.11: 답글 정제 (name/handle/avatar/text만 유지, 최대 3개)
                 const cleanReplies = Array.isArray(p.replies) ? p.replies.slice(0, 3).filter(r => r && r.text).map(r => ({
                     name: r.name || '익명',
                     handle: r.handle || '',
@@ -4738,7 +4854,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 닫힌 상태에서 바텀시트의 미니피드만 갱신할 때만 _showBottomSheet 호출
             if (!this._commOverlayOpen) {
                 const prevStage = this._bsStage || 2;
-                // v0.8.10: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
+                // v0.8.11: 현재 활성 탭 기억 → 재렌더 후 복원 (🟢 실시간 탭에서 생성 시 탭 유지)
                 const prevTab = $('#wt-bottomsheet .wt-bs-tab').filter(function() {
                     return $(this).css('borderBottomColor') !== 'rgba(0, 0, 0, 0)' && $(this).css('borderBottomColor') !== 'transparent';
                 }).data('tab') || 'overview';
@@ -4931,7 +5047,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }, { passive: true });
     }
 
-    // v0.8.10: 모바일용 — 마지막 LLM 응답 + 에러를 화면 내 모달로 표시
+    // v0.8.11: 모바일용 — 마지막 LLM 응답 + 에러를 화면 내 모달로 표시
     _showDebugLogModal() {
         $('#wt-debug-modal').remove();
         const raw = window._wtLastRawResponse || '(아직 LLM 응답 없음)';
@@ -4939,7 +5055,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         const errAt = window._wtLastErrorAt || '-';
         const lastErr = window._wtLastLLMError || '(없음)';
         const apiStatus = window._wtLastApiStatus || '(아직 API 호출 없음)';
-        // v0.8.10: 현재 저장된 설정 값 확인 (키 자체는 마스킹)
+        // v0.8.11: 현재 저장된 설정 값 확인 (키 자체는 마스킹)
         const s = extension_settings[EXTENSION_NAME] || {};
         const cfgSummary = [
             `provider: ${s.llmProvider || '(미설정)'}`,
@@ -5020,7 +5136,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
-    // v0.8.10: 현지 정보 보강 — Nominatim에서 주변 POI 정보 가져오기
+    // v0.8.11: 현지 정보 보강 — Nominatim에서 주변 POI 정보 가져오기
     // 반환: "주변 정보: cafe(3개), restaurant(2개), park(1개)" 형식 문자열
     async _fetchNearbyPOIs(lat, lng) {
         if (!lat || !lng) return '';
@@ -5065,7 +5181,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }
     }
 
-    // v0.8.10: 생성 분량 설정 — 토큰 사용량 조절
+    // v0.8.11: 생성 분량 설정 — 토큰 사용량 조절
     // 반환: { community: {min, max, label, minImages, maxTokens}, review: {min, max, maxTokens} }
     _getGenSize() {
         const s = extension_settings[EXTENSION_NAME];
@@ -5089,12 +5205,12 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         };
     }
 
-    // v0.8.10: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
+    // v0.8.11: 모든 LLM 호출 (이벤트/리뷰/실시간/요약)에서 공통 사용하는 언어 지시문 생성
     // context: 'community' | 'event' | 'review' | 'summary' — 맥락별로 살짝 다른 힌트 제공
     _getLangInstruction(context = 'generic') {
         const s = extension_settings[EXTENSION_NAME];
         const lang = s?.eventLang || 'auto';
-        // v0.8.10: 한국어 맞춤법 자주 틀리는 것 가이드
+        // v0.8.11: 한국어 맞춤법 자주 틀리는 것 가이드
         const koSpellGuide = '\n\n⚠️ 한국어 맞춤법 주의:\n'
             + '- "어떡해" (감탄/난감, "what should I do") vs "어떻게" (방법, "how") 구분 필수\n'
             + '  ✅ "어떡해 너무 귀여움", "이거 어떡함ㅠㅠ"\n'
@@ -5123,7 +5239,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
              + koSpellGuide;
     }
 
-    // v0.8.10: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
+    // v0.8.11: 이모지/멀티바이트 문자의 첫 grapheme만 추출 (아바타 overflow 방지)
     _firstGrapheme(s) {
         if (!s) return '👤';
         try {
@@ -5144,9 +5260,9 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             sleepy: 'background:#EDE7F6;color:#4527A0',
         };
         const moodStyle = moodColors[p.mood] || 'background:#F7F9F9;color:#536471';
-        // v0.8.10: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
+        // v0.8.11: 아바타 정규화 — 이모지 2~3개 겹친 거("🍯🦡", "1️⃣4️⃣1️⃣") 터지지 않도록 첫 grapheme만 사용
         const avatarChar = this._firstGrapheme(p.avatar || (p.type === 'animal' ? '🐾' : '👤'));
-        // v0.8.10: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
+        // v0.8.11: 답글 렌더링 (트위터 스타일 — 왼쪽 살짝 들여쓰기 + 가는 선)
         const replies = Array.isArray(p.replies) ? p.replies : [];
         const repliesHtml = replies.length ? `<div style="margin-top:8px;margin-left:-4px;border-left:2px solid #EFF3F4;padding-left:10px">
             ${replies.map(r => {
@@ -5463,7 +5579,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             </div>
         </div>`);
 
-        // v0.8.10: SillyTavern 모바일에서 body의 transform 때문에 position:fixed 깨짐 방지
+        // v0.8.11: SillyTavern 모바일에서 body의 transform 때문에 position:fixed 깨짐 방지
         // → documentElement(html)에 직접 append해서 모든 탭/오버레이 위에 확실히 표시
         document.documentElement.appendChild(overlay[0]);
         requestAnimationFrame(() => {
@@ -5687,7 +5803,7 @@ CRITICAL: Start with { end with }`;
             // ★ 최근 채팅 맥락 (리뷰 품질 향상 — 톤/말투/관계 흡수)
             const recentChat = getRecentChatContext(2500);
 
-            // v0.8.10: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
+            // v0.8.11: 생성 분량 설정에 따른 리뷰 수 (방문횟수도 여전히 약간 반영)
             const reviewGen = this._getGenSize().review;
             const visits = loc.visitCount || 0;
             // 방문 많을수록 최대치 가까이, 적으면 최소치 가까이
@@ -5728,7 +5844,7 @@ OUTPUT THIS EXACT FORMAT (valid JSON, no markdown, no explanation):
 
 CRITICAL: Start your response with { and end with }. Nothing else.`;
 
-            // v0.8.10: 리뷰도 분량 설정에 맞춰 토큰 한도 조정
+            // v0.8.11: 리뷰도 분량 설정에 맞춰 토큰 한도 조정
             window._wtMaxTokensOverride = reviewGen.maxTokens;
             let result = await callLLM(prompt);
             window._wtMaxTokensOverride = null;
@@ -6015,120 +6131,4 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
 
     _fmt(ts) { return new Date(ts).toLocaleDateString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
 
-    // ========== 드래그 요약 (텍스트 선택 → 📝 → LLM 요약 → 이벤트 저장) ==========
-    registerDragSummary() {
-        // 📝 플로팅 버튼 생성
-        const btn = document.createElement('div');
-        btn.id = 'wt-drag-btn';
-        btn.innerHTML = '📝';
-        btn.style.cssText = 'display:none;position:fixed;bottom:80px;right:16px;width:44px;height:44px;border-radius:50%;background:#F7EC8D;border:2px solid #F6A93A;box-shadow:0 4px 12px rgba(0,0,0,0.2);font-size:20px;text-align:center;line-height:44px;cursor:pointer;z-index:2147483645;transition:transform 0.2s;user-select:none';
-        document.body.appendChild(btn);
-
-        let selectedText = '';
-        const self = this;
-
-        // 텍스트 선택 감지 (PC: selectionchange, 모바일: touchend 백업)
-        document.addEventListener('selectionchange', () => {
-            const sel = window.getSelection();
-            const text = sel?.toString().trim() || '';
-            // 채팅 영역에서 선택된 텍스트만 (20자 이상)
-            if (text.length >= 20) {
-                selectedText = text;
-                btn.style.display = 'block';
-                btn.style.transform = 'scale(1.1)';
-                setTimeout(() => btn.style.transform = 'scale(1)', 150);
-            } else {
-                selectedText = '';
-                btn.style.display = 'none';
-            }
-        });
-
-        // 📱 모바일 백업: touchend 후 선택 확인 (selectionchange 미발동 대비)
-        document.addEventListener('touchend', () => {
-            setTimeout(() => {
-                const sel = window.getSelection();
-                const text = sel?.toString().trim() || '';
-                if (text.length >= 20 && btn.style.display === 'none') {
-                    selectedText = text;
-                    btn.style.display = 'block';
-                    btn.style.transform = 'scale(1.1)';
-                    setTimeout(() => btn.style.transform = 'scale(1)', 150);
-                }
-            }, 300); // 모바일 선택 확정 대기
-        });
-
-        // 📝 클릭 → LLM 요약 → 이벤트 저장
-        btn.addEventListener('click', async () => {
-            if (!selectedText || !self.lm.currentLocationId) {
-                btn.style.display = 'none';
-                return;
-            }
-
-            const loc = self.lm.locations.find(l => l.id === self.lm.currentLocationId);
-            if (!loc) { btn.style.display = 'none'; return; }
-
-            // 로딩 표시
-            btn.innerHTML = '⏳';
-            btn.style.pointerEvents = 'none';
-
-            try {
-                const ctx = getContext();
-                const userName = ctx?.name1 || 'User';
-                const charName = ctx?.name2 || 'Character';
-                const langInst = self._getLangInstruction('event');
-
-                let evTitle = null, evText = null, evMood = '📝';
-                const trimmed = selectedText.substring(0, 1500);
-
-                try {
-                    const prompt = `Summarize this RP scene excerpt as a place-event memory. ${langInst}
-Character info: protagonist="${userName}", main character="${charName}".
-Respond with ONLY JSON: {"mood":"💕 or 📅 or ⚡","title":"place-meaning hook max 15chars","summary":"detailed 2-sentence summary"}
-If mundane: {"mood":null}
-
-Text: ${trimmed}`;
-
-                    const result = await callLLM(prompt);
-                    if (result) {
-                        const p = parseLLMJson(result);
-                        if (p?.mood && p?.summary) {
-                            evTitle = p.title || p.summary.substring(0, 15) + '...';
-                            evText = p.summary;
-                            evMood = p.mood;
-                        }
-                    }
-                } catch(_) {}
-
-                // LLM 실패 시 선택 텍스트 그대로
-                if (!evText) {
-                    evText = trimmed.length > 60 ? trimmed.substring(0, 60) + '...' : trimmed;
-                    evTitle = trimmed.length > 15 ? trimmed.substring(0, 15) + '...' : trimmed;
-                }
-
-                // 저장
-                if (!loc.events) loc.events = [];
-                loc.events.push({ text: evText, title: evTitle, mood: evMood, timestamp: Date.now(), source: 'drag' });
-                if (loc.events.length > 20) loc.events = loc.events.slice(-20);
-                await self.lm.updateLocation(loc.id, { events: loc.events });
-
-                // 알림
-                self.showEventNotify(loc.name, { text: evText, tag: evMood }, loc.id);
-                // ★ 팝오버 열려있으면 이벤트 목록 자동 갱신
-                const openId = $('#wt-popover').attr('data-id');
-                if (openId === loc.id && $('#wt-popover').is(':visible')) {
-                    self._updEventsList(loc.id);
-                }
-                window.getSelection()?.removeAllRanges();
-
-            } catch(e) {
-                console.error('[wt] Drag summary error:', e);
-                toastr?.warning?.('요약 실패');
-            }
-
-            btn.innerHTML = '📝';
-            btn.style.pointerEvents = 'auto';
-            btn.style.display = 'none';
-            selectedText = '';
-        });
-    }
 }
