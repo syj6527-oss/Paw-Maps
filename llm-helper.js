@@ -409,7 +409,7 @@ async function _callVertexApiKey(apiKey, model, prompt) {
     try {
         const res = await _fetch({
             systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            contents: [{ parts: [{ text: prompt }] }],  // v0.8.2: role 제거 (Vertex Express 호환)
             generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096), responseMimeType: 'application/json' },
         });
         if (res.ok) {
@@ -427,21 +427,37 @@ async function _callVertexApiKey(apiKey, model, prompt) {
                     return part.text.substring(part.text.indexOf('{'));
                 }
             }
+            // v0.8.2: 응답은 왔는데 JSON 없음 — 에러로 저장
+            window._wtLastLLMError = `Vertex(key): Response OK but no JSON. finish_reason=${data?.candidates?.[0]?.finishReason || '?'}`;
+            dbg(`⚠️ Vertex(key) JSON mode: response OK but no JSON parts (${parts.length} parts)`);
         } else {
             const errBody = await res.text().catch(() => '');
-            dbg(`⚠️ Vertex(key) JSON mode: ${res.status} ${errBody.substring(0, 200)}`);
+            // v0.8.2: HTTP 에러 전체 보존 — 디버그 모달에 표시
+            window._wtLastLLMError = `Vertex(key) HTTP ${res.status}: ${errBody.substring(0, 400)}`;
+            dbg(`⚠️ Vertex(key) JSON mode: ${res.status} ${errBody.substring(0, 300)}`);
         }
     } catch(e) {
+        window._wtLastLLMError = `Vertex(key) fetch error: ${e.message}`;
         dbg(`⚠️ Vertex(key) JSON mode error: ${e.message}`);
     }
 
     // 2차: fallback
     try {
-        const res2 = await _fetch({
-            contents: [{ role: 'user', parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
+        const body2 = {
+            contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
             generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096) },
-        });
-        if (!res2.ok) throw new Error(`Vertex(key) API ${res2.status}: ${res2.statusText}`);
+        };
+        // v0.8.2: Grounding 지원 (Vertex AI)
+        if (window._wtUseGrounding) {
+            body2.tools = [{ googleSearch: {} }];  // Vertex는 googleSearch (Gemini API와 다름)
+            dbg('🔍 Vertex(key) Grounding enabled');
+        }
+        const res2 = await _fetch(body2);
+        if (!res2.ok) {
+            const errBody2 = await res2.text().catch(() => '');
+            window._wtLastLLMError = `Vertex(key) 2nd attempt HTTP ${res2.status}: ${errBody2.substring(0, 400)}`;
+            throw new Error(`Vertex(key) API ${res2.status}: ${res2.statusText}`);
+        }
         const data2 = await res2.json();
         const parts2 = data2?.candidates?.[0]?.content?.parts || [];
         for (const part of parts2) {
@@ -534,6 +550,12 @@ export async function callLLM(prompt, options = {}) {
 
     // ★ 방법 1: 직접 API 호출 (확장 설정 키 또는 ST 변수)
     const cfg = _getApiConfig();
+    // v0.8.1: 디버그 정보 저장 (API 설정 상태 추적)
+    window._wtLastApiStatus = cfg
+        ? `Direct API used: type=${cfg.type}, model=${cfg.model}${cfg.region ? `, region=${cfg.region}` : ''}, key=${cfg.key ? `***${cfg.key.slice(-4)}` : (cfg.sa ? `SA:${cfg.sa.project_id}` : 'none')}`
+        : 'NO API CONFIG — using fallback (generateQuietPrompt)';
+    dbg('🔧 API status:', window._wtLastApiStatus);
+
     if (cfg) {
         try {
             dbg(`🔧 LLM calling ${cfg.type} (${cfg.model}), prompt ${prompt.length}c`);
@@ -548,14 +570,14 @@ export async function callLLM(prompt, options = {}) {
                 dbg(`🔧 LLM direct OK (${result.length}c)`);
                 return result;
             }
-            window._wtLastLLMError = 'LLM returned empty result';
+            window._wtLastLLMError = 'Direct API returned empty (check key validity / quota)';
             dbg('⚠️ LLM direct returned empty');
         } catch(e) {
-            window._wtLastLLMError = e.message;
+            window._wtLastLLMError = `Direct API error: ${e.message}`;
             dbg('⚠️ LLM direct failed:', e.message);
         }
     } else {
-        window._wtLastLLMError = 'No API config (key missing?)';
+        window._wtLastLLMError = 'No API config detected — check 설정 → 🔑 LLM API 키 입력';
     }
 
     // ★ 방법 2: Fallback — generateQuietPrompt (본체 모델, 컨텍스트 포함)
