@@ -117,7 +117,7 @@ async function _callGoogle(key, model, prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     const _fetch = (body) => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 45000); // 45초 타임아웃 (모바일 대응)
+        const timer = setTimeout(() => ctrl.abort(), window._wtUseGrounding ? 90000 : 60000); // v0.8.6: 동적 타임아웃 — Grounding 90초, 일반 60초
         return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal }).finally(() => clearTimeout(timer));
     };
 
@@ -318,7 +318,7 @@ async function _callVertex(sa, region, model, prompt) {
 
     const _fetch = (body) => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 45000);
+        const timer = setTimeout(() => ctrl.abort(), window._wtUseGrounding ? 90000 : 60000);
         return fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -407,7 +407,7 @@ async function _callVertexApiKey(apiKey, model, prompt) {
     const endpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent`;
     const _fetch = (body) => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 45000);
+        const timer = setTimeout(() => ctrl.abort(), window._wtUseGrounding ? 90000 : 60000);
         return fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -531,8 +531,26 @@ async function _callGoogleWithFallback(key, primaryModel, prompt) {
         return await _callGoogle(key, primaryModel, prompt);
     } catch(e) {
         const msg = e?.message || '';
+        // v0.8.6: Grounding 모드 + 타임아웃/abort → Grounding 끄고 재시도
+        //   이유: Grounding이 웹 검색 느려서 타임아웃 나면, 검색 없이라도 응답 받는 게 나음
+        if (window._wtUseGrounding && /AbortError|aborted|timeout|signal/i.test(msg)) {
+            dbg('🔁 Grounding timeout → Grounding OFF로 재시도');
+            window._wtUseGrounding = false;
+            try {
+                const r = await _callGoogle(key, primaryModel, prompt);
+                window._wtUseGrounding = true; // 복원 (다음 호출 위해)
+                if (r) {
+                    dbg('✅ Grounding 없이 성공!');
+                    return r;
+                }
+            } catch(e3) {
+                window._wtUseGrounding = true; // 복원
+                dbg(`⚠️ Grounding 없이도 실패: ${e3.message?.substring(0, 60)}`);
+                // 계속해서 모델 폴백 시도
+            }
+        }
         // 서버 과부하/타임아웃 계열 에러만 모델 폴백 시도
-        if (/\b(503|429|500|502|504)\b|AbortError|timeout|overload/i.test(msg)) {
+        if (/\b(503|429|500|502|504)\b|AbortError|aborted|timeout|overload|signal/i.test(msg)) {
             const fallbacks = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash']
                 .filter(m => m !== primaryModel);
             for (const fm of fallbacks) {
@@ -677,6 +695,37 @@ export function getRecentChatContext(maxChars = 2000) {
     } catch(e) {
         dbg('⚠️ getRecentChatContext error:', e.message);
         return '';
+    }
+}
+
+// v0.8.7: 그룹챗 대응 — 최근 N개 메시지에서 발화한 AI 캐릭터들을 빈도순 반환
+// 반환: { recentSpeaker: '가장 최근에 말한 캐릭터', allSpeakers: ['이름1','이름2'] }
+export function getRecentSpeakers(lookback = 8) {
+    try {
+        const ctx = getContext();
+        const chat = ctx?.chat;
+        if (!Array.isArray(chat) || !chat.length) return { recentSpeaker: null, allSpeakers: [] };
+        const speakers = []; // [{name, index}]
+        const seen = new Set();
+        // 최근 메시지부터 역순
+        for (let i = chat.length - 1; i >= 0 && speakers.length < lookback; i--) {
+            const msg = chat[i];
+            if (!msg || msg.is_user) continue; // 유저 발화 제외
+            if (msg.is_system) continue;
+            const name = msg.name || msg.original_name;
+            if (!name || name === 'System') continue;
+            if (!seen.has(name)) {
+                seen.add(name);
+                speakers.push({ name, index: i });
+            }
+        }
+        const recentSpeaker = speakers[0]?.name || null;
+        const allSpeakers = speakers.map(s => s.name);
+        if (recentSpeaker) dbg(`🎭 Recent speakers: ${allSpeakers.join(', ')} (latest: ${recentSpeaker})`);
+        return { recentSpeaker, allSpeakers };
+    } catch(e) {
+        dbg('⚠️ getRecentSpeakers error:', e.message);
+        return { recentSpeaker: null, allSpeakers: [] };
     }
 }
 
