@@ -112,6 +112,8 @@ function _getApiConfig() {
 
 // ========== Google Gemini 직접 호출 ==========
 async function _callGoogle(key, model, prompt) {
+    // v0.8.0: Grounding 모드 — 전역 플래그로 전달
+    const useGrounding = !!window._wtUseGrounding;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     const _fetch = (body) => {
         const ctrl = new AbortController();
@@ -119,47 +121,55 @@ async function _callGoogle(key, model, prompt) {
         return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal }).finally(() => clearTimeout(timer));
     };
 
-    // ★ 1차 시도: JSON 강제 모드
-    try {
-        const res = await _fetch({
-            systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096), responseMimeType: 'application/json' },
-        });
-        if (res.ok) {
-            const data = await res.json();
-            dbg('🔧 Google raw:', JSON.stringify(data).substring(0, 300));
-            const parts = data?.candidates?.[0]?.content?.parts || [];
-            // ★ JSON으로 시작하는 part 우선 선택 (RP 텍스트 part 거부)
-            for (const part of parts) {
-                if (part.text && part.text.trim().startsWith('{')) {
-                    dbg(`🔧 Google OK (JSON mode, ${part.text.length}c, starts with {)`);
-                    return part.text;
+    // ★ 1차 시도: JSON 강제 모드 (grounding 비활성 시만)
+    if (!useGrounding) {
+        try {
+            const res = await _fetch({
+                systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096), responseMimeType: 'application/json' },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                dbg('🔧 Google raw:', JSON.stringify(data).substring(0, 300));
+                const parts = data?.candidates?.[0]?.content?.parts || [];
+                // ★ JSON으로 시작하는 part 우선 선택 (RP 텍스트 part 거부)
+                for (const part of parts) {
+                    if (part.text && part.text.trim().startsWith('{')) {
+                        dbg(`🔧 Google OK (JSON mode, ${part.text.length}c, starts with {)`);
+                        return part.text;
+                    }
                 }
-            }
-            // JSON으로 시작하는 게 없으면 { 포함하는 걸로 fallback
-            for (const part of parts) {
-                if (part.text && part.text.includes('{')) {
-                    const jsonStart = part.text.indexOf('{');
-                    dbg(`🔧 Google OK (JSON mode, ${part.text.length}c, { at ${jsonStart})`);
-                    return part.text.substring(jsonStart);
+                // JSON으로 시작하는 게 없으면 { 포함하는 걸로 fallback
+                for (const part of parts) {
+                    if (part.text && part.text.includes('{')) {
+                        const jsonStart = part.text.indexOf('{');
+                        dbg(`🔧 Google OK (JSON mode, ${part.text.length}c, { at ${jsonStart})`);
+                        return part.text.substring(jsonStart);
+                    }
                 }
+                dbg(`⚠️ Google JSON mode: no JSON found in ${parts.length} parts`);
+            } else {
+                const errBody = await res.text().catch(() => '');
+                dbg(`⚠️ Google JSON mode: ${res.status} ${errBody.substring(0, 200)}`);
             }
-            dbg(`⚠️ Google JSON mode: no JSON found in ${parts.length} parts`);
-        } else {
-            const errBody = await res.text().catch(() => '');
-            dbg(`⚠️ Google JSON mode: ${res.status} ${errBody.substring(0, 200)}`);
+        } catch(e) {
+            dbg(`⚠️ Google JSON mode error: ${e.message}`);
         }
-    } catch(e) {
-        dbg(`⚠️ Google JSON mode error: ${e.message}`);
     }
 
-    // ★ 2차 시도: JSON 강제 없이
+    // ★ 2차 시도: JSON 강제 없이 (grounding 켜지면 여기로 바로 옴)
     try {
-        const res2 = await _fetch({
+        const body2 = {
             contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
             generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096) },
-        });
+        };
+        // v0.8.0: Grounding with Google Search — 실시간 웹 검색 기반 답변
+        if (useGrounding) {
+            body2.tools = [{ google_search: {} }];
+            dbg('🔍 Google Search Grounding enabled');
+        }
+        const res2 = await _fetch(body2);
         if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
         const data2 = await res2.json();
         const parts2 = data2?.candidates?.[0]?.content?.parts || [];
