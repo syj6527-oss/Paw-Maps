@@ -124,10 +124,19 @@ async function _callGoogle(key, model, prompt) {
     // ★ 1차 시도: JSON 강제 모드 (grounding 비활성 시만)
     if (!useGrounding) {
         try {
+            const genCfg = {
+                temperature: (window._wtTempOverride ?? 0.7),
+                maxOutputTokens: (window._wtMaxTokensOverride ?? 4096),
+                responseMimeType: 'application/json',
+            };
+            // v0.8.18: thinking 비활성화 (요약 같이 간단한 작업용, 출력 토큰 한도 초과 방지)
+            if (window._wtDisableThinking) {
+                genCfg.thinkingConfig = { thinkingBudget: 0 };
+            }
             const res = await _fetch({
                 systemInstruction: { parts: [{ text: 'You are a JSON-only assistant. Respond with valid JSON only.' }] },
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096), responseMimeType: 'application/json' },
+                generationConfig: genCfg,
             });
             if (res.ok) {
                 const data = await res.json();
@@ -165,9 +174,16 @@ async function _callGoogle(key, model, prompt) {
 
     // ★ 2차 시도: JSON 강제 없이 (grounding 켜지면 여기로 바로 옴)
     try {
+        const gcfg2 = {
+            temperature: (window._wtTempOverride ?? 0.7),
+            maxOutputTokens: (window._wtMaxTokensOverride ?? 4096),
+        };
+        if (window._wtDisableThinking) {
+            gcfg2.thinkingConfig = { thinkingBudget: 0 };
+        }
         const body2 = {
             contents: [{ parts: [{ text: prompt + '\n\nCRITICAL: Respond with ONLY valid JSON. Start with { and end with }. No markdown, no explanation.' }] }],
-            generationConfig: { temperature: (window._wtTempOverride ?? 0.7), maxOutputTokens: (window._wtMaxTokensOverride ?? 4096) },
+            generationConfig: gcfg2,
         };
         // v0.8.0: Grounding with Google Search — 실시간 웹 검색 기반 답변
         if (useGrounding) {
