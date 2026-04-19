@@ -149,12 +149,17 @@ async function _callGoogle(key, model, prompt) {
                     }
                 }
                 dbg(`⚠️ Google JSON mode: no JSON found in ${parts.length} parts`);
+                // v0.8.5: 응답 받았지만 JSON 없음 — finish_reason 체크 (MAX_TOKENS, SAFETY 등)
+                const finishReason = data?.candidates?.[0]?.finishReason || 'UNKNOWN';
+                window._wtLastLLMError = `Google 1st: no JSON (finish_reason=${finishReason})${finishReason === 'MAX_TOKENS' ? ' — 토큰 부족! 📏 생성 분량 → 🌱 가벼움 시도' : ''}`;
             } else {
                 const errBody = await res.text().catch(() => '');
                 dbg(`⚠️ Google JSON mode: ${res.status} ${errBody.substring(0, 200)}`);
+                window._wtLastLLMError = `Google HTTP ${res.status}: ${errBody.substring(0, 300)}`;
             }
         } catch(e) {
             dbg(`⚠️ Google JSON mode error: ${e.message}`);
+            window._wtLastLLMError = `Google 1st fetch error: ${e.message}`;
         }
     }
 
@@ -170,7 +175,11 @@ async function _callGoogle(key, model, prompt) {
             dbg('🔍 Google Search Grounding enabled');
         }
         const res2 = await _fetch(body2);
-        if (!res2.ok) throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
+        if (!res2.ok) {
+            const errBody2 = await res2.text().catch(() => '');
+            window._wtLastLLMError = `Google 2nd HTTP ${res2.status}: ${errBody2.substring(0, 300)}`;
+            throw new Error(`Google API ${res2.status}: ${res2.statusText}`);
+        }
         const data2 = await res2.json();
         const parts2 = data2?.candidates?.[0]?.content?.parts || [];
         // ★ JSON으로 시작하는 part 우선
@@ -188,6 +197,11 @@ async function _callGoogle(key, model, prompt) {
             }
         }
         dbg(`⚠️ Google fallback: no JSON in parts either`);
+        // v0.8.5: 2차도 JSON 없음 — finish_reason 체크
+        const finishReason2 = data2?.candidates?.[0]?.finishReason || 'UNKNOWN';
+        if (!window._wtLastLLMError || !/HTTP/i.test(window._wtLastLLMError)) {
+            window._wtLastLLMError = `Google 2nd: no JSON (finish_reason=${finishReason2})${finishReason2 === 'MAX_TOKENS' ? ' — 토큰 부족!' : ''}`;
+        }
         return parts2[0]?.text || '';
     } catch(e) {
         throw new Error(`Google API both attempts failed: ${e.message}`);
@@ -570,8 +584,11 @@ export async function callLLM(prompt, options = {}) {
                 dbg(`🔧 LLM direct OK (${result.length}c)`);
                 return result;
             }
-            window._wtLastLLMError = 'Direct API returned empty (check key validity / quota)';
-            dbg('⚠️ LLM direct returned empty');
+            // v0.8.5: 개별 API 함수가 이미 구체 에러 저장했으면 그대로 두고, 없을 때만 기본 메시지
+            if (!window._wtLastLLMError || window._wtLastLLMError === 'No API config detected — check 설정 → 🔑 LLM API 키 입력') {
+                window._wtLastLLMError = 'Direct API returned empty (key? quota? thinking overflow?)';
+            }
+            dbg('⚠️ LLM direct returned empty, lastErr:', window._wtLastLLMError);
         } catch(e) {
             window._wtLastLLMError = `Direct API error: ${e.message}`;
             dbg('⚠️ LLM direct failed:', e.message);
