@@ -1,31 +1,40 @@
-/* 🐶 World Tracker v0.8.26 — 텍스트 렌더링 최적화 (Gemini 조언 반영) */
-/* 모든 WT 엘리먼트에 날카로운 텍스트 렌더링 강제 */
+/* 🐶 World Tracker v0.8.28 — Gemini 조언 반영: SillyTavern 전역 스타일 오염 차단 */
+/* 핵심: SillyTavern 본체 CSS의 text-shadow / filter / stroke 를 NPC 시트 내부에서 완전 제거 */
+#wt-npc-profile-overlay,
+#wt-npc-profile-overlay *,
+#wt-npc-profile-sheet,
+#wt-npc-profile-sheet * {
+    text-shadow: none !important;
+    -webkit-text-stroke: 0 !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* WT 모든 엘리먼트: 텍스트 렌더링 최적화 */
 .wt-panel, .wt-panel *,
 #wt-bottomsheet, #wt-bottomsheet *,
-#wt-npc-profile-overlay, #wt-npc-profile-overlay *,
-#wt-npc-profile-sheet, #wt-npc-profile-sheet *,
 #wt-community-overlay, #wt-community-overlay *,
 #wt-nodemap-overlay, #wt-nodemap-overlay *,
 [id^="wt-"] {
     -webkit-font-smoothing: antialiased !important;
     -moz-osx-font-smoothing: grayscale !important;
     text-rendering: optimizeLegibility !important;
+    text-shadow: none !important;
+    -webkit-text-stroke: 0 !important;
 }
 
-/* NPC 시트: 전용 최적화 — 애니메이션 끝난 후 100% 선명 */
-#wt-npc-profile-sheet {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-    /* 픽셀 정렬 강제 */
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    perspective: 1000px;
-}
-/* done 상태 (애니메이션 끝난 후): transform 자체를 z축 0으로 유지 — 2D scale 이슈 없음 */
+/* NPC 시트: 애니메이션 끝난 done 상태 — 모든 변환 / 그림자 완전 제거 */
 #wt-npc-profile-sheet.wt-npc-sheet-done {
-    transform: translateZ(0) !important;
+    transform: none !important;
     will-change: auto !important;
+}
+/* 호감도 하트의 filter도 done 상태에선 제거 — 주변 텍스트 블러 유발 요인 */
+#wt-npc-profile-sheet.wt-npc-sheet-done .wt-npc-heart {
+    filter: none !important;
+}
+/* 글자 선명도 최대화: 자간 살짝 조임 */
+#wt-npc-profile-sheet {
+    letter-spacing: -0.2px;
 }
 
 /* 🐶 World Tracker 커스텀 알림 (번역기 스타일) */
