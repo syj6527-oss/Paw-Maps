@@ -451,6 +451,56 @@ export class LocationDetector {
         if (this.skipKo.includes(lower)) return true;
         // 영어 2글자 이하 → 무조건 스킵 (장소명은 최소 3글자)
         if (/^[a-zA-Z]+$/.test(place) && place.length <= 2) return true;
+
+        // v0.8.25: 강력한 오탐 필터 추가
+        // 1) 숫자만 있으면 스킵 ("10", "42", "123")
+        if (/^[\d\s.,]+$/.test(place)) return true;
+        // 2) 구두점 포함 → 스킵 (쉼표, 세미콜론, 따옴표 등)
+        if (/[,;:!?"'`]/.test(place)) return true;
+        // 3) 공백 3개 이상 = 4단어 이상 → 장소명 아님 (진짜 지명은 1~3단어)
+        const spaceCount = (place.match(/\s/g) || []).length;
+        if (spaceCount >= 3) return true;
+        // 4) 끝이 ... 또는 - 으로 끝나면 잘린 텍스트 → 스킵
+        if (/[-…]+$/.test(place.trim())) return true;
+        // 5) 영어 과거형(-ed) / 진행형(-ing) 단어로 시작하면 장소 아님 (scanned room, running track ×)
+        //    실제 지명은 거의 없음 (United는 고유명사라 대문자 시작이니 OK, 여기는 소문자만 체크)
+        const firstWord = place.split(/\s+/)[0].toLowerCase();
+        if (/^[a-z]+(ed|ing)$/.test(firstWord) && firstWord.length >= 5) {
+            // 예외: "United States", "Crossing" 같은 지명
+            const edIngExceptions = new Set(['united','crossing','wedding','trading','building','landing']);
+            if (!edIngExceptions.has(firstWord)) return true;
+        }
+        // 6) 영어 동사로 시작하는 구문 ("say thank you", "make coffee" 등)
+        //    say/make/do/get/take 등으로 시작하는 다단어 → 장소 아님
+        const verbStarters = new Set([
+            'say','says','saying','make','makes','making','do','does','doing',
+            'get','gets','getting','take','takes','taking','give','gives','giving',
+            'go','goes','going','come','comes','coming','see','sees','seeing',
+            'know','knows','knowing','think','thinks','thinking','want','wants',
+            'need','needs','needing','feel','feels','feeling','look','looks','looking',
+            'find','finds','finding','tell','tells','telling','ask','asks','asking',
+            'try','tries','trying','call','calls','calling','work','works','working',
+            'seem','seems','seeming','leave','leaves','leaving','help','helps','helping',
+            'talk','talks','talking','turn','turns','turning','start','starts','starting',
+            'show','shows','showing','hear','hears','hearing','play','plays','playing',
+            'run','runs','running','move','moves','moving','live','lives','living',
+            'believe','bring','happen','write','provide','sit','stand','lose','pay','meet',
+            'include','continue','set','learn','change','lead','understand','watch','follow',
+            'stop','create','speak','read','allow','add','spend','grow','open','walk','win',
+            'offer','remember','love','consider','appear','buy','wait','serve','die','send',
+            'expect','build','stay','fall','cut','reach','kill','remain'
+        ]);
+        if (spaceCount >= 1 && verbStarters.has(firstWord)) return true;
+        // 7) "you", "he", "she", "it" 등 대명사로 시작 → 장소 아님
+        const pronounStarters = new Set(['you','he','she','it','we','they','i','me','my','your','his','her','our','their']);
+        if (spaceCount >= 1 && pronounStarters.has(firstWord)) return true;
+        // 8) 순수 영소문자만 있고 길이 5+ 공백 있으면 의심 (고유명사면 보통 대문자 시작)
+        //    단, "rue de ~" 같은 프랑스 지명 예외
+        if (spaceCount >= 1 && /^[a-z\s]+$/.test(place) && place.length > 8) {
+            const lowerPrefixes = new Set(['rue','via','avenida','calle','plaza','piazza']);
+            if (!lowerPrefixes.has(firstWord)) return true;
+        }
+
         // ★ 영어 -ly 부사 → 무조건 스킵 (terribly, quickly, slowly...)
         // 단, 실제 지명은 제외 (Sicily, Beverly, Holly, Bali...)
         const lyExceptions = new Set(['sicily','beverly','holly','bali','italy','family','rally','alley','valley','assembly','embassy']);

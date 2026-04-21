@@ -1,3 +1,33 @@
+/* 🐶 World Tracker v0.8.26 — 텍스트 렌더링 최적화 (Gemini 조언 반영) */
+/* 모든 WT 엘리먼트에 날카로운 텍스트 렌더링 강제 */
+.wt-panel, .wt-panel *,
+#wt-bottomsheet, #wt-bottomsheet *,
+#wt-npc-profile-overlay, #wt-npc-profile-overlay *,
+#wt-npc-profile-sheet, #wt-npc-profile-sheet *,
+#wt-community-overlay, #wt-community-overlay *,
+#wt-nodemap-overlay, #wt-nodemap-overlay *,
+[id^="wt-"] {
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: optimizeLegibility !important;
+}
+
+/* NPC 시트: 전용 최적화 — 애니메이션 끝난 후 100% 선명 */
+#wt-npc-profile-sheet {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    /* 픽셀 정렬 강제 */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+}
+/* done 상태 (애니메이션 끝난 후): transform 자체를 z축 0으로 유지 — 2D scale 이슈 없음 */
+#wt-npc-profile-sheet.wt-npc-sheet-done {
+    transform: translateZ(0) !important;
+    will-change: auto !important;
+}
+
 /* 🐶 World Tracker 커스텀 알림 (번역기 스타일) */
 .wt-notification{position:fixed;top:-100px;left:0;right:0;margin:0 auto;width:fit-content;padding:10px 22px;border-radius:30px;font-weight:bold;font-size:13px;z-index:2147483647!important;box-shadow:0 4px 20px rgba(0,0,0,.25);transition:top .4s cubic-bezier(.175,.885,.32,1.275);pointer-events:none;white-space:normal;max-width:85vw;overflow:hidden;text-overflow:ellipsis;text-align:center;font-family:-apple-system,'Noto Sans KR','Segoe UI',Roboto,sans-serif;line-height:1.3;display:none}
 .wt-noti-move{background:#2B8A6E;color:#fff}
