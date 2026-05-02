@@ -74,7 +74,8 @@ export function toastWarn(msg) { wtNotify(msg, 'warn', 3000); }
 export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
 
 const defaults = {
-    enabled:true, autoDetect:true, showDetectToast:true,
+    // v0.9.0: autoDetect 기본 OFF — 수동 모드로 전환 (드래그 이벤트 등록만 자동)
+    enabled:true, autoDetect:false, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
     debugMode:false, mapMode:'leaflet', fantasyTheme:false,
     eventLang:'auto', // auto=RP언어, ko=한국어, en=English
@@ -119,6 +120,14 @@ function dbg(msg) {
 
 // ========== 메시지 스캔 (USER/AI 감도 분리) ==========
 async function scanMessage(text, source = 'USER') {
+    // v0.9.0: 자동 감지 완전 제거 — 수동 입력 모드로 전환
+    //   장소/이벤트 자동 추출 비활성화. 드래그→이벤트 수동 등록만 유지.
+    //   이전 detect/detectNewPlace/detectNPCs/detectPromisePlace 로직 전부 비활성.
+    return false;
+}
+
+// v0.9.0 비활성: 이전 자동 감지 로직 (참고용으로 유지, 호출되지 않음)
+async function _legacyScanMessage(text, source = 'USER') {
     try {
         // ★ 리뷰 생성 중이면 감지 차단 (피드백 루프 방지)
         if (ui?._isGeneratingReview) {
@@ -535,6 +544,11 @@ async function init() {
         if (extension_settings[EXTENSION_NAME][k] === undefined) extension_settings[EXTENSION_NAME][k] = v;
     }
     extension_settings[EXTENSION_NAME].debugMode = false;
+    // v0.9.0: 자동 감지 폐지 — 기존 유저도 강제 OFF
+    if (!extension_settings[EXTENSION_NAME]._migrated_v090) {
+        extension_settings[EXTENSION_NAME].autoDetect = false;
+        extension_settings[EXTENSION_NAME]._migrated_v090 = true;
+    }
     // ★ v0.6.0 마이그레이션: 기존 'node' 유저 → 'leaflet' 강제 전환 (한 번만)
     if (!extension_settings[EXTENSION_NAME]._migrated_v06) {
         if (extension_settings[EXTENSION_NAME].mapMode === 'node') {
@@ -850,7 +864,13 @@ async function _geocodePlace(locId, placeName, retry = 0) {
 }
 
 // ========== RP 날짜 추출 (메타데이터에서) ==========
+// v0.9.0: 자동 추출 비활성화 — LLM이 현실 날짜를 상태창에 쓰는 문제로 인해
+//         이벤트/장소/타임라인 날짜는 유저가 직접 수기 수정 (이미 UI 제공됨)
 function _extractRpDate(text) {
+    return ''; // v0.9.0: 항상 빈 값 → rpDate 미설정 → 시스템 timestamp만 사용
+}
+
+function _legacyExtractRpDate(text) {
     // HTML 태그 제거 (렌더된 마크다운 대응) + 이모지 정리
     const clean = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
     const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };

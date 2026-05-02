@@ -67,7 +67,7 @@ export class PromptInjector {
         const cur = this.lm.locations.find(l => l.id === this.lm.currentLocationId);
         if (!cur) { console.log(`[${EXTENSION_NAME}] 🔧 generate(): cur not found for id=${this.lm.currentLocationId}`); return ''; }
 
-        const L = ['[🐶 World Tracker]'];
+        const L = ['[🐾 Paw Map]'];
         L.push('⚙️ Use this location data to maintain spatial consistency and reference past events naturally in your narration.');
 
         // 1. 장소 이름 (+ 서브로케이션)
@@ -154,7 +154,7 @@ export class PromptInjector {
             if (region) L.push(`🌍 World: ${totalLocs} places around ${region}`);
         }
 
-        L.push('[/World Tracker]');
+        L.push('[/Paw Map]');
         return L.join('\n');
     }
 

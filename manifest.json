@@ -1,12 +1,12 @@
 {
-    "display_name": "🐶 World Tracker",
+    "display_name": "🐾 Paw Map",
     "loading_order": 100,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
     "author": "Yun",
-    "version": "0.8.28",
+    "version": "0.9.1",
     "homePage": "https://github.com/syj6527-oss/RP_World_Tracker",
     "auto_update": true
 }
