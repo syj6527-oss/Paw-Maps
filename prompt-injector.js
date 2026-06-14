@@ -138,8 +138,10 @@ export class PromptInjector {
             if (animals.length) L.push(`🐾 Resident animal(s) of this place (they live/hang around here): ${animals.map(fmt).join(' | ')}\n  → When a scene is here, this animal physically shows up in it — approaches, lingers, reacts to the characters. Make it tangibly present.`);
         }
 
-        // 8.7. 💬 실시간 커뮤니티 — v0.9.5: 이 장소에 대한 소문/분위기 (🔒 장소는 제외)
-        if (curMode !== 'off' && cur.community?.length) {
+        // 8.7. 💬 실시간 커뮤니티 — v0.9.5: 이 장소 소문/분위기 (🔒 장소 제외)
+        //   v0.9.19: 현재 장소에 "반영(핀)"한 커뮤니티가 있으면 자동 buzz 생략 → 유저가 고른 것만 반영
+        const _hasCommPins = (cur._pins || []).some(p => p.kind === 'community');
+        if (curMode !== 'off' && cur.community?.length && !_hasCommPins) {
             const recent = cur.community.slice(0, 4);
             const liveStatus = recent.map(p => {
                 // 텍스트에서 액션/감정 추출
