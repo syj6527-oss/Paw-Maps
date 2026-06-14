@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.16</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.17</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -275,7 +275,9 @@ export class UIManager {
                     </select>
                 </div>
                 <div class="wt-divider"></div>
-                <div class="wt-s-row"><label>🔑 LLM API 키 (리뷰/이벤트 생성용)</label></div>
+                <div class="wt-s-row" id="wt-s-apikey-toggle" style="cursor:pointer;user-select:none"><label style="cursor:pointer">🔑 직접 API 키 (고급 · 연결 프로필 안 쓸 때) <span id="wt-s-apikey-arrow">▾</span></label></div>
+                <div id="wt-s-apikey-section" style="display:none">
+                <div class="wt-s-row" style="font-size:10px;color:#9A8A7A;margin-bottom:2px">위 연결 프로필을 쓰면 여긴 비워둬도 돼요 (프로필 실패 시 폴백용)</div>
                 <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
                     <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:100px;font-size:11px"><option value="google">Gemini</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
                     <input type="password" id="wt-s-llm-key" class="text_pole" placeholder="API 키 입력..." style="flex:1;font-size:11px;padding:6px 8px"/>
@@ -312,6 +314,7 @@ export class UIManager {
                     <button id="wt-s-llm-test" class="menu_button" style="font-size:11px;padding:6px 10px;white-space:nowrap">🧪 테스트</button>
                 </div>
                 <span id="wt-s-llm-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px">미설정 → 기본(generateQuietPrompt) 사용</span>
+                </div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-worldcont"/> 🌍 세계관 이어가기</label></div>
                 <span id="wt-s-worldcont-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:1px;margin-bottom:4px">새 채팅에서도 같은 캐릭터의 세계관 유지</span>
@@ -438,6 +441,14 @@ export class UIManager {
             $('#wt-s-llm-status').text(s.useVertex ? '⚙️ Vertex AI 모드 — SA JSON 또는 Vertex 키 입력' : '✅ Gemini (AI Studio) 모드').css('color', '#5E84E2');
         });
         $('#wt-s-llm-key').on('change', () => { s.llmApiKey = $('#wt-s-llm-key').val().trim(); saveSettingsDebounced(); $('#wt-s-llm-status').text(s.llmApiKey ? '✅ 저장됨' : '미설정').css('color', s.llmApiKey ? '#2B8A6E' : '#9A8A7A'); });
+        // v0.9.17: 직접 API 키 섹션 접기/펼치기
+        $('#wt-s-apikey-toggle').on('click', () => {
+            const willOpen = !$('#wt-s-apikey-section').is(':visible');
+            $('#wt-s-apikey-section').slideToggle(150);
+            $('#wt-s-apikey-arrow').text(willOpen ? '▴' : '▾');
+        });
+        // 키만 있고 연결 프로필 없으면 자동으로 펼쳐서 보여줌
+        if (s?.llmApiKey && !s?.selectedProfile) { $('#wt-s-apikey-section').show(); $('#wt-s-apikey-arrow').text('▴'); }
         $('#wt-s-llm-model').on('change', () => { s.llmModel = $('#wt-s-llm-model').val(); saveSettingsDebounced(); });
         // Vertex SA JSON 저장 + 검증
         $('#wt-s-vertex-sa').on('change blur', () => {
