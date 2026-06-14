@@ -29,6 +29,28 @@ function isAutoDetectPaused() {
     return _autoDetectPauseCount > 0;
 }
 
+// ========== v0.9.2: ST 데이터 호출 충돌 방어 ==========
+//   1) ST가 응답 생성 중일 때(_stBusy) 확장의 자동 LLM 호출/쓰기를 피해서 호출 경쟁 방지
+//   2) 비동기 작업(LLM 요약/지오코딩/DB쓰기) 도중 채팅이 바뀌면 결과를 폐기 → 엉뚱한 채팅 오염 방지
+let _stBusy = false;
+let _stBusySince = 0;
+function _setStBusy(v) { _stBusy = !!v; if (v) _stBusySince = Date.now(); }
+// 생성이 비정상 종료돼 플래그가 안 풀리는 경우 대비 — 45초 지나면 자동 해제
+export function isStBusy() {
+    if (_stBusy && Date.now() - _stBusySince > 45000) _stBusy = false;
+    return _stBusy;
+}
+// 작업 시작 시점의 chatId를 스냅샷 → 작업 후 still() 호출로 같은 채팅인지 확인 (true=안전)
+export function makeChatGuard() {
+    let snap = null;
+    try { snap = lm?.currentChatId ?? lm?.getChatId?.() ?? null; } catch(_) {}
+    return () => {
+        let now = null;
+        try { now = lm?.currentChatId ?? lm?.getChatId?.() ?? null; } catch(_) {}
+        return snap != null && snap === now;
+    };
+}
+
 // ========== 확장 경로 자동 감지 (폴더명 불일치 방지) ==========
 export const EXTENSION_PATH = new URL('.', import.meta.url).pathname;
 
@@ -75,11 +97,13 @@ export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
 
 const defaults = {
     // v0.9.0: autoDetect 기본 OFF — 수동 모드로 전환 (드래그 이벤트 등록만 자동)
+    // v0.9.2: autoDetect는 "모든 자동 장소 감지"의 마스터 스위치 (캐릭터시트 추출 포함). 기본 OFF 유지.
     enabled:true, autoDetect:false, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
     debugMode:false, mapMode:'leaflet', fantasyTheme:false,
     eventLang:'auto', // auto=RP언어, ko=한국어, en=English
     worldContinuity:false, // 세계관 이어가기 (캐릭터 기반 저장)
+    dragEvent:true, // v0.9.2: 드래그 → 요약 아이콘(이벤트 기록) on/off
 };
 
 let db, lm, det, pi, ui;
@@ -619,6 +643,14 @@ async function init() {
         }
     }
 
+    // ★ v0.9.2: ST 생성 상태 추적 — 충돌 방어용 (확장의 자동 LLM 호출이 ST 생성과 겹치지 않게)
+    for (const evName of ['GENERATION_STARTED', 'GENERATION_AFTER_COMMANDS']) {
+        if (event_types[evName]) eventSource.on(event_types[evName], () => _setStBusy(true));
+    }
+    for (const evName of ['GENERATION_ENDED', 'GENERATION_STOPPED']) {
+        if (event_types[evName]) eventSource.on(event_types[evName], () => _setStBusy(false));
+    }
+
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         pi.clear(); lastId = null;
         // 타이밍: SillyTavern이 chatId 갱신할 때까지 대기
@@ -634,15 +666,24 @@ async function init() {
             setTimeout(() => scanContext(), 1000);
         }
         // ★ 위치 기반 자동 확장
+        const _expGuard = makeChatGuard();
         setTimeout(async () => {
+            if (!_expGuard()) { dbg('⏭️ 자동 거리/지오코딩 — 채팅이 바뀜, 스킵'); return; } // v0.9.2: 채팅전환 방어
             try { await lm.autoCalcDistances(); } catch(_){}
             try { await lm.autoReverseGeocode(); } catch(_){}
-            if (ui.panelVisible) ui.refresh();
+            if (_expGuard() && ui.panelVisible) ui.refresh();
         }, 3000);
 
         // ★ 캐릭터시트에서 1차 주소/지역 자동 추출 (GPS 앵커 없을 때)
+        // v0.9.2: 비활성화 — autoDetect 마스터 스위치 뒤로 가둠 (기본 OFF).
+        //   이전엔 이 블록이 autoDetect를 무시하고 돌아서 "감지 껐는데도 장소 생성"의 원인이었음.
+        //   코드는 참고용으로 남기고, autoDetect를 켜야만 동작하게 게이팅. + ST 생성중/채팅전환 방어.
+        const _csGuard = makeChatGuard();
         setTimeout(async () => {
             try {
+                if (!extension_settings[EXTENSION_NAME]?.autoDetect) { dbg('⏭️ 캐릭터시트 자동추출 비활성 (autoDetect OFF)'); return; }
+                if (isStBusy()) { dbg('⏭️ 캐릭터시트 자동추출 — ST 생성 중이라 스킵'); return; }
+                if (!_csGuard()) { dbg('⏭️ 캐릭터시트 자동추출 — 채팅이 바뀜, 스킵'); return; }
                 // GPS 좌표 있는 장소가 하나라도 있으면 스킵 (이미 앵커 있음)
                 const hasAnchor = lm.locations.some(l => l.lat && l.lng);
                 if (hasAnchor) return;

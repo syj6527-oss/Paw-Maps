@@ -42,6 +42,13 @@ function _detectLocType(name) {
 export class PromptInjector {
     constructor(lm) { this.lm = lm; }
 
+    // v0.9.3: 장소 RP 반영 모드 (off/director/character)
+    //   명시값 없으면: 방문한 적 있으면 character(캐릭터가 앎), 없으면 off(내 메모)
+    _mode(l) {
+        if (l && (l.injectMode === 'off' || l.injectMode === 'director' || l.injectMode === 'character')) return l.injectMode;
+        return ((l?.visitCount || 0) > 0) ? 'character' : 'off';
+    }
+
     inject() {
         const t = this.generate(); const fn = getFn();
         console.log(`[${EXTENSION_NAME}] 🔧 inject(): fn=${!!fn}, text=${t ? t.length + 'c' : 'empty'}`);
@@ -96,11 +103,13 @@ export class PromptInjector {
         // 5. 상태
         if (cur.status) L.push(`🌤️ Status: ${cur.status}`);
 
-        // 6. 메모
-        if (cur.memo) L.push(`💭 ${this._mem(cur)}`);
-
-        // 7. 특이사항 (AI 전용)
-        if (cur.aiNotes) L.push(`📋 AI Notes: ${cur.aiNotes}`);
+        // 6~7. 메모/특이사항 — v0.9.3: RP 반영 모드 따라 (off=숨김, director=OOC, character=인-월드)
+        const curMode = this._mode(cur);
+        if (curMode !== 'off') {
+            const ooc = curMode === 'director';
+            if (cur.memo) L.push(ooc ? `🎬 [OOC director note — the character is NOT aware of this]: ${this._mem(cur)}` : `💭 ${this._mem(cur)}`);
+            if (cur.aiNotes) L.push(ooc ? `🎬 [OOC note]: ${cur.aiNotes}` : `📋 AI Notes: ${cur.aiNotes}`);
+        }
 
         // 8. 이벤트 — 서브 장소 있으면 서브 이벤트 우선
         const evTarget = subLoc || cur;
@@ -152,6 +161,37 @@ export class PromptInjector {
         if (totalLocs > 1) {
             const region = this._guessRegion();
             if (region) L.push(`🌍 World: ${totalLocs} places around ${region}`);
+        }
+
+        // ★ v0.9.3: 현재 장소가 아니어도 "반영" 켠 장소 주입 (이벤트 예정 장소 등)
+        //   character → 캐릭터가 존재를 앎 / director → OOC 연출 지시 (캐릭터는 의도 모름)
+        const flagKnown = [], flagDir = [];
+        for (const l of this.lm.locations) {
+            if (l.id === cur.id || l.id === subLocId) continue;
+            const m = this._mode(l);
+            if (m === 'character') flagKnown.push(l);
+            else if (m === 'director') flagDir.push(l);
+        }
+        if (flagKnown.length) {
+            const list = flagKnown.slice(0, 8).map(l => {
+                const addr = l.address ? ` (${l.address.split(',').slice(0,2).join(',').trim()})` : '';
+                return `${l.name}${l.memo ? ' — ' + l.memo : ''}${addr}`;
+            }).join('\n  ');
+            L.push(`🗺️ Other known places (the character is aware these exist):\n  ${list}`);
+        }
+        if (flagDir.length) {
+            const list = flagDir.slice(0, 8).map(l => `${l.name}${l.memo ? ' — ' + l.memo : ''}`).join('\n  ');
+            L.push(`🎬 [OOC narrative direction — steer the story toward these naturally; the character is NOT consciously aware of the user's intent]:\n  ${list}`);
+        }
+
+        // ★ v0.9.4: 유저가 핀한 리뷰/커뮤니티 — 다음 응답에 반영 (체크 유지 동안 계속)
+        if (cur._pins?.length) {
+            const list = cur._pins.slice(0, 12).map(p => {
+                const tag = p.kind === 'review' ? 'review' : 'buzz';
+                const t = (p.text || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+                return `[${tag}] ${p.who || '?'}: "${t}"`;
+            }).join('\n  ');
+            L.push(`📌 User-pinned — reflect these in your next response (weave naturally into the scene):\n  ${list}`);
         }
 
         L.push('[/Paw Map]');
@@ -214,6 +254,7 @@ export class PromptInjector {
             let o=d.fromId===cur.id?d.toId:d.toId===cur.id?d.fromId:null;
             if(!o)continue; const loc=this.lm.locations.find(l=>l.id===o);
             if(!loc) continue;
+            if (this._mode(loc) === 'off') continue; // v0.9.3: 반영 끈 장소는 주변 목록에서도 숨김
             let entry = `- ${loc.name} (${d.distanceText || this._levelLabel(d.level)})`;
             if (loc.address) {
                 const short = loc.address.split(',').slice(0, 2).join(',').trim();

@@ -4,7 +4,7 @@ console.log('[wt] ui-manager hotfix16 loaded');
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
-import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat, runWithoutAutoDetect } from './index.js';
+import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat, runWithoutAutoDetect, isStBusy, makeChatGuard } from './index.js';
 import { callLLM, parseLLMJson, getRecentChatContext, getRecentSpeakers } from './llm-helper.js';
 import { MapRenderer } from './map-renderer.js';
 import { LeafletRenderer } from './leaflet-renderer.js';
@@ -37,6 +37,34 @@ export class UIManager {
         window._wtTapFireLock = false;
         window._wtDlog = (msg, color) => this._dlog?.(msg, color);
         this._installDebugSystem();
+        this._installPinHandler(); // v0.9.4: 핀(반영) 클릭 위임 핸들러
+    }
+
+    // v0.9.4: 리뷰/커뮤니티 핀 버튼 — 위임 클릭 (한 번만 등록)
+    _installPinHandler() {
+        if (window._wtPinHandlerInstalled) return;
+        window._wtPinHandlerInstalled = true;
+        const self = this;
+        $(document).on('click', '.wt-pin-btn', async function(e) {
+            e.preventDefault(); e.stopPropagation();
+            const $b = $(this);
+            const locId = $b.attr('data-pin-locid');
+            const kind = $b.attr('data-pin-kind');
+            const loc = self.lm.locations.find(l => l.id === locId);
+            if (!loc) return;
+            let who = '', text = '';
+            if (kind === 'community') {
+                const post = (loc.community || []).find(p => p.id === $b.attr('data-pin-id'));
+                if (!post) return;
+                who = post.name; text = post.text;
+            } else {
+                try { who = decodeURIComponent($b.attr('data-pin-who') || ''); } catch(_) { who = $b.attr('data-pin-who') || ''; }
+                try { text = decodeURIComponent($b.attr('data-pin-text') || ''); } catch(_) { text = $b.attr('data-pin-text') || ''; }
+            }
+            const on = await self._togglePin(locId, kind, who, text);
+            $b.css({ color: on ? '#1D9BF0' : '#536471', 'font-weight': on ? '700' : '400' }).html(`📌 ${on ? '반영중' : '반영'}`);
+            try { (on ? toastSuccess : toastWarn)(on ? '📌 다음 응답에 반영' : '반영 해제'); } catch(_) {}
+        });
     }
 
     // r23: 디버그 시스템 — 항상 리스너는 설치하되 _debugEnabled true일 때만 동작
@@ -202,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.0</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.4</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -213,6 +241,8 @@ export class UIManager {
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-moveevent"/> 🐾 발자취 기록</label></div>
+                <!-- v0.9.2: 드래그 → 요약 아이콘(이벤트 기록) on/off -->
+                <div class="wt-s-row"><label><input type="checkbox" id="wt-s-dragevent"/> ✂️ 드래그 이벤트 기록</label></div>
                 <div class="wt-s-row"><label><span id="wt-secret" style="cursor:default">💭</span> 기억</label>
                     <select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select>
                 </div>
@@ -303,6 +333,7 @@ export class UIManager {
         const s = extension_settings[EXTENSION_NAME];
         const bind = (sel, key, def) => $(sel).prop('checked', s?.[key] ?? def).on('change', function(){ s[key]=$(this).is(':checked'); saveSettingsDebounced(); });
         bind('#wt-s-enabled','enabled',true); bind('#wt-s-detect','autoDetect',true); bind('#wt-s-toast','showDetectToast',true); bind('#wt-s-inject','aiInjection',true); bind('#wt-s-moveevent','moveEvent',true);
+        bind('#wt-s-dragevent','dragEvent',true); // v0.9.2: 드래그 이벤트 기록 on/off
         // r23: 디버그 체크박스 — localStorage + extension_settings 이중 저장
         const self = this;
         $('#wt-s-debug').prop('checked', this._debugEnabled).on('change', function() {
@@ -628,6 +659,14 @@ export class UIManager {
                                 <option value="flag">🪧 이정표</option>
                             </select>
                         </div>
+                        <div style="margin-bottom:4px">
+                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">🎬 RP 반영 <span style="font-size:10px;color:#B0A898">(이 장소를 롤플에 어떻게 반영할지)</span></div>
+                            <select id="wt-pop-injmode" class="wt-input wt-select-full" style="width:100%;font-size:12px;padding:5px 8px">
+                                <option value="off">🔒 끔 — 내 메모 (롤플/캐릭터 반영 안 함)</option>
+                                <option value="director">🎬 연출만 — 롤플엔 반영, 캐릭터는 모름</option>
+                                <option value="character">📍 캐릭터도 앎 — 인-월드 정보로 반영</option>
+                            </select>
+                        </div>
                         <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="예: 행복한 우리집, 비밀 아지트..." rows="2"></textarea>
                         <div id="wt-pop-ainotes-section" style="margin-top:2px">
                             <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">🤖 특이사항 <span style="font-size:10px;color:#B0A898">(AI에게만 전달)</span></div>
@@ -847,6 +886,8 @@ export class UIManager {
         const _checkSelection = () => {
             clearTimeout(_selCheckTimer);
             _selCheckTimer = setTimeout(() => {
+                // v0.9.2: 드래그 이벤트 기록 OFF면 버튼 안 띄움
+                if (extension_settings[EXTENSION_NAME]?.dragEvent === false) return;
                 const sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0) return;
                 const text = sel.toString()?.trim();
@@ -1023,6 +1064,7 @@ export class UIManager {
 
     // v0.9.0: 하이브리드 저장 — 50자 미만은 그대로, 이상은 AI 요약 + mood + title
     async _doSaveEvent(loc, text, mesId = null) {
+        const _saveGuard = makeChatGuard(); // v0.9.2: 저장 직전 채팅 전환 방어
         const events = loc.events || [];
         const date = new Date().toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
         const trimmed = (text || '').trim();
@@ -1137,6 +1179,7 @@ ${trimmed.substring(0, 1500)}`;
                 source: 'selection',
             });
             if (events.length > 20) events.splice(0, events.length - 20);
+            if (!_saveGuard()) { toastWarn('⏭️ 채팅이 바뀌어 이벤트 저장 취소'); return; } // v0.9.2: 요약 도중 채팅 전환 방어
             await this.lm.updateLocation(loc.id, { events });
             toastSuccess(`${evMood} "${loc.name}"에 이벤트 저장! (${evTitle || '요약됨'})`);
         } catch(e) {
@@ -1152,6 +1195,7 @@ ${trimmed.substring(0, 1500)}`;
                 mesId: mesId ?? undefined,
                 source: 'selection',
             });
+            if (!_saveGuard()) { toastWarn('⏭️ 채팅이 바뀌어 이벤트 저장 취소'); return; } // v0.9.2: 채팅 전환 방어
             this.lm.updateLocation(loc.id, { events });
             toastWarn(`📝 AI 요약 실패 — 원문으로 저장 ("${loc.name}")`);
         }
@@ -1574,6 +1618,12 @@ ${trimmed.substring(0, 1500)}`;
         $('#wt-pop-last').text(l.rpLastVisited || (l.lastVisited?this._fmt(l.lastVisited):'—'));
         $('#wt-pop-memo').val(l.memo||'');
         $('#wt-pop-ainotes').val(l.aiNotes||'');
+        // v0.9.3: 반영 모드 — 명시값 없으면 (방문O→character / 방문X→off) 계산값 표시
+        $('#wt-pop-injmode').val(
+            (l.injectMode === 'off' || l.injectMode === 'director' || l.injectMode === 'character')
+                ? l.injectMode
+                : (((l.visitCount||0) > 0) ? 'character' : 'off')
+        );
         // ★ 터줏대감 목록 렌더
         const npcList = $('#wt-pop-npcs-list');
         npcList.empty();
@@ -2352,7 +2402,7 @@ ${trimmed.substring(0, 1500)}`;
                 </div>
                 <!-- 피드 본문 -->
                 <div id="wt-bs-comm-feed" style="background:#fff">
-                    ${(loc.community && loc.community.length) ? loc.community.map(p => this._renderCommunityPostCard(p)).join('') : `<div style="padding:60px 20px;text-align:center;color:#8B98A5;font-size:13px"><div style="font-size:40px;margin-bottom:12px">💭</div><div style="font-size:13px;color:#536471;font-weight:500;margin-bottom:4px">아직 반응이 없어요</div><div style="font-size:11px;color:#8B98A5">✨ 버튼을 눌러 실시간 반응을 생성해보세요</div></div>`}
+                    ${(loc.community && loc.community.length) ? loc.community.map(p => this._renderCommunityPostCard(p, loc.id)).join('') : `<div style="padding:60px 20px;text-align:center;color:#8B98A5;font-size:13px"><div style="font-size:40px;margin-bottom:12px">💭</div><div style="font-size:13px;color:#536471;font-weight:500;margin-bottom:4px">아직 반응이 없어요</div><div style="font-size:11px;color:#8B98A5">✨ 버튼을 눌러 실시간 반응을 생성해보세요</div></div>`}
                 </div>
                 <!-- FAB (우하단) -->
                 <button class="wt-bs-comm-fab" style="position:sticky;bottom:16px;margin-left:auto;margin-right:16px;margin-top:-60px;margin-bottom:16px;display:block;width:48px;height:48px;border-radius:50%;background:#1D9BF0;color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(29,155,240,.4);font-family:inherit;touch-action:manipulation;-webkit-tap-highlight-color:rgba(29,155,240,.4);z-index:4">✨</button>
@@ -3884,6 +3934,7 @@ ${trimmed.substring(0, 1500)}`;
             aliases: aliases,
             aiNotes:$('#wt-pop-ainotes').val().trim(),
             locationType: $('#wt-pop-icon-type').val() || '',
+            injectMode: $('#wt-pop-injmode').val() || 'off', // v0.9.3: RP 반영 모드
         };
         // 이름 변경
         if (newName) update.name = newName;
@@ -5219,7 +5270,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         $('#wt-community-overlay').remove();
 
         const posts = loc.community || [];
-        const postsHtml = posts.length ? posts.map(p => this._renderCommunityPostCard(p)).join('') : '<div style="padding:60px 20px;text-align:center;color:#8B98A5;font-size:13px">아직 반응이 없어요<br><span style="font-size:11px">✨ 버튼을 눌러 실시간 반응을 생성해보세요</span></div>';
+        const postsHtml = posts.length ? posts.map(p => this._renderCommunityPostCard(p, loc.id)).join('') : '<div style="padding:60px 20px;text-align:center;color:#8B98A5;font-size:13px">아직 반응이 없어요<br><span style="font-size:11px">✨ 버튼을 눌러 실시간 반응을 생성해보세요</span></div>';
 
         const overlay = $(`<div id="wt-community-overlay" style="position:fixed !important;top:0 !important;left:0 !important;width:100vw !important;height:100vh;height:100dvh !important;background:#fff !important;z-index:2147483647 !important;display:flex !important;flex-direction:column !important;isolation:isolate">
             <div style="padding:14px 16px 0;background:#fff;border-bottom:1px solid #EFF3F4;position:sticky;top:0;z-index:50">
@@ -5299,7 +5350,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             // 오버레이 내용 갱신 (race 없이)
             const loc = self.lm.locations.find(l => l.id === locId);
             const posts = loc?.community || [];
-            const postsHtml = posts.length ? posts.map(p => self._renderCommunityPostCard(p)).join('') : '<div style="padding:60px 20px;text-align:center;color:#8B98A5;font-size:13px">아직 반응이 없어요<br><span style="font-size:11px">✨ 버튼을 눌러 실시간 반응을 생성해보세요</span></div>';
+            const postsHtml = posts.length ? posts.map(p => self._renderCommunityPostCard(p, locId)).join('') : '<div style="padding:60px 20px;text-align:center;color:#8B98A5;font-size:13px">아직 반응이 없어요<br><span style="font-size:11px">✨ 버튼을 눌러 실시간 반응을 생성해보세요</span></div>';
             overlay.find('#wt-comm-feed').html(postsHtml);
             overlay.find('#wt-comm-fab').text('✨').prop('disabled', false);
             overlay.find('[data-comm-count]').html(`<span style="width:8px;height:8px;background:#00BA7C;border-radius:50%;display:inline-block;animation:wtLivePulse 2s infinite"></span> 실시간 · ${posts.length}개 반응`);
@@ -5588,7 +5639,33 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         }
     }
 
-    _renderCommunityPostCard(p) {
+    // ========== v0.9.4: 핀(반영) — 리뷰/커뮤니티 항목을 다음 응답 프롬프트에 주입 ==========
+    _pinKey(kind, who, text) { return `${kind}::${who || ''}::${(text || '').replace(/\s+/g, ' ').trim().slice(0, 80)}`; }
+    _isPinned(loc, kind, who, text) {
+        const key = this._pinKey(kind, who, text);
+        return !!((loc?._pins || []).find(p => this._pinKey(p.kind, p.who, p.text) === key));
+    }
+    async _togglePin(locId, kind, who, text) {
+        const loc = this.lm.locations.find(l => l.id === locId); if (!loc) return false;
+        if (!Array.isArray(loc._pins)) loc._pins = [];
+        const key = this._pinKey(kind, who, text);
+        const idx = loc._pins.findIndex(p => this._pinKey(p.kind, p.who, p.text) === key);
+        let on;
+        if (idx >= 0) { loc._pins.splice(idx, 1); on = false; }
+        else { loc._pins.push({ kind, who, text }); on = true; }
+        await this.lm.updateLocation(locId, { _pins: loc._pins });
+        try { this.pi?.inject(); } catch(_) {}
+        return on;
+    }
+    // 핀 버튼 HTML (카드 액션 행에 삽입)
+    _pinBtnHtml(loc, kind, who, text, extraData = '') {
+        if (!loc) return '';
+        const on = this._isPinned(loc, kind, who, text);
+        return `<div class="wt-pin-btn" data-pin-locid="${loc.id}" data-pin-kind="${kind}"${extraData} style="display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:50px;font-size:12px;cursor:pointer;font-weight:${on ? '700' : '400'};color:${on ? '#1D9BF0' : '#536471'}">📌 ${on ? '반영중' : '반영'}</div>`;
+    }
+
+    _renderCommunityPostCard(p, locId) {
+        const loc = locId ? this.lm.locations.find(l => l.id === locId) : null;
         const moodColors = {
             excited: 'background:#FFF3E0;color:#B36B00',
             chill: 'background:#E8F5FD;color:#1D6FAD',
@@ -5630,6 +5707,7 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
                     <div style="display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:50px;font-size:12px;color:#536471;cursor:pointer">💬 ${replies.length}</div>
                     <div style="display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:50px;font-size:12px;color:#536471;cursor:pointer">🔁 0</div>
                     <div style="display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:50px;font-size:12px;color:#F91880;cursor:pointer">❤️ ${p.likes||0}</div>
+                    ${this._pinBtnHtml(loc, 'community', p.name, p.text, ` data-pin-id="${p.id || ''}"`)}
                 </div>
                 ${repliesHtml}
             </div>
@@ -6112,7 +6190,7 @@ CRITICAL: Start with { end with }`;
         if (!this._reviewCache.has(locId)) this._reviewCache.set(locId, cached);
         // ★ 캐시 리뷰 있으면 독립 생성 버튼 숨기기 (renderReviews 안에 재생성 버튼 있음)
         container.siblings().find('#wt-bs-gen-review,#wt-pop-review-gen').closest('div').hide();
-        this._renderReviews(container, cached.reviews, cached.summary);
+        this._renderReviews(container, cached.reviews, cached.summary, locId);
     }
 
     // T3: 개요 탭 리뷰 미리보기 (별점 + 카드 2개 + "모든 리뷰 보기")
@@ -6265,7 +6343,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
                 reviewSummary: aiSummary,
                 reviewUpdatedAt: Date.now(),
             });
-            this._renderReviews(list, reviews, aiSummary);
+            this._renderReviews(list, reviews, aiSummary, locId);
             this._renderCachedReviews(locId, '#wt-pop-review-list');
             this._renderCachedReviews(locId, '#wt-bs-review-list');
             // T3: 개요 탭 미리보기도 갱신
@@ -6280,7 +6358,9 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
         }
     }
 
-    _renderReviews(container, reviews, aiSummary) {
+    _renderReviews(container, reviews, aiSummary, locId) {
+        const loc = locId ? this.lm.locations.find(l => l.id === locId) : null;
+        const self = this;
         container.empty();
 
         // 1. AI 요약 (골드 사이드바)
@@ -6357,6 +6437,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
                 </div>
                 <div style="font-size:10px;color:#F6A93A;margin-bottom:4px">${stars} · ${daysText}</div>
                 <div style="font-size:13px;line-height:1.7;color:#3C4043">${rv.text || ''}</div>
+                <div style="display:flex;justify-content:flex-end;margin-top:2px">${this._pinBtnHtml(loc, 'review', rv.name, rv.text, ` data-pin-who="${encodeURIComponent(rv.name || '')}" data-pin-text="${encodeURIComponent(rv.text || '')}"`)}</div>
             </div>`);
         });
 
@@ -6381,6 +6462,7 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
                         </div>
                         <div style="font-size:10px;color:#F6A93A;margin-bottom:4px">${stars} · ${daysText}</div>
                         <div style="font-size:13px;line-height:1.7;color:#3C4043">${rv.text || ''}</div>
+                        <div style="display:flex;justify-content:flex-end;margin-top:2px">${self._pinBtnHtml(loc, 'review', rv.name, rv.text, ` data-pin-who="${encodeURIComponent(rv.name || '')}" data-pin-text="${encodeURIComponent(rv.text || '')}"`)}</div>
                     </div>`);
                 });
                 moreBtn.remove(); // 버튼 제거
