@@ -1,5 +1,11 @@
 /* 🐶 World Tracker v0.9.0 — Gemini 조언 반영: SillyTavern 전역 스타일 오염 차단 */
 /* 핵심: SillyTavern 본체 CSS의 text-shadow / filter / stroke 를 NPC 시트 내부에서 완전 제거 */
+/* v0.9.7: 귀여운 테마 토대 — Jua 디스플레이 폰트 (제목용) */
+@import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+.wt-panel-title, #wt-pop-title, #wt-popover .wt-pop-header #wt-pop-title{
+  font-family:'Jua','Noto Sans KR',-apple-system,sans-serif !important;
+  letter-spacing:-.3px;
+}
 #wt-npc-profile-overlay,
 #wt-npc-profile-overlay *,
 #wt-npc-profile-sheet,

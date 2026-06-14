@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.6</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.7</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -4746,6 +4746,7 @@ HTML 태그(<img>, <div> 등) 속성값은 **반드시 작은따옴표(')만** �
 ⛔ 금지: 연속 트윗이 모두 "미친/헐/와" 시작 · 모든 트윗에 ㅋㅋ/ㅠㅠ · 이모티콘 남발
 ✅ 시작 섞기: "오늘/방금/아 근데" (담백) · "아 진짜" (약함) · "미친/헐/와 씨" (폭발)
 ✅ 종결어미 섞기: ~함/임/됨 · ~했어/이에요 · ~같음/인듯 · ~냐고??? · ~할뻔 (~하네/~야 남발 금지)
+🌈 화자 다양성: 매번 다른 사람들 — 나이·직업·성격 폭넓게(직장인·학생·노인·자취생·관광객 등), 동물 트윗도 종류 다양하게(고양이·개·새·길동물). 같은 핸들/말투 반복 금지.
 
 ✏️ **한국어 맞춤법** (한국어 설정일 때): "어떡해"(감탄/당황) ≠ "어떻게"(방식) · "안 돼"(X 않되) · "됐어"(X 됬어) · "왠지/웬" 구분
 
@@ -5669,16 +5670,21 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         try {
             const langInst = this._getLangInstruction('event');
             const existing = (loc.npcs || []).map(n => n.name).join(', ');
-            const coin = Math.random() < 0.5 ? 'a PERSON (regular/owner/staff/local)' : 'an ANIMAL (resident pet/stray/guard animal)';
-            const prompt = `Create ONE "터줏대감" — a resident fixture character for this specific place.
+            const isAnimal = Math.random() < 0.5;
+            const peoplePool = ['the grumpy owner','a chatty regular','a part-timer who hates the job','an old-timer who has come for decades','a nervous first-timer','a local artist or busker','an eccentric who treats this as their office','a rival from the shop next door','a courier always passing through','a neighborhood kid'];
+            const animalPool = ['a territorial stray cat','a lazy resident shop cat','an aging guard dog','a clever crow that loiters','a brazen pigeon regular','a stray puppy','a parrot that mimics customers','a turtle in a tank by the door','a raccoon that raids at night','a one-eyed alley cat with attitude'];
+            const pool = isAnimal ? animalPool : peoplePool;
+            const seed = pool[Math.floor(Math.random() * pool.length)];
+            const prompt = `Create ONE "터줏대감" — a resident fixture for this specific place. Make it VIVID, specific, and a little surprising — never a generic placeholder.
 
 Place: "${loc.name}"${loc.address ? ` (${loc.address})` : ''}${loc.aiNotes ? `\nPlace notes: ${loc.aiNotes}` : ''}
-This time, make it ${coin}. Make it fit the location's vibe, vivid and characterful (not generic).
-${existing ? `Do NOT duplicate these existing residents: ${existing}` : ''}
+Make it ${isAnimal ? 'an ANIMAL' : 'a PERSON'}. Loose inspiration (reinterpret freely, do NOT copy literally): "${seed}".
+Vary species/age/role/temperament widely across generations — avoid clichés and avoid resembling past ones.
+${existing ? `Do NOT duplicate or resemble these existing residents: ${existing}` : ''}
 ${langInst}
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"name":"name","type":"npc or animal","role":"one-word role/identity (e.g. 단골, 사장, 길고양이, 경비견)","avatar":"a single emoji","bio":"one vivid sentence — what they do here, their vibe","personality":["trait","trait"],"relationship":"one line on how they'd first relate to a newcomer (wary/indifferent/curious etc.)"}`;
+{"name":"name","type":"${isAnimal ? 'animal' : 'npc'}","role":"short role/identity (e.g. 단골, 사장, 길고양이, 경비견, 까마귀)","avatar":"a single fitting emoji","bio":"one vivid, specific sentence — what they do here, their quirk","personality":["trait","trait"],"relationship":"one line on how they'd first treat a newcomer (wary/indifferent/curious/territorial etc.)"}`;
 
             window._wtMaxTokensOverride = 1024;
             window._wtTempOverride = 1.0;
@@ -6375,6 +6381,8 @@ REVIEW STYLE RULES:
 - Include sensory details (smells, sounds, textures, temperature).
 - Mix emotions: nostalgia, complaint, humor, affection, sarcasm, passive-aggression.
 - Some reviews should be hilariously petty or oddly specific.
+- VARY the lineup every batch: different names, ages, species, and walks of life — don't reuse the same reviewers each time.
+- Spread the star ratings realistically (a mix across 1–5, not all 4–5). Include at least one harsh/critical review and one glowing one.
 - Animals/pets write from their perspective (a cat reviewing a kitchen = "the warm spot near the stove is acceptable").
 - NPCs can have strong opinions about the main characters.
 ${npcList ? `\nIMPORTANT: Prioritize the known NPCs/animals listed above as reviewers — they are real characters from this location.` : ''}
