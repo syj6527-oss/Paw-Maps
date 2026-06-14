@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.4</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.5</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -613,6 +613,7 @@ export class UIManager {
                 <div id="wt-popover" class="wt-popover-inline" style="display:none">
                     <div class="wt-pop-header" style="display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:1;background:var(--wt-cream,#FEFEF2);padding:8px 4px 4px">
                         <input type="text" id="wt-pop-title" style="font-size:16px;font-weight:800;color:var(--wt-brown);background:transparent;border:none;border-bottom:1.5px dashed transparent;outline:none;flex:1;min-width:0;padding:2px 0;font-family:inherit" onfocus="this.style.borderBottomColor='var(--wt-yellow-d)'" onblur="this.style.borderBottomColor='transparent'"/>
+                        <button id="wt-pop-save-top" class="wt-btn-primary" style="font-size:12px;padding:6px 12px;flex-shrink:0" title="저장">💾 저장</button>
                         <button id="wt-pop-close" style="width:32px;height:32px;min-width:32px;border:none;background:rgba(0,0,0,0.05);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:8px;flex-shrink:0" title="닫기">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 2.5L13.5 13.5M13.5 2.5L2.5 13.5" stroke="#9A8A7A" stroke-width="2.8" stroke-linecap="round"/></svg>
                         </button>
@@ -667,9 +668,10 @@ export class UIManager {
                                 <option value="character">📍 캐릭터도 앎 — 인-월드 정보로 반영</option>
                             </select>
                         </div>
-                        <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="예: 행복한 우리집, 비밀 아지트..." rows="2"></textarea>
+                        <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">💭 내 메모 <span style="font-size:10px;color:#B0A898">(항상 비공개 · AI 반영 안 됨)</span></div>
+                        <textarea id="wt-pop-memo" class="wt-input wt-textarea" placeholder="예: 나중에 혼자 갈 곳, 나만 보는 메모..." rows="2"></textarea>
                         <div id="wt-pop-ainotes-section" style="margin-top:2px">
-                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">🤖 특이사항 <span style="font-size:10px;color:#B0A898">(AI에게만 전달)</span></div>
+                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">🎬 반영 노트 <span style="font-size:10px;color:#B0A898">(RP 반영 모드 따라 캐릭터/연출에 전달)</span></div>
                             <textarea id="wt-pop-ainotes" class="wt-input wt-textarea" placeholder="예: 0900 붐빔, 바리스타 민수, 2층 창가석 단골..." rows="3" style="font-size:11px;line-height:1.5"></textarea>
                         </div>
                         <div id="wt-pop-npcs-section" style="margin-top:4px">
@@ -767,6 +769,7 @@ export class UIManager {
         $('#wt-loc-toggle').on('click', () => { $('#wt-loc-wrap').slideToggle(200); const a=$('#wt-loc-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-move-toggle').on('click', () => { $('#wt-move-wrap').slideToggle(200); const a=$('#wt-move-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-pop-save').on('click', () => this._popSave());
+        $('#wt-pop-save-top').on('click', () => this._popSave()); // v0.9.5: 헤더 저장 버튼
         $('#wt-pop-del').on('click', () => this._popDel());
         // ★ 내부 장소 추가
         $('#wt-pop-sub-add').on('click', async () => {
@@ -1674,13 +1677,12 @@ ${trimmed.substring(0, 1500)}`;
             $('#wt-map-section').hide();
             $('#wt-map-toggle').text('🗺️ 지도 ▾');
         }
-        $('#wt-popover').show();
+        $('#wt-popover').show().addClass('wt-popover-modal'); // v0.9.5: 풀스크린 오버레이로
         const pop = document.getElementById('wt-popover');
-        const body = document.getElementById('wt-panel-body');
-        if (pop && body) body.scrollTop = pop.offsetTop - 5;
+        if (pop) pop.scrollTop = 0;
     }
     hidePop() {
-        $('#wt-popover').hide();
+        $('#wt-popover').hide().removeClass('wt-popover-modal'); // v0.9.5: 오버레이 해제
         // 약도가 열려있었으면 복원
         if (this._mapWasVisible) {
             $('#wt-map-section').show();

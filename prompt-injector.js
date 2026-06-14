@@ -103,12 +103,12 @@ export class PromptInjector {
         // 5. 상태
         if (cur.status) L.push(`🌤️ Status: ${cur.status}`);
 
-        // 6~7. 메모/특이사항 — v0.9.3: RP 반영 모드 따라 (off=숨김, director=OOC, character=인-월드)
+        // 6~7. v0.9.5: 💭 메모=항상 비공개(주입 안 함) / 🎬 반영 노트(aiNotes)=모드 따라 주입
         const curMode = this._mode(cur);
-        if (curMode !== 'off') {
-            const ooc = curMode === 'director';
-            if (cur.memo) L.push(ooc ? `🎬 [OOC director note — the character is NOT aware of this]: ${this._mem(cur)}` : `💭 ${this._mem(cur)}`);
-            if (cur.aiNotes) L.push(ooc ? `🎬 [OOC note]: ${cur.aiNotes}` : `📋 AI Notes: ${cur.aiNotes}`);
+        if (curMode !== 'off' && cur.aiNotes) {
+            L.push(curMode === 'director'
+                ? `🎬 [OOC director note — the character is NOT aware of this]: ${cur.aiNotes}`
+                : `📋 Notes (character knows): ${cur.aiNotes}`);
         }
 
         // 8. 이벤트 — 서브 장소 있으면 서브 이벤트 우선
@@ -123,21 +123,23 @@ export class PromptInjector {
             L.push(`🏠 Rooms: ${subList}`);
         }
 
-        // 8.6. 터줏대감 — 이 장소의 NPC/동물 (풀 프로필)
-        if (cur.npcs?.length) {
-            const npcList = cur.npcs.map(n => {
-                const icon = n.type === 'animal' ? '🐾' : '🧑';
+        // 8.6. 터줏대감 — v0.9.5: 실재 엔티티로 등장 주입 (사람/동물 분리), 🔒 장소는 제외
+        if (curMode !== 'off' && cur.npcs?.length) {
+            const fmt = (n) => {
                 const role = n.role ? `(${n.role})` : '';
                 const aff = n.affinity ? ` ❤️${n.affinity}/5` : '';
                 const bio = n.bio ? ` — ${n.bio}` : '';
                 const rel = n.relationship ? ` [${n.relationship}]` : '';
-                return `${icon}${n.name}${role}${aff}${bio}${rel}`;
-            }).join(' | ');
-            L.push(`👥 People here: ${npcList}`);
+                return `${n.name}${role}${aff}${bio}${rel}`;
+            };
+            const animals = cur.npcs.filter(n => n.type === 'animal');
+            const people = cur.npcs.filter(n => n.type !== 'animal');
+            if (people.length) L.push(`👥 People present here (bring them into the scene naturally): ${people.map(fmt).join(' | ')}`);
+            if (animals.length) L.push(`🐾 Animals present here (they physically appear in this scene): ${animals.map(fmt).join(' | ')}`);
         }
 
-        // 8.7. 💬 실시간 커뮤니티 (v0.6.0 NEW) — 장소의 현재 분위기/NPC 활동
-        if (cur.community?.length) {
+        // 8.7. 💬 실시간 커뮤니티 — v0.9.5: 이 장소에 대한 소문/분위기 (🔒 장소는 제외)
+        if (curMode !== 'off' && cur.community?.length) {
             const recent = cur.community.slice(0, 4);
             const liveStatus = recent.map(p => {
                 // 텍스트에서 액션/감정 추출
@@ -146,7 +148,7 @@ export class PromptInjector {
                 const action = actions[0] ? ` (${actions[0]})` : '';
                 return `${p.name}${action}: "${cleanText}"`;
             }).join('\n  ');
-            L.push(`🟢 NOW at this location (use for natural scene description):\n  ${liveStatus}`);
+            L.push(`🗣️ Local buzz about this place (recent rumors/atmosphere — weave into the scene's background, not as something the character literally read):\n  ${liveStatus}`);
         }
 
         // 9. 마지막 이동
@@ -175,12 +177,12 @@ export class PromptInjector {
         if (flagKnown.length) {
             const list = flagKnown.slice(0, 8).map(l => {
                 const addr = l.address ? ` (${l.address.split(',').slice(0,2).join(',').trim()})` : '';
-                return `${l.name}${l.memo ? ' — ' + l.memo : ''}${addr}`;
+                return `${l.name}${l.aiNotes ? ' — ' + l.aiNotes : ''}${addr}`;
             }).join('\n  ');
             L.push(`🗺️ Other known places (the character is aware these exist):\n  ${list}`);
         }
         if (flagDir.length) {
-            const list = flagDir.slice(0, 8).map(l => `${l.name}${l.memo ? ' — ' + l.memo : ''}`).join('\n  ');
+            const list = flagDir.slice(0, 8).map(l => `${l.name}${l.aiNotes ? ' — ' + l.aiNotes : ''}`).join('\n  ');
             L.push(`🎬 [OOC narrative direction — steer the story toward these naturally; the character is NOT consciously aware of the user's intent]:\n  ${list}`);
         }
 
