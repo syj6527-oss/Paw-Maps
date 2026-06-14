@@ -89,6 +89,12 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.18
+- 폴리네이션(Pollinations) 커뮤니티 이미지 보강 — 렌더 시점에 이미지 URL 일괄 업그레이드
+  - 품질: `model=flux` + `enhance=true`(AI가 프롬프트 다듬음) 자동 적용
+  - 안정성: `loading=lazy`, `referrerpolicy=no-referrer`, 로드 실패 시 이미지 자동 숨김(onerror)
+  - 프롬프트 키워드 자동 URL 인코딩 (공백 등 깨짐 방지) · 기존 캐시된 게시물에도 적용
+
 ### v0.9.17
 - 직접 API 키 섹션을 "🔑 직접 API 키 (고급)" 접이식으로 정리 — 연결 프로필을 쓰면 기본 접힘. 폴백용으로 기능은 유지되며, 키만 있고 프로필 없으면 자동으로 펼쳐짐
 
