@@ -299,6 +299,8 @@ export class LocationManager {
 
     async moveTo(locationId, rpDate) {
         const loc = this.locations.find(l => l.id === locationId); if (!loc) return;
+        // v0.9.11: rpDate를 명시하지 않으면 현재 RP 날짜를 자동 사용 (RP 내 시간 따름)
+        if (rpDate == null) { try { rpDate = window._wtGetRpDate?.() || ''; } catch (_) { rpDate = ''; } }
         const prevId = this.currentLocationId;
         // ★ 다른 장소로 이동하면 서브로케이션 클리어
         if (prevId !== locationId) this.currentSubLocationId = null;

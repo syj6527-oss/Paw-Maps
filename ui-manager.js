@@ -4,7 +4,7 @@ console.log('[wt] ui-manager hotfix16 loaded');
 
 import { getContext, extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
-import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat, runWithoutAutoDetect, isStBusy, makeChatGuard } from './index.js';
+import { EXTENSION_NAME, wtNotify, toastWarn, toastSuccess, loadLeaflet, wtMascot, wtTreat, runWithoutAutoDetect, isStBusy, makeChatGuard, getCurrentRpDate } from './index.js';
 import { callLLM, parseLLMJson, getRecentChatContext, getRecentSpeakers } from './llm-helper.js';
 import { MapRenderer } from './map-renderer.js';
 import { LeafletRenderer } from './leaflet-renderer.js';
@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.9</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.11</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -1074,6 +1074,7 @@ export class UIManager {
         const _saveGuard = makeChatGuard(); // v0.9.2: 저장 직전 채팅 전환 방어
         const events = loc.events || [];
         const date = new Date().toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+        const rpDate = getCurrentRpDate(); // v0.9.11: RP 내 날짜 (있으면 우선 표시)
         const trimmed = (text || '').trim();
         if (!trimmed) return;
 
@@ -1088,6 +1089,7 @@ export class UIManager {
                 title: title,
                 mood: '📝',
                 date,
+                rpDate,
                 timestamp: Date.now(),
                 mesId: mesId ?? undefined,
                 source: 'selection',
@@ -1181,6 +1183,7 @@ ${trimmed.substring(0, 1500)}`;
                 title: evTitle,
                 mood: evMood,
                 date,
+                rpDate,
                 timestamp: Date.now(),
                 mesId: mesId ?? undefined,
                 source: 'selection',
@@ -1198,6 +1201,7 @@ ${trimmed.substring(0, 1500)}`;
                 title: null,
                 mood: '📝',
                 date,
+                rpDate,
                 timestamp: Date.now(),
                 mesId: mesId ?? undefined,
                 source: 'selection',
@@ -2406,7 +2410,7 @@ ${trimmed.substring(0, 1500)}`;
             e.stopPropagation();
             const action = $(this).data('action');
             const id = bs.attr('data-id');
-            if (action === 'move' && id) { self.lm.moveTo(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
+            if (action === 'move' && id) { self.lm.moveTo(id, getCurrentRpDate()).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
             if (action === 'dist' && id) { self._showDistanceMeasure(id); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
@@ -4620,7 +4624,7 @@ ${trimmed.substring(0, 1500)}`;
             } catch(e) {}
         }
 
-        events.push({ text, title, mood: '📝', timestamp: Date.now(), source: 'manual' });
+        events.push({ text, title, mood: '📝', timestamp: Date.now(), rpDate: getCurrentRpDate(), source: 'manual' });
         await this.lm.updateLocation(locId, { events });
         $('#wt-pop-event-input').val('');
         this._updEventsList(locId);
@@ -5684,7 +5688,7 @@ ${existing ? `Do NOT duplicate or resemble these existing residents: ${existing}
 ${langInst}
 
 Respond with ONLY a JSON object, no markdown, no explanation:
-{"name":"name","type":"${isAnimal ? 'animal' : 'npc'}","role":"short role/identity (e.g. 단골, 사장, 길고양이, 경비견, 까마귀)","avatar":"a single fitting emoji","bio":"one vivid, specific sentence — what they do here, their quirk","personality":["trait","trait"],"relationship":"one line on how they'd first treat a newcomer (wary/indifferent/curious/territorial etc.)"}`;
+{"name":"name","type":"${isAnimal ? 'animal' : 'npc'}","role":"short role/identity (e.g. 단골, 사장, 길고양이, 경비견, 까마귀)","avatar":"a single emoji of the BEING ITSELF — for an animal, the closest real animal emoji (pelican/seagull/bird→🐦, crow→🐦‍⬛, cat→🐱, dog→🐶, fish→🐟); for a person, a face/person emoji. NEVER a scene/weather/object/mood emoji like 🌊☀️🏠","bio":"one vivid, specific sentence — what they do here, their quirk","personality":["trait","trait"],"relationship":"one line on how they'd first treat a newcomer (wary/indifferent/curious/territorial etc.)"}`;
 
             window._wtMaxTokensOverride = 1024;
             window._wtTempOverride = 1.0;

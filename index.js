@@ -907,9 +907,28 @@ async function _geocodePlace(locId, placeName, retry = 0) {
 // ========== RP 날짜 추출 (메타데이터에서) ==========
 // v0.9.0: 자동 추출 비활성화 — LLM이 현실 날짜를 상태창에 쓰는 문제로 인해
 //         이벤트/장소/타임라인 날짜는 유저가 직접 수기 수정 (이미 UI 제공됨)
+// v0.9.11: RP 상태창 날짜 추출 복구 — 방문기록/타임라인이 RP 내 시간을 따르도록
+//          (유저가 직접 수정한 rpFirstVisited 등은 덮어쓰지 않음)
 function _extractRpDate(text) {
-    return ''; // v0.9.0: 항상 빈 값 → rpDate 미설정 → 시스템 timestamp만 사용
+    return _legacyExtractRpDate(text || '');
 }
+
+// 최신 메시지(상태창 포함)에서 현재 RP 날짜를 추출 — 가장 최근 것 우선
+export function getCurrentRpDate() {
+    try {
+        const ctx = getContext();
+        if (!ctx?.chat?.length) return '';
+        for (let i = ctx.chat.length - 1, n = 0; i >= 0 && n < 5; i--, n++) {
+            const m = ctx.chat[i];
+            if (!m || !m.mes) continue;
+            const d = _extractRpDate(m.mes);
+            if (d) return d;
+        }
+    } catch (_) {}
+    return '';
+}
+// location-manager 등 import 없이도 쓸 수 있도록 전역 노출
+try { if (typeof window !== 'undefined') window._wtGetRpDate = getCurrentRpDate; } catch (_) {}
 
 function _legacyExtractRpDate(text) {
     // HTML 태그 제거 (렌더된 마크다운 대응) + 이모지 정리

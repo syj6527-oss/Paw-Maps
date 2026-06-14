@@ -186,14 +186,20 @@ export class PromptInjector {
             L.push(`🎬 [OOC narrative direction — steer the story toward these naturally; the character is NOT consciously aware of the user's intent]:\n  ${list}`);
         }
 
-        // ★ v0.9.4: 유저가 핀한 리뷰/커뮤니티 — 다음 응답에 반영 (체크 유지 동안 계속)
-        if (cur._pins?.length) {
-            const list = cur._pins.slice(0, 12).map(p => {
+        // ★ v0.9.4 → v0.9.10: 유저가 핀한 리뷰/커뮤니티 — 현재 장소든 아니든 핀한 건 전부 반영
+        const pinLines = [];
+        for (const loc of this.lm.locations) {
+            if (!loc._pins?.length) continue;
+            const here = loc.id === cur.id;
+            loc._pins.slice(0, 12).forEach(p => {
                 const tag = p.kind === 'review' ? 'review' : 'buzz';
                 const t = (p.text || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-                return `[${tag}] ${p.who || '?'}: "${t}"`;
-            }).join('\n  ');
-            L.push(`📌 User-pinned — reflect these in your next response (weave naturally into the scene):\n  ${list}`);
+                pinLines.push(`[${tag}${here ? '' : ' @' + loc.name}] ${p.who || '?'}: "${t}"`);
+            });
+        }
+        console.log(`[${EXTENSION_NAME}] 📌 pinned items injected: ${pinLines.length}`);
+        if (pinLines.length) {
+            L.push(`📌 User-pinned — reflect these in your next response (weave naturally into the scene):\n  ${pinLines.slice(0, 16).join('\n  ')}`);
         }
 
         L.push('[/Paw Map]');
