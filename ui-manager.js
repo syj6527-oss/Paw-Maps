@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.19</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.20</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -5586,7 +5586,8 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         $('#wt-debug-close').on('click', () => modal.remove());
         $('#wt-debug-modal').on('click', (e) => { if (e.target === e.currentTarget) modal.remove(); });
         $('#wt-debug-copy').on('click', async () => {
-            const txt = `[WT Debug Log @ ${errAt}]\nError Type: ${errType}\nError Msg: ${lastErr}\n\n--- API Status ---\n${apiStatus}\n\n--- Settings ---\n${cfgSummary}\n\n--- Raw Response (${raw.length}c) ---\n${raw}`;
+            const injected = window._wtLastInjectedPrompt || '(아직 주입된 프롬프트 없음)';
+            const txt = `[WT Debug Log @ ${errAt}]\nError Type: ${errType}\nError Msg: ${lastErr}\n\n--- API Status ---\n${apiStatus}\n\n--- Settings ---\n${cfgSummary}\n\n--- Last Injected Prompt ---\n${injected}\n\n--- Raw Response (${raw.length}c) ---\n${raw}`;
             try {
                 await navigator.clipboard.writeText(txt);
                 toastSuccess('📋 클립보드에 복사됨');

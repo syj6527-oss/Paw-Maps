@@ -51,6 +51,7 @@ export class PromptInjector {
 
     inject() {
         const t = this.generate(); const fn = getFn();
+        try { window._wtLastInjectedPrompt = t || ''; } catch(_) {}
         console.log(`[${EXTENSION_NAME}] 🔧 inject(): fn=${!!fn}, text=${t ? t.length + 'c' : 'empty'}`);
         try {
             if (fn) {
@@ -140,8 +141,8 @@ export class PromptInjector {
 
         // 8.7. 💬 실시간 커뮤니티 — v0.9.5: 이 장소 소문/분위기 (🔒 장소 제외)
         //   v0.9.19: 현재 장소에 "반영(핀)"한 커뮤니티가 있으면 자동 buzz 생략 → 유저가 고른 것만 반영
-        const _hasCommPins = (cur._pins || []).some(p => p.kind === 'community');
-        if (curMode !== 'off' && cur.community?.length && !_hasCommPins) {
+        const _commPins = (cur._pins || []).filter(p => p.kind === 'community');
+        if (curMode !== 'off' && cur.community?.length && !_commPins.length) {
             const recent = cur.community.slice(0, 4);
             const liveStatus = recent.map(p => {
                 // 텍스트에서 액션/감정 추출
@@ -151,6 +152,9 @@ export class PromptInjector {
                 return `${p.name}${action}: "${cleanText}"`;
             }).join('\n  ');
             L.push(`🗣️ Local buzz about this place (recent rumors/atmosphere — weave into the scene's background, not as something the character literally read):\n  ${liveStatus}`);
+            console.log(`[${EXTENSION_NAME}] 🗣️ Local buzz 주입 ${recent.length}개 (community 핀 없음 → 자동 분위기)`);
+        } else if (_commPins.length) {
+            console.log(`[${EXTENSION_NAME}] 🗣️ Local buzz 생략 — 핀한 community ${_commPins.length}개만 반영`);
         }
 
         // 9. 마지막 이동
@@ -199,7 +203,7 @@ export class PromptInjector {
                 pinLines.push(`[${tag}${here ? '' : ' @' + loc.name}] ${p.who || '?'}: "${t}"`);
             });
         }
-        console.log(`[${EXTENSION_NAME}] 📌 pinned items injected: ${pinLines.length}`);
+        console.log(`[${EXTENSION_NAME}] 📌 pinned items injected: ${pinLines.length}`, pinLines);
         if (pinLines.length) {
             L.push(`📌 User-pinned — reflect these in your next response (weave naturally into the scene):\n  ${pinLines.slice(0, 16).join('\n  ')}`);
         }
