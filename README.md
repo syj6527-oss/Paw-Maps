@@ -89,6 +89,10 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.14
+- **설정창이 안 뜨던 버그 긴급 수정** — v0.9.13에서 'ST 키 가져오기' 핸들러를 넣을 때 '세계관 이어가기' 핸들러 시작 줄이 잘못 지워져 설정 바인딩이 깨졌던 것 복구
+- **Gemini + Vertex 통합** — 프로바이더 드롭다운에서 Vertex를 빼고, Gemini 선택 시 "⚙️ Vertex AI로 호출" 체크박스로 합침. 켜면 서비스계정 JSON/리전(또는 Vertex 키)으로 라우팅. 기존 Vertex 사용자는 자동 이관(Gemini + Vertex 고급 ON)
+
 ### v0.9.13
 - 🔗 **ST 연결 키 가져오기** 버튼 추가 — SillyTavern에 연결된 API 키(Gemini/OpenAI/OpenRouter)를 한 번에 LLM 키 칸으로 복사. 보안상 키가 안 읽히면 "직접 입력" 안내로 자연스럽게 폴백
 

@@ -11,8 +11,8 @@ function _getApiConfig() {
     try {
         // ★ 1순위: 우리 확장 설정에 저장된 API 키
         const s = extension_settings?.[EXTENSION_NAME];
-        // ★ Vertex AI: SA JSON 또는 API 키 (자동 판별)
-        if (s?.llmProvider === 'vertex') {
+        // ★ Vertex AI: SA JSON 또는 API 키 (자동 판별) — provider=vertex(레거시) 또는 Gemini+useVertex
+        if (s?.llmProvider === 'vertex' || (s?.llmProvider === 'google' && s?.useVertex)) {
             const model = s.llmModel || 'gemini-2.0-flash';
             // 우선 SA JSON 체크 (풀 권한)
             if (s?.vertexSaJson) {

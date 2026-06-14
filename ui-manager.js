@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.13</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.14</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -277,8 +277,11 @@ export class UIManager {
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label>🔑 LLM API 키 (리뷰/이벤트 생성용)</label></div>
                 <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
-                    <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:100px;font-size:11px"><option value="google">Gemini</option><option value="vertex">Vertex AI</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
+                    <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:100px;font-size:11px"><option value="google">Gemini</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
                     <input type="password" id="wt-s-llm-key" class="text_pole" placeholder="API 키 입력..." style="flex:1;font-size:11px;padding:6px 8px"/>
+                </div>
+                <div class="wt-s-row" id="wt-s-use-vertex-row" style="margin-top:3px">
+                    <label style="font-size:10.5px"><input type="checkbox" id="wt-s-use-vertex"/> ⚙️ Vertex AI로 호출 (고급 — 서비스계정 JSON/리전 또는 Vertex 키)</label>
                 </div>
                 <div class="wt-s-row" style="margin-top:3px">
                     <button id="wt-s-llm-import" class="menu_button" style="font-size:10.5px;padding:5px 10px;width:100%">🔗 ST 연결 키 가져오기</button>
@@ -396,32 +399,43 @@ export class UIManager {
             if (s?.llmModel) sel.val(s.llmModel);
         };
         // Vertex AI 필드 토글 — Vertex 모드에서도 API 키 입력란 유지 (Express mode 지원)
-        const _toggleVertexFields = (provider) => {
-            const isVertex = provider === 'vertex';
-            $('#wt-s-vertex-fields').toggle(isVertex);
-            // API 키 placeholder 변경
-            $('#wt-s-llm-key').attr('placeholder', isVertex ? 'Vertex API 키 (Express mode, JSON 대신)' : 'API 키 입력...');
+        const _toggleVertexFields = () => {
+            const gemini = $('#wt-s-llm-provider').val() === 'google';
+            const useV = gemini && $('#wt-s-use-vertex').is(':checked');
+            $('#wt-s-use-vertex-row').toggle(gemini);   // Vertex 체크박스는 Gemini일 때만 노출
+            $('#wt-s-vertex-fields').toggle(useV);       // SA JSON/리전은 Vertex 켰을 때만
+            $('#wt-s-llm-key').attr('placeholder', useV ? 'Vertex API 키 (Express mode, JSON 대신)' : 'API 키 입력...');
         };
+        // v0.9.14: 기존 'vertex' 프로바이더 → Gemini + Vertex 고급 모드로 이관
+        if (s && s.llmProvider === 'vertex') { s.llmProvider = 'google'; s.useVertex = true; saveSettingsDebounced(); }
         $('#wt-s-llm-provider').val(s?.llmProvider || 'google');
+        $('#wt-s-use-vertex').prop('checked', !!s?.useVertex);
         _populateModels(s?.llmProvider || 'google');
-        _toggleVertexFields(s?.llmProvider || 'google');
+        _toggleVertexFields();
         $('#wt-s-llm-key').val(s?.llmApiKey || '');
         $('#wt-s-vertex-sa').val(s?.vertexSaJson || '');
         $('#wt-s-vertex-region').val(s?.vertexRegion || 'us-central1');
         // 상태 표시
-        if (s?.llmProvider === 'vertex' && s?.vertexSaJson) {
+        if (s?.useVertex && s?.vertexSaJson) {
             $('#wt-s-llm-status').text('✅ Vertex AI 서비스 계정 설정됨').css('color', '#2B8A6E');
-        } else if (s?.llmProvider === 'vertex' && s?.llmApiKey) {
+        } else if (s?.useVertex && s?.llmApiKey) {
             $('#wt-s-llm-status').text('✅ Vertex API 키 (Express mode)').css('color', '#2B8A6E');
         } else if (s?.llmApiKey) {
             $('#wt-s-llm-status').text('✅ API 키 설정됨').css('color', '#2B8A6E');
         }
         $('#wt-s-llm-provider').on('change', () => {
             s.llmProvider = $('#wt-s-llm-provider').val();
+            if (s.llmProvider !== 'google') { s.useVertex = false; $('#wt-s-use-vertex').prop('checked', false); }
             _populateModels(s.llmProvider);
-            _toggleVertexFields(s.llmProvider);
+            _toggleVertexFields();
             s.llmModel = $('#wt-s-llm-model').val();
             saveSettingsDebounced();
+        });
+        $('#wt-s-use-vertex').on('change', () => {
+            s.useVertex = $('#wt-s-use-vertex').is(':checked');
+            _toggleVertexFields();
+            saveSettingsDebounced();
+            $('#wt-s-llm-status').text(s.useVertex ? '⚙️ Vertex AI 모드 — SA JSON 또는 Vertex 키 입력' : '✅ Gemini (AI Studio) 모드').css('color', '#5E84E2');
         });
         $('#wt-s-llm-key').on('change', () => { s.llmApiKey = $('#wt-s-llm-key').val().trim(); saveSettingsDebounced(); $('#wt-s-llm-status').text(s.llmApiKey ? '✅ 저장됨' : '미설정').css('color', s.llmApiKey ? '#2B8A6E' : '#9A8A7A'); });
         $('#wt-s-llm-model').on('change', () => { s.llmModel = $('#wt-s-llm-model').val(); saveSettingsDebounced(); });
@@ -507,6 +521,8 @@ export class UIManager {
                 toastWarn('가져오기 실패 — 직접 입력해줘');
             }
         });
+        // 🌍 세계관 이어가기
+        $('#wt-s-worldcont').prop('checked', s?.worldContinuity ?? false).on('change', async () => {
             const enabled = $('#wt-s-worldcont').is(':checked');
             if (enabled) {
                 const charKey = this.lm.getCharacterId();
