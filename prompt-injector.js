@@ -199,7 +199,14 @@ export class PromptInjector {
             const here = loc.id === cur.id;
             loc._pins.slice(0, 12).forEach(p => {
                 const tag = p.kind === 'review' ? 'review' : 'buzz';
-                const t = (p.text || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+                const t = (p.text || '')
+                    .replace(/<br\s*\/?>/gi, ' ')
+                    .replace(/<img[^>]*>/gi, '')
+                    .replace(/<[^>]+>/g, '')          // 나머지 HTML 태그
+                    .replace(/https?:\/\/\S+/g, '')   // 남은 URL
+                    .replace(/#[^\s#]+/g, '')          // 해시태그
+                    .replace(/\*[^*]+\*/g, '')         // *액션 서술*
+                    .replace(/\s+/g, ' ').trim().slice(0, 140);
                 pinLines.push(`[${tag}${here ? '' : ' @' + loc.name}] ${p.who || '?'}: "${t}"`);
             });
         }
