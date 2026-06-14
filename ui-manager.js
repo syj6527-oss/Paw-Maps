@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.14</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.16</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -247,12 +247,12 @@ export class UIManager {
                     <select id="wt-s-mem" class="text_pole wt-select"><option value="natural">🌿 자연</option><option value="perfect">💎 완벽</option></select>
                 </div>
                 <div class="wt-divider"></div>
-                <div class="wt-s-row"><label>🧠 감지 모델</label></div>
+                <div class="wt-s-row"><label>🔗 생성 연결 프로필 (리뷰/커뮤니티)</label></div>
                 <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
-                    <select id="wt-s-profile" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="">없음 (regex만)</option></select>
+                    <select id="wt-s-profile" class="text_pole wt-select" style="flex:1;font-size:11px"><option value="">없음 (아래 API 키 사용)</option></select>
                     <button id="wt-s-profile-save" class="menu_button" style="font-size:11px;padding:6px 10px;white-space:nowrap">💾 저장</button>
                 </div>
-                <span id="wt-s-profile-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px"></span>
+                <span id="wt-s-profile-status" style="font-size:10px;color:#9A8A7A;display:block;margin-top:2px">SillyTavern 연결 프로필로 생성 (선택 시 API 키 대신 이 연결 사용 · 안 되면 자동으로 API 키로 폴백)</span>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row" style="display:flex;align-items:center;gap:6px" title="이벤트/리뷰/실시간 반응에 공통 적용">
                     <label style="white-space:nowrap">🌐 AI 출력 언어</label>
@@ -361,7 +361,7 @@ export class UIManager {
             saveSettingsDebounced();
             const name = $('#wt-s-profile option:selected').text() || '없음';
             $('#wt-s-profile-status').text(`✅ "${name}" 저장됨`).css('color','#5E84E2');
-            toastSuccess(`🧠 감지 모델: ${name}`);
+            toastSuccess(`🔗 생성 프로필: ${name}`);
             setTimeout(() => $('#wt-s-profile-status').text(''), 3000);
         });
         // 🔑 LLM API 키 설정

@@ -420,14 +420,14 @@ function _parseServiceAccount(jsonStr) {
 // 서비스 계정 JSON 없이 짧은 API 키로 호출 — 2026년 정식 지원
 // 엔드포인트는 AI Studio와 달리 project/location 없음, 헤더로 인증
 async function _callVertexApiKey(apiKey, model, prompt) {
-    const endpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent`;
+    // v0.9.15: Vertex Express는 ?key= 쿼리 인증이 안정적 (x-goog-api-key 헤더로는 막히는 경우 있음)
+    const endpoint = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const _fetch = (body) => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), window._wtUseGrounding ? 90000 : 60000);
         return fetch(endpoint, {
             method: 'POST',
             headers: {
-                'x-goog-api-key': apiKey,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
@@ -586,6 +586,33 @@ async function _callGoogleWithFallback(key, primaryModel, prompt) {
 }
 
 // ========== 메인 호출 함수 ==========
+// v0.9.16: SillyTavern 연결 프로필 경유 생성 (ConnectionManagerRequestService)
+//   ST 버전에 따라 없을 수 있으므로 방어적으로 접근 + 다양한 응답 형태 대응
+async function _callViaConnectionProfile(profileId, prompt) {
+    const ctx = getContext();
+    let svc = ctx?.ConnectionManagerRequestService
+        || (typeof window !== 'undefined' && window.ConnectionManagerRequestService);
+    if (!svc || typeof svc.sendRequest !== 'function') {
+        // shared.js에서 직접 가져오기 (ST 버전에 따라 위치/존재 다를 수 있어 방어적)
+        try { const mod = await import('../../shared.js'); svc = mod.ConnectionManagerRequestService; } catch (_) {}
+    }
+    if (!svc || typeof svc.sendRequest !== 'function') {
+        throw new Error('ConnectionManagerRequestService 사용 불가 (ST 업데이트 필요할 수 있음)');
+    }
+    const maxTokens = window._wtMaxTokensOverride ?? 4096;
+    dbg(`🔧 연결 프로필 생성 시도 (profile=${profileId}, max=${maxTokens})`);
+    const res = await svc.sendRequest(profileId, prompt, maxTokens);
+    if (res == null) return '';
+    if (typeof res === 'string') return res;
+    // 응답 형태 편차 대응 (content / text / message.content / choices[].message.content)
+    return res.content
+        || res.text
+        || res.message?.content
+        || res.choices?.[0]?.message?.content
+        || res.choices?.[0]?.text
+        || '';
+}
+
 export async function callLLM(prompt, options = {}) {
     // v0.7.9: options.temperature 지원 (기본 0.7, 커뮤니티는 0.95 권장)
     const temp = options.temperature ?? 0.7;
@@ -595,6 +622,24 @@ export async function callLLM(prompt, options = {}) {
     }
     // ★ 마지막 에러 저장 (디버깅용)
     window._wtLastLLMError = null;
+
+    // ★ v0.9.16: 방법 0 — 연결 프로필 (선택 시 우선). ConnectionManagerRequestService 경유.
+    //   실패하면 아래 기존 직접-API / 폴백 경로로 자연스럽게 넘어감 (회귀 방지)
+    const _s = extension_settings?.[EXTENSION_NAME];
+    if (_s?.selectedProfile) {
+        try {
+            const out = await _callViaConnectionProfile(_s.selectedProfile, prompt);
+            if (out && out.trim()) {
+                window._wtLastApiStatus = `Connection profile: ${_s.selectedProfile}`;
+                dbg('🔧 LLM via connection profile OK');
+                return out;
+            }
+            dbg('⚠️ 연결 프로필 응답 비어있음 → 기존 경로로 폴백');
+        } catch (e) {
+            dbg('⚠️ 연결 프로필 경로 실패 → 폴백:', e.message);
+            window._wtLastLLMError = `Profile gen failed: ${e.message}`;
+        }
+    }
 
     // ★ 방법 1: 직접 API 호출 (확장 설정 키 또는 ST 변수)
     const cfg = _getApiConfig();

@@ -89,6 +89,14 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.16
+- **연결 프로필로 생성 (방법 B)** — 설정의 기존 "감지 모델"을 "🔗 생성 연결 프로필"로 전환. 선택하면 리뷰/커뮤니티/NPC/요약을 SillyTavern 연결 프로필(=RP에 쓰는 그 연결) 경유로 생성 (ConnectionManagerRequestService). API 키 별도 입력 불필요
+  - 옵트인(선택할 때만) + 실패 시 기존 API 키/폴백 경로로 자동 전환 → 회귀 안전
+  - 서비스 탐색: getContext → window → shared.js 동적 import 순으로 방어적 접근
+
+### v0.9.15
+- Vertex AI Express 키(AQ.~) 연결 실패 수정 — 인증을 `x-goog-api-key` 헤더 대신 **`?key=` 쿼리 방식**으로 변경 (Express 모드에서 검증된 방식). 실패 시 HTTP 사유는 '마지막 LLM 응답 보기'에 표시됨
+
 ### v0.9.14
 - **설정창이 안 뜨던 버그 긴급 수정** — v0.9.13에서 'ST 키 가져오기' 핸들러를 넣을 때 '세계관 이어가기' 핸들러 시작 줄이 잘못 지워져 설정 바인딩이 깨졌던 것 복구
 - **Gemini + Vertex 통합** — 프로바이더 드롭다운에서 Vertex를 빼고, Gemini 선택 시 "⚙️ Vertex AI로 호출" 체크박스로 합침. 켜면 서비스계정 JSON/리전(또는 Vertex 키)으로 라우팅. 기존 Vertex 사용자는 자동 이관(Gemini + Vertex 고급 ON)
