@@ -134,8 +134,8 @@ export class PromptInjector {
             };
             const animals = cur.npcs.filter(n => n.type === 'animal');
             const people = cur.npcs.filter(n => n.type !== 'animal');
-            if (people.length) L.push(`👥 People present here (bring them into the scene naturally): ${people.map(fmt).join(' | ')}`);
-            if (animals.length) L.push(`🐾 Animals present here (they physically appear in this scene): ${animals.map(fmt).join(' | ')}`);
+            if (people.length) L.push(`👥 Resident regulars of this place (terjutdaegam — fixtures here): ${people.map(fmt).join(' | ')}\n  → When a scene takes place here, have at least one of them actually appear, greet, react, or be directly involved — not just mentioned in passing.`);
+            if (animals.length) L.push(`🐾 Resident animal(s) of this place (they live/hang around here): ${animals.map(fmt).join(' | ')}\n  → When a scene is here, this animal physically shows up in it — approaches, lingers, reacts to the characters. Make it tangibly present.`);
         }
 
         // 8.7. 💬 실시간 커뮤니티 — v0.9.5: 이 장소에 대한 소문/분위기 (🔒 장소는 제외)

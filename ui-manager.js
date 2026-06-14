@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.5</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.6</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -675,7 +675,10 @@ export class UIManager {
                             <textarea id="wt-pop-ainotes" class="wt-input wt-textarea" placeholder="예: 0900 붐빔, 바리스타 민수, 2층 창가석 단골..." rows="3" style="font-size:11px;line-height:1.5"></textarea>
                         </div>
                         <div id="wt-pop-npcs-section" style="margin-top:4px">
-                            <div style="font-size:12px;color:#9A8A7A;margin-bottom:3px">👥 터줏대감 <span style="font-size:10px;color:#B0A898">(자동 감지)</span></div>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;gap:6px">
+                                <span style="font-size:12px;color:#9A8A7A">👥 터줏대감 <span style="font-size:10px;color:#B0A898">(이 장소의 단골·동물)</span></span>
+                                <button id="wt-pop-npc-random" class="wt-btn-accent wt-btn-s" style="font-size:11px;padding:4px 8px;white-space:nowrap">🎲 랜덤 생성</button>
+                            </div>
                             <div id="wt-pop-npcs-list" style="display:flex;flex-direction:column;gap:2px;max-height:120px;overflow-y:auto"></div>
                         </div>
                         <div id="wt-pop-events-section" style="margin-top:4px">
@@ -770,6 +773,7 @@ export class UIManager {
         $('#wt-move-toggle').on('click', () => { $('#wt-move-wrap').slideToggle(200); const a=$('#wt-move-arrow'); a.text(a.text()==='▾'?'▴':'▾'); });
         $('#wt-pop-save').on('click', () => this._popSave());
         $('#wt-pop-save-top').on('click', () => this._popSave()); // v0.9.5: 헤더 저장 버튼
+        $('#wt-pop-npc-random').on('click', () => { const id = $('#wt-popover').attr('data-id'); if (id) this._generateRandomNpc(id); }); // v0.9.6: 터줏대감 랜덤 생성
         $('#wt-pop-del').on('click', () => this._popDel());
         // ★ 내부 장소 추가
         $('#wt-pop-sub-add').on('click', async () => {
@@ -1627,28 +1631,8 @@ ${trimmed.substring(0, 1500)}`;
                 ? l.injectMode
                 : (((l.visitCount||0) > 0) ? 'character' : 'off')
         );
-        // ★ 터줏대감 목록 렌더
-        const npcList = $('#wt-pop-npcs-list');
-        npcList.empty();
-        if (l.npcs?.length) {
-            l.npcs.forEach(n => {
-                const icon = n.type === 'animal' ? '🐾' : '🧑';
-                npcList.append(`<div style="display:flex;align-items:center;gap:4px;padding:3px 6px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#3C4043">
-                    <span>${icon}</span><span style="font-weight:500">${n.name}</span>${n.role ? `<span style="font-size:9px;color:#9AA0A6">(${n.role})</span>` : ''}
-                    <span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span>
-                    <span class="wt-npc-del" data-name="${n.name}" style="color:#F5A8A8;cursor:pointer;font-size:9px;margin-left:4px">✕</span>
-                </div>`);
-            });
-            npcList.find('.wt-npc-del').on('click', async function(e) {
-                e.stopPropagation();
-                const name = $(this).data('name');
-                const locId = $('#wt-popover').attr('data-id');
-                await self.lm.removeNpcFromLocation(locId, name);
-                $(this).closest('div').fadeOut(200, function() { $(this).remove(); });
-            });
-        } else {
-            npcList.html('<div style="font-size:10px;color:#B0A898;padding:4px">아직 감지된 인물이 없어요</div>');
-        }
+        // ★ 터줏대감 목록 렌더 (v0.9.6: 메서드로 분리 — 랜덤 생성 후 갱신용)
+        this._renderPopNpcs(l);
         $('#wt-pop-aliases').val((l.aliases||[]).join(', '));
         // Task 5: 아이콘 타입 선택 복원
         $('#wt-pop-icon-type').val(l.locationType || '');
@@ -5638,6 +5622,96 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             return first || s;
         } catch(_) {
             return s.length > 4 ? s.substring(0, 2) : s;
+        }
+    }
+
+    // ========== v0.9.6: 터줏대감 목록 렌더 + 랜덤 생성 ==========
+    _renderPopNpcs(l) {
+        const self = this;
+        const npcList = $('#wt-pop-npcs-list');
+        npcList.empty();
+        if (l.npcs?.length) {
+            l.npcs.forEach(n => {
+                const icon = n.type === 'animal' ? '🐾' : '🧑';
+                npcList.append(`<div class="wt-pop-npc-item" data-npc="${n.name}" style="display:flex;align-items:center;gap:4px;padding:3px 6px;background:#FAFAF5;border-radius:6px;font-size:11px;color:#3C4043;cursor:pointer">
+                    <span>${n.avatar || icon}</span><span style="font-weight:500">${n.name}</span>${n.role ? `<span style="font-size:9px;color:#9AA0A6">(${n.role})</span>` : ''}
+                    <span style="font-size:9px;color:#B0A898;margin-left:auto">×${n.count||1}</span>
+                    <span class="wt-npc-del" data-name="${n.name}" style="color:#F5A8A8;cursor:pointer;font-size:9px;margin-left:4px">✕</span>
+                </div>`);
+            });
+            // 항목 클릭 → 프로필 (✕ 제외)
+            npcList.find('.wt-pop-npc-item').on('click', function(e) {
+                if ($(e.target).closest('.wt-npc-del').length) return;
+                const locId = $('#wt-popover').attr('data-id');
+                self._showNpcProfile(locId, $(this).data('npc'));
+            });
+            npcList.find('.wt-npc-del').on('click', async function(e) {
+                e.stopPropagation();
+                const name = $(this).data('name');
+                const locId = $('#wt-popover').attr('data-id');
+                await self.lm.removeNpcFromLocation(locId, name);
+                self.pi?.inject();
+                $(this).closest('.wt-pop-npc-item').fadeOut(200, function() { $(this).remove(); });
+            });
+        } else {
+            npcList.html('<div style="font-size:10px;color:#B0A898;padding:4px">아직 터줏대감이 없어요 — 🎲 랜덤으로 만들어보세요</div>');
+        }
+    }
+
+    // 🎲 이 장소에 어울리는 터줏대감(사람/동물 랜덤) LLM 생성
+    async _generateRandomNpc(locId) {
+        const loc = this.lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        if (isStBusy()) { toastWarn('⏳ AI 응답 생성 중 — 잠시 후 다시'); return; }
+        const $btn = $('#wt-pop-npc-random');
+        $btn.prop('disabled', true).text('🎲 생성 중...');
+        const guard = makeChatGuard();
+        try {
+            const langInst = this._getLangInstruction('event');
+            const existing = (loc.npcs || []).map(n => n.name).join(', ');
+            const coin = Math.random() < 0.5 ? 'a PERSON (regular/owner/staff/local)' : 'an ANIMAL (resident pet/stray/guard animal)';
+            const prompt = `Create ONE "터줏대감" — a resident fixture character for this specific place.
+
+Place: "${loc.name}"${loc.address ? ` (${loc.address})` : ''}${loc.aiNotes ? `\nPlace notes: ${loc.aiNotes}` : ''}
+This time, make it ${coin}. Make it fit the location's vibe, vivid and characterful (not generic).
+${existing ? `Do NOT duplicate these existing residents: ${existing}` : ''}
+${langInst}
+
+Respond with ONLY a JSON object, no markdown, no explanation:
+{"name":"name","type":"npc or animal","role":"one-word role/identity (e.g. 단골, 사장, 길고양이, 경비견)","avatar":"a single emoji","bio":"one vivid sentence — what they do here, their vibe","personality":["trait","trait"],"relationship":"one line on how they'd first relate to a newcomer (wary/indifferent/curious etc.)"}`;
+
+            window._wtMaxTokensOverride = 1024;
+            window._wtTempOverride = 1.0;
+            window._wtDisableThinking = true;
+            const result = await callLLM(prompt);
+            window._wtMaxTokensOverride = null;
+            window._wtTempOverride = null;
+            window._wtDisableThinking = false;
+            window._wtLastRawResponse = result || '(빈 응답)';
+
+            const p = result ? parseLLMJson(result) : null;
+            if (!p?.name) { toastWarn('⚠️ 터줏대감 생성 실패 (🐛 로그 확인)'); return; }
+            if (!guard()) { toastWarn('⏭️ 채팅이 바뀌어 취소'); return; }
+
+            const npc = {
+                name: String(p.name).trim().slice(0, 24),
+                type: p.type === 'animal' ? 'animal' : 'npc',
+                role: (p.role || '').toString().slice(0, 20),
+                avatar: this._firstGrapheme(p.avatar || '') || (p.type === 'animal' ? '🐾' : '👤'),
+                bio: (p.bio || '').toString().slice(0, 200),
+                personality: Array.isArray(p.personality) ? p.personality.slice(0, 5) : [],
+                relationship: (p.relationship || '').toString().slice(0, 200),
+                affinity: 3,
+            };
+            const added = await this.lm.addNpcToLocation(locId, npc);
+            this.pi?.inject();
+            this._renderPopNpcs(this.lm.locations.find(l => l.id === locId) || loc);
+            toastSuccess(added === false ? `이미 있는 터줏대감이라 패스` : `${npc.avatar} "${npc.name}" 터줏대감 등록!`);
+        } catch (e) {
+            dbg('⚠️ random npc error:', e.message);
+            toastWarn('⚠️ 생성 중 오류 (🐛 로그 확인)');
+        } finally {
+            $btn.prop('disabled', false).text('🎲 랜덤 생성');
         }
     }
 
