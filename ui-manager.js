@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.8</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.9</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -6383,6 +6383,7 @@ REVIEW STYLE RULES:
 - Some reviews should be hilariously petty or oddly specific.
 - VARY the lineup every batch: different names, ages, species, and walks of life — don't reuse the same reviewers each time.
 - Spread the star ratings realistically (a mix across 1–5, not all 4–5). Include at least one harsh/critical review and one glowing one.
+- Every review MUST include integer "stars" (1–5) and "daysAgo" (whole number of days ago, 0–60). Never omit these two fields.
 - Animals/pets write from their perspective (a cat reviewing a kitchen = "the warm spot near the stove is acceptable").
 - NPCs can have strong opinions about the main characters.
 ${npcList ? `\nIMPORTANT: Prioritize the known NPCs/animals listed above as reviewers — they are real characters from this location.` : ''}
@@ -6418,6 +6419,15 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
             if (!parsed) { list.html(`<div style="font-size:11px;color:#F5A8A8;padding:8px">⚠️ JSON 파싱 실패<div style="font-size:9px;margin-top:4px;color:#B0A898;word-break:break-all">${(result||'').substring(0, 150)}...</div></div>`); return; }
             const rawReviews = Array.isArray(parsed.reviews) ? parsed.reviews : Array.isArray(parsed) ? parsed : [];
             const reviews = rawReviews.filter(r => r && r.text);
+            // ★ v0.9.9: 생성 시점에 daysAgo/stars 정규화 (저장 데이터까지 깨끗하게)
+            reviews.forEach(r => {
+                let d = Math.round(Number(r.daysAgo));
+                if (!Number.isFinite(d) || d < 0) d = Math.floor(Math.random() * 21) + 1;  // 값 없으면 1~21일 폴백
+                r.daysAgo = d;
+                let s = Math.round(Number(r.stars));
+                if (!Number.isFinite(s)) s = 3;
+                r.stars = Math.max(1, Math.min(5, s));
+            });
             const aiSummary = parsed.summary || '';
             if (!reviews.length) { list.html('<div style="font-size:11px;color:#9A8A7A;padding:8px">리뷰 없음</div>'); return; }
 
@@ -6446,6 +6456,22 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
         const loc = locId ? this.lm.locations.find(l => l.id === locId) : null;
         const self = this;
         container.empty();
+
+        // ★ v0.9.9: daysAgo/stars 값이 비거나 숫자가 아니어도 NaN/에러 안 나게 방어
+        const fmtDays = (v) => {
+            const d = Math.round(Number(v));
+            if (!Number.isFinite(d) || d < 0) return '최근';
+            if (d === 0) return '오늘';
+            if (d === 1) return '어제';
+            if (d <= 7) return `${d}일 전`;
+            return `${Math.ceil(d / 7)}주 전`;
+        };
+        const fmtStars = (v) => {
+            let s = Math.round(Number(v));
+            if (!Number.isFinite(s)) s = 3;
+            s = Math.max(0, Math.min(5, s));
+            return '★'.repeat(s) + '☆'.repeat(5 - s);
+        };
 
         // 1. AI 요약 (골드 사이드바)
         if (aiSummary) {
@@ -6508,8 +6534,8 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
         const previewReviews = showAll ? reviews : reviews.slice(0, 2);
 
         previewReviews.forEach(rv => {
-            const stars = '★'.repeat(rv.stars || 3) + '☆'.repeat(5 - (rv.stars || 3));
-            const daysText = rv.daysAgo === 1 ? '어제' : rv.daysAgo <= 7 ? `${rv.daysAgo}일 전` : `${Math.ceil(rv.daysAgo / 7)}주 전`;
+            const stars = fmtStars(rv.stars);
+            const daysText = fmtDays(rv.daysAgo);
 
             container.append(`<div class="wt-rv-card-item" style="padding:10px 0;border-bottom:1px solid #F1F3F4">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
@@ -6537,8 +6563,8 @@ CRITICAL: Start your response with { and end with }. Nothing else.`;
                 e.stopPropagation();
                 // 나머지 리뷰 펼치기
                 hiddenCards.forEach(rv => {
-                    const stars = '★'.repeat(rv.stars || 3) + '☆'.repeat(5 - (rv.stars || 3));
-                    const daysText = rv.daysAgo === 1 ? '어제' : rv.daysAgo <= 7 ? `${rv.daysAgo}일 전` : `${Math.ceil(rv.daysAgo / 7)}주 전`;
+                    const stars = fmtStars(rv.stars);
+                    const daysText = fmtDays(rv.daysAgo);
                     moreBtn.before(`<div style="padding:10px 0;border-bottom:1px solid #F1F3F4">
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
                             <div style="width:32px;height:32px;border-radius:50%;background:#F1F3F4;display:flex;align-items:center;justify-content:center;font-size:16px">${rv.avatar || '👤'}</div>
