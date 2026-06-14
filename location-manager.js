@@ -229,17 +229,17 @@ export class LocationManager {
         };
         const p = this._autoPos(); loc.x = p.x; loc.y = p.y;
 
-        // ★ 자동 좌표 배치: 기존에 GPS 좌표 있는 장소가 있으면 근처에 배치
-        const geoLocs = this.locations.filter(l => l.lat != null && l.lng != null);
-        if (geoLocs.length > 0) {
-            // 현재 위치 또는 가장 최근 방문 장소 기준
-            const anchor = geoLocs.find(l => l.id === this.currentLocationId) || geoLocs[0];
+        // ★ v0.9.12: 새 장소 좌표 자동 배치는 "현재 위치"에 GPS가 있을 때만 그 근처에 둠.
+        //   (이전엔 geoLocs[0]=첫 장소로 폴백 → 다른 도시인데 뉴욕 좌표에 박히는 버그)
+        const anchor = this.locations.find(l => l.id === this.currentLocationId && l.lat != null && l.lng != null);
+        if (anchor) {
             const dist = 30 + Math.random() * 120; // 30~150m
             const angle = Math.random() * 2 * Math.PI;
             loc.lat = anchor.lat + (dist / 111320) * Math.cos(angle);
             loc.lng = anchor.lng + (dist / (111320 * Math.cos(anchor.lat * Math.PI / 180))) * Math.sin(angle);
-            console.log(`[${EXTENSION_NAME}] 🔧 autoCoord: "${name}" placed ${Math.round(dist)}m from "${anchor.name}" (${loc.lat.toFixed(6)},${loc.lng.toFixed(6)})`);
+            console.log(`[${EXTENSION_NAME}] 🔧 autoCoord: "${name}" placed ${Math.round(dist)}m from current "${anchor.name}"`);
         }
+        // 현재 위치에 GPS 없으면 좌표 미설정 → '실제 주소 설정'(지오코딩)으로 직접 지정
 
         await this.db.putLocation(loc); this.locations.push(loc); return loc;
     }

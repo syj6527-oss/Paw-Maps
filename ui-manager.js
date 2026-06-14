@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.11</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.13</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -279,6 +279,9 @@ export class UIManager {
                 <div class="wt-s-row" style="display:flex;gap:4px;align-items:center">
                     <select id="wt-s-llm-provider" class="text_pole wt-select" style="width:100px;font-size:11px"><option value="google">Gemini</option><option value="vertex">Vertex AI</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
                     <input type="password" id="wt-s-llm-key" class="text_pole" placeholder="API 키 입력..." style="flex:1;font-size:11px;padding:6px 8px"/>
+                </div>
+                <div class="wt-s-row" style="margin-top:3px">
+                    <button id="wt-s-llm-import" class="menu_button" style="font-size:10.5px;padding:5px 10px;width:100%">🔗 ST 연결 키 가져오기</button>
                 </div>
                 <!-- Vertex AI 전용 필드 (provider=vertex일 때만 표시) -->
                 <div id="wt-s-vertex-fields" style="display:none;margin-top:4px">
@@ -460,8 +463,50 @@ export class UIManager {
                 $('#wt-s-llm-status').text('❌ ' + e.message).css('color', '#F5A8A8');
             }
         });
-        // 🌍 세계관 이어가기
-        $('#wt-s-worldcont').prop('checked', s?.worldContinuity ?? false).on('change', async () => {
+        // 🔗 ST 연결 키 가져오기 — 실패 시 직접 입력 안내
+        $('#wt-s-llm-import').on('click', () => {
+            const setStatus = (t, c) => $('#wt-s-llm-status').text(t).css('color', c);
+            try {
+                const oai = (typeof window !== 'undefined' && (window.oai_settings || window.oai)) || {};
+                const dom = (id) => document.getElementById(id)?.value || '';
+                const src = oai.chat_completion_source
+                    || (typeof window !== 'undefined' && (window.chat_completion_source || window.chatCompletion)) || '';
+                const srcMap = { makersuite: 'google', openai: 'openai', openrouter: 'openrouter', custom: 'openai' };
+
+                // provider별 키 후보 수집 (oai_settings → window → DOM 순)
+                const cand = {
+                    google: oai.api_key_makersuite || (typeof window !== 'undefined' && window.api_key_makersuite) || dom('api_key_makersuite'),
+                    openai: oai.api_key_openai || (typeof window !== 'undefined' && window.api_key_openai) || dom('api_key_openai'),
+                    openrouter: oai.api_key_openrouter || (typeof window !== 'undefined' && window.api_key_openrouter) || dom('api_key_openrouter'),
+                };
+                let provider = srcMap[src] || Object.keys(cand).find(k => cand[k] && cand[k].trim()) || '';
+                const key = provider ? (cand[provider] || '').trim() : '';
+
+                if (key) {
+                    $('#wt-s-llm-provider').val(provider);
+                    s.llmProvider = provider; _populateModels(provider); _toggleVertexFields(provider);
+                    const gModel = oai.google_model || (typeof window !== 'undefined' && window.google_model) || dom('model_google_select');
+                    if (provider === 'google' && gModel) { $('#wt-s-llm-model').val(gModel); s.llmModel = gModel; }
+                    else s.llmModel = $('#wt-s-llm-model').val();
+                    $('#wt-s-llm-key').val(key); s.llmApiKey = key;
+                    saveSettingsDebounced();
+                    setStatus(`✅ ST 연결 키 가져옴 (${provider}) — 🧪 테스트로 확인해줘`, '#2B8A6E');
+                    toastSuccess('🔗 ST 연결 키 가져옴!');
+                } else {
+                    // provider라도 맞춰두고 직접 입력 유도
+                    if (provider) {
+                        $('#wt-s-llm-provider').val(provider);
+                        s.llmProvider = provider; _populateModels(provider); _toggleVertexFields(provider);
+                        saveSettingsDebounced();
+                    }
+                    setStatus('⚠️ ST 키를 못 읽었어 (보안상 클라이언트에 안 보일 수 있음) — 아래 칸에 직접 붙여넣어줘', '#E07C3A');
+                    toastWarn('ST 키를 못 가져왔어 — 직접 입력해줘');
+                }
+            } catch (e) {
+                setStatus('⚠️ 가져오기 실패: ' + e.message + ' — 직접 입력해줘', '#E07C3A');
+                toastWarn('가져오기 실패 — 직접 입력해줘');
+            }
+        });
             const enabled = $('#wt-s-worldcont').is(':checked');
             if (enabled) {
                 const charKey = this.lm.getCharacterId();
@@ -701,7 +746,7 @@ export class UIManager {
                         </div>
                         <div class="wt-pop-actions"><button id="wt-pop-save" class="wt-btn-primary">💾 저장</button><button id="wt-pop-del" class="wt-btn-danger">🗑️</button></div>
                         <button id="wt-pop-move" class="wt-btn-ghost wt-btn-sm">📍 위치 수정</button>
-                        <button id="wt-pop-moveto" class="wt-btn-accent wt-btn-sm" style="opacity:1;font-size:12px">🐾 여기로 이동</button>
+                        <button id="wt-pop-moveto" class="wt-btn-accent wt-btn-sm" style="opacity:1;font-size:12px">📍 현재 위치로 지정</button>
                         <div id="wt-pop-geo-section" style="margin-top:6px;text-align:left">
                             <div id="wt-pop-geo-notice" style="display:none;padding:8px 10px;background:rgba(94,132,226,0.1);border:1px solid #5E84E2;border-radius:6px;margin-bottom:6px;font-size:11px;color:#5E84E2;text-align:center">📍 이 장소에 좌표가 없어요 — 아래에서 주소를 검색해보세요!</div>
                             <div id="wt-pop-cur-addr" style="display:none;padding:6px 10px;background:rgba(94,132,226,0.06);border-radius:6px;margin-bottom:6px;font-size:11px;color:#5E84E2;text-align:left">📍 <span id="wt-pop-addr-text"></span></div>
@@ -799,7 +844,7 @@ export class UIManager {
             this.pi?.inject();
             this.refresh();
             this.hidePop();
-            toastSuccess('🐾 이동 완료!');
+            toastSuccess('📍 현재 위치로 설정!');
         });
         $('#wt-pop-geo-btn').on('click', () => this._geoSearch());
         $('#wt-pop-geo-input').on('keydown', (e) => { if (e.key === 'Enter') this._geoSearch(); });
@@ -2245,7 +2290,7 @@ ${trimmed.substring(0, 1500)}`;
             ${loc.memo ? `<div style="padding:0 14px 6px"><div style="font-size:11px;color:#5A4030;font-style:italic;border-left:3px solid #D4D0C8;padding-left:8px">"${loc.memo}"</div></div>` : ''}
             ${loc._tempAddress ? `<div style="padding:0 14px 6px"><div style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:14px;font-size:10px;color:#E65100;font-weight:500">📍 임시 주소 · 실제 지도에서 확정해주세요</div></div>` : ''}
             <div style="display:flex;gap:5px;padding:2px 14px 8px;overflow-x:auto">
-                <button class="wt-bs-pill-btn" data-action="move" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#2B8A6E;font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;font-family:inherit${cur ? ';opacity:.4' : ''}">🐾 이동</button>
+                <button class="wt-bs-pill-btn" data-action="move" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #2B8A6E;background:#2B8A6E;font-size:10.5px;font-weight:600;color:#fff;white-space:nowrap;cursor:pointer;font-family:inherit${cur ? ';opacity:.4' : ''}">📍 ${cur ? '현재 위치' : '여기로'}</button>
                 <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #5E84E2;background:#EAF0FF;font-size:10.5px;font-weight:600;color:#3A5FBA;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
                 <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #8B6BB4;background:#F3EEFA;font-size:10.5px;font-weight:600;color:#6B4F91;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 ${((loc.tags||[]).length ? (loc.tags||[]).map(t=>({favorites:'💜',starred:'⭐',wantToGo:'🚩',travel:'🧳'})[t]||'').join('') : '저장')}</button>
                 <button class="wt-bs-pill-btn" data-action="dist" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E07C3A;background:#FFF3E8;font-size:10.5px;font-weight:600;color:#B85A1A;white-space:nowrap;cursor:pointer;font-family:inherit">📏 거리</button>
@@ -2410,7 +2455,7 @@ ${trimmed.substring(0, 1500)}`;
             e.stopPropagation();
             const action = $(this).data('action');
             const id = bs.attr('data-id');
-            if (action === 'move' && id) { self.lm.moveTo(id, getCurrentRpDate()).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('🐾 이동!'); }); }
+            if (action === 'move' && id) { self.lm.moveTo(id, getCurrentRpDate()).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess('📍 현재 위치로 설정!'); }); }
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
             if (action === 'dist' && id) { self._showDistanceMeasure(id); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
