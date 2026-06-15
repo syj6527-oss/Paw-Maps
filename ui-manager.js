@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.21</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.22</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -2830,8 +2830,8 @@ ${trimmed.substring(0, 1500)}`;
             bs.find('[id^="wt-bs-tab-"]').hide();
             bs.find('#wt-bs-tab-review').show();
             if (self._bsStage < 3) self._applyBsStage(3);
-            // NPC 섹션으로 스크롤
-            setTimeout(() => bs.find('#wt-bs-npc-section')[0]?.scrollIntoView({ behavior: 'smooth' }), 100);
+            // NPC 섹션으로 스크롤 (block:'nearest' — 맨 위로 강제 스크롤해서 빈 공간 고정되던 버그 방지)
+            setTimeout(() => bs.find('#wt-bs-npc-section')[0]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
         });
         // T4: 기억 링크 클릭 → 이벤트 탭으로 전환
         bs.find('.wt-bs-mem-link').on('click', function(e) {
@@ -5785,7 +5785,8 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
             const prompt = `Create ONE "터줏대감" — a resident fixture for this specific place. Make it VIVID, specific, and a little surprising — never a generic placeholder.
 
 Place: "${loc.name}"${loc.address ? ` (${loc.address})` : ''}${loc.aiNotes ? `\nPlace notes: ${loc.aiNotes}` : ''}
-Make it ${isAnimal ? 'an ANIMAL' : 'a PERSON'}. Loose inspiration (reinterpret freely, do NOT copy literally): "${seed}".
+Make it ${isAnimal ? 'an ANIMAL' : 'a PERSON'}. FIRST infer what KIND of place this is from the name/address/notes (indoor lodging/room, beach/coast, cafe/shop, street, forest/park, office...). The 터줏대감 MUST plausibly belong to THAT environment — e.g. indoor lodging/villa/hotel room → house gecko, a resident cat, a caretaker, insects (NEVER sea or wild outdoor animals); beach/coast → pelican/seagull/crab/iguana; cafe/shop → shop cat, a regular, the owner; forest/park → a woodland creature. Never pick a being that couldn't realistically live at or around THIS exact place.
+Loose inspiration (use ONLY if it fits this environment; otherwise pick something that does — reinterpret freely, do NOT copy literally): "${seed}".
 Vary species/age/role/temperament widely across generations — avoid clichés and avoid resembling past ones.
 ${existing ? `Do NOT duplicate or resemble these existing residents: ${existing}` : ''}
 ${langInst}
@@ -6482,6 +6483,7 @@ ${recentChat ? `\n[Recent RP scenes — use these to absorb character voice, ton
 Reviewers: pick from "${charName}", "${userName}"${npcList ? `, ${npcList}` : ''}, or other NPCs/animals that might visit this place.
 
 REVIEW STYLE RULES:
+- ANCHOR every review in a real EVALUATION of THIS place — what it's actually like to be here (atmosphere, comfort, the view, food/drink or service if applicable, cleanliness, noise, crowd, what it's good or bad for). The RP scenes and events supply each reviewer's voice, memories, and emotional angle — but the review itself must read as a genuine assessment OF THE PLACE, not just personal venting or character drama.
 - Each review: 2-4 sentences. Be DETAILED and SPECIFIC.
 - Reference ACTUAL events that happened here (from the Events list above).
 - Use each character's UNIQUE speech patterns, slang, and personality quirks.

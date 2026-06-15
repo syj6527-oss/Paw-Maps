@@ -135,7 +135,7 @@ export class PromptInjector {
             };
             const animals = cur.npcs.filter(n => n.type === 'animal');
             const people = cur.npcs.filter(n => n.type !== 'animal');
-            if (people.length) L.push(`👥 Resident regulars of this place (terjutdaegam — fixtures here): ${people.map(fmt).join(' | ')}\n  → When a scene takes place here, have at least one of them actually appear, greet, react, or be directly involved — not just mentioned in passing.`);
+            if (people.length) L.push(`👥 Resident regulars of this place (terjutdaegam — fixtures here): ${people.map(fmt).join(' | ')}\n  → These are part of this place's texture. Feature one ONLY when it fits the CURRENT scene naturally — right area, plausible for indoors/outdoors, time of day. If the scene is indoors (a room, villa, hotel interior) or the creature wouldn't realistically be there, keep them as distant ambient background or leave them out entirely. NEVER force an outdoor animal into an indoor scene — immersion comes first.`);
             if (animals.length) L.push(`🐾 Resident animal(s) of this place (they live/hang around here): ${animals.map(fmt).join(' | ')}\n  → When a scene is here, this animal physically shows up in it — approaches, lingers, reacts to the characters. Make it tangibly present.`);
         }
 
