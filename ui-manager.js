@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.23</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.24</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -246,6 +246,7 @@ export class UIManager {
                     </select>
                 </div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-autoevent"/> 📝 이벤트 자동 기록</label></div>
+                <div class="wt-s-row" title="RP에서 약속/예정(내일·예약·만나자 등)을 감지해 장소+예상일시+내용을 기록 (LLM 사용)"><label><input type="checkbox" id="wt-s-autoschedule"/> 📅 예정 일정 자동 기록 (약속 감지)</label></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-toast"/> 📍 이동 알림</label></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
@@ -354,6 +355,7 @@ export class UIManager {
         bind('#wt-s-dragevent','dragEvent',true); // v0.9.2: 드래그 이벤트 기록 on/off
         // v0.9.23: 장소 감지 모드 + 이벤트 자동 기록
         bind('#wt-s-autoevent','autoEvent',true);
+        bind('#wt-s-autoschedule','autoSchedule',false);
         {
             const dm = s?.detectMode || (s?.autoDetect ? 'auto' : 'off'); // 레거시 autoDetect 환산
             if (s && !s.detectMode) { s.detectMode = dm; saveSettingsDebounced(); }

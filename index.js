@@ -99,7 +99,7 @@ const defaults = {
     // v0.9.0: autoDetect 기본 OFF — 수동 모드로 전환 (드래그 이벤트 등록만 자동)
     // v0.9.2: autoDetect는 "모든 자동 장소 감지"의 마스터 스위치 (캐릭터시트 추출 포함). 기본 OFF 유지.
     // v0.9.23: detectMode = 'off'(수동) | 'confirm'(팝업 확인) | 'auto'(자동). autoEvent = 텍스트에서 이벤트 자동 추출 on/off
-    enabled:true, autoDetect:false, detectMode:'off', autoEvent:true, showDetectToast:true,
+    enabled:true, autoDetect:false, detectMode:'off', autoEvent:true, autoSchedule:false, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
     debugMode:false, mapMode:'leaflet', fantasyTheme:false,
     eventLang:'auto', // auto=RP언어, ko=한국어, en=English
@@ -640,6 +640,8 @@ async function init() {
             // AI (장소+이벤트) — 유저 컨텍스트도 전달
             _userContext = userMsg?.mes?.trim() || '';
             if (aiMsg.mes?.trim()) await scanMessage(aiMsg.mes, 'AI');
+            // v0.9.24: 예정 일정 감지 — 장소 감지(detectMode)와 독립, autoSchedule만으로 동작
+            if (aiMsg.mes?.trim()) await scanSchedule(aiMsg.mes, 'AI');
             _userContext = '';
         } catch(e) { console.error(`[${EXTENSION_NAME}] Handle:`, e); }
     }
@@ -1071,6 +1073,67 @@ let _lastEventLocId = null; // 마지막 이벤트 저장 장소
 
 // 전체 패턴 (AI용 — 가벼운 트리거)
 const _triggerKw = /키스|kiss|포옹|hug|사랑|love|고백|confess|속삭|whisper|입술|lip|심장|heart|두근|떨[리렸]|tremble|끌어안|embrace|울[었다]|눈물|cry|tear|싸[우웠움]|fight|배신|betray|도망|escape|발견|discover|비밀|secret|부상|injur|약속|promise|내일|tomorrow|선물|gift|devour|cupped|passion|intimate|desire|breathless|gasp|moan|shudder|groan|tongue|stole|steal|stolen|snuck|sneak|훔[쳤치]|침입|threat|경고|죽|kill|death|총|gun|칼|sword|knife|피[가를]|blood|curse|저주|분노|rage|복수|revenge|떠나|이별|작별|farewell|goodbye|depart|leave.*behind|결심|맹세|선언|다짐|decide|swear|vow|declare|귀환|재회|돌아[왔오]|return|reunion|위험|위협|위기|danger|warn|peril|잃어버|잃[은었을]|분실|사라[졌진]|lost|lose|missing|vanish|disappear|계획|작전|일정|schedule|operation|mission|trip|run|shopping|장보기|나들이|쇼핑|appointment|check[- ]?up|검진|재검|진료|예약|clinic|hospital|병원|산부인과|two\s+weeks|next\s+week|next\s+month|다음\s*주|다음\s*달|주\s*뒤|주\s*후|every\s+(?:week|month|time)|영화|cinema|movie|데이트|date|일주일|마트|mart|tesco|가자|가기로|만나자|오기로|ticket|티켓|초대|invite|여행|travel|vacation|휴가|놀러|이사|짐.*싸|옮기|transfer|pack|moving\s+(?:in|out|to)|wheels\s+up|gear\s+up|새\s*집|new\s+(?:place|house|room|gaff|building)/i;
+
+// v0.9.24: 예정 일정(약속) 자동 기록 — RP에서 미래 계획 감지 → 장소 + 예상 일시 + 내용
+let _lastSchedTime = 0;
+function _hasScheduleSignal(text) {
+    return /(내일|모레|글피|다음\s*주|담주|이따|좀\s*있다|나중에|저녁에|아침에|점심에|밤에|\d+\s*시|\d+일\s*후|다음\s*달|주말|약속|예약|예매|만나(?:자|기로|요)|보자|가기로|갈\s*예정|갈\s*거|할\s*예정|하기로|계획|tomorrow|tonight|later|next\s+(?:week|day|month)|appointment|reserv|booked|plan\s+to|let'?s\s+meet|meet\s+(?:at|up))/i.test(text);
+}
+async function scanSchedule(text, source) {
+    try {
+        const s = extension_settings[EXTENSION_NAME];
+        if (!s?.enabled || !s?.autoSchedule || !text?.trim()) return;
+        if (isAutoDetectPaused()) return;
+        if (!_hasScheduleSignal(text)) return;
+        if (Date.now() - _lastSchedTime < 8000) return; // 짧은 시간 중복 방지
+        if (!lm.currentChatId) await lm.loadChat();
+        if (!lm.currentChatId) return;
+        let rpDate = ''; try { rpDate = window._wtGetRpDate?.() || ''; } catch (_) {}
+        const prompt = `다음 RP 텍스트에서 "앞으로 예정된 일정/약속"만 추출해. 이미 일어난 일이 아니라 미래 계획만.
+JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place":"장소명 또는 빈 문자열","when":"예상 일시 (예: 내일 저녁 7시, 3일 후, 다음 주 토요일)","what":"무엇을 할지 짧게"}
+구체적인 미래 계획이 없으면 {"hasPlan":false} 만 출력.
+
+텍스트:
+"""${text.slice(0, 1500)}"""`;
+        window._wtMaxTokensOverride = 256;
+        window._wtDisableThinking = true;
+        const result = await callLLM(prompt);
+        window._wtMaxTokensOverride = null;
+        window._wtDisableThinking = false;
+        const p = result ? parseLLMJson(result) : null;
+        if (!p || !p.hasPlan) return;
+        _lastSchedTime = Date.now();
+        // 장소: place 있으면 find/create, 없으면 현재 위치
+        let locId = lm.currentLocationId;
+        if (p.place && String(p.place).trim()) {
+            const nm = String(p.place).trim();
+            const existing = lm.findByName(nm);
+            if (existing) locId = existing.id;
+            else { const nl = await lm.addLocation(nm); if (nl) locId = nl.id; }
+        }
+        if (!locId) return;
+        const loc = lm.locations.find(l => l.id === locId);
+        if (!loc) return;
+        if (!loc.events) loc.events = [];
+        const what = p.what || '예정된 일정';
+        if (loc.events.some(e => e.isPlan && e.text === what)) return; // 중복 방지
+        loc.events.push({
+            text: what,
+            title: what.substring(0, 20),
+            mood: '🗓️',
+            isPlan: true,
+            planWhen: p.when || '',
+            planDate: _calcPlanDate(rpDate, p.when || ''),
+            timestamp: Date.now(),
+            rpDate,
+            source: 'schedule'
+        });
+        await lm.updateLocation(loc.id, { events: loc.events });
+        if (s.showDetectToast) wtNotify(`🗓️ 예정: ${loc.name} — ${[p.when, what].filter(Boolean).join(' ')}`, 'new', 4000);
+        pi.inject(); if (ui.panelVisible) ui.refresh();
+        dbg(`🗓️ 일정 기록: ${loc.name} | ${p.when} | ${what}`);
+    } catch (e) { dbg('⚠️ scanSchedule error:', e.message); }
+}
 
 async function _tryEvent(text, locId, source) {
     const _s = extension_settings[EXTENSION_NAME];
