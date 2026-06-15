@@ -230,13 +230,22 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.22</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.23</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
                 <div class="wt-divider"></div>
-                <!-- v0.9.0: 자동 감지 제거 — 수동 모드로 전환 -->
+                <!-- v0.9.23: 장소 감지 모드 (끔/확인/자동) + 이벤트 자동 기록 -->
                 <div class="wt-s-row" style="display:none"><label><input type="checkbox" id="wt-s-detect"/> 🔍 자동 감지</label></div>
+                <div class="wt-s-row" style="display:flex;align-items:center;gap:6px" title="끔=수동 등록만 / 확인=감지 시 팝업으로 등록 확인 / 자동=감지하면 바로 등록">
+                    <label style="white-space:nowrap">🔍 장소 감지</label>
+                    <select id="wt-s-detectmode" class="text_pole wt-select" style="flex:1;font-size:11px">
+                        <option value="off">끔 (수동 등록만)</option>
+                        <option value="confirm">확인 후 등록 (팝업)</option>
+                        <option value="auto">자동 등록</option>
+                    </select>
+                </div>
+                <div class="wt-s-row"><label><input type="checkbox" id="wt-s-autoevent"/> 📝 이벤트 자동 기록</label></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-toast"/> 📍 이동 알림</label></div>
                 <div class="wt-divider"></div>
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-inject"/> 🤖 AI 프롬프트 주입</label></div>
@@ -343,6 +352,18 @@ export class UIManager {
         const bind = (sel, key, def) => $(sel).prop('checked', s?.[key] ?? def).on('change', function(){ s[key]=$(this).is(':checked'); saveSettingsDebounced(); });
         bind('#wt-s-enabled','enabled',true); bind('#wt-s-detect','autoDetect',true); bind('#wt-s-toast','showDetectToast',true); bind('#wt-s-inject','aiInjection',true); bind('#wt-s-moveevent','moveEvent',true);
         bind('#wt-s-dragevent','dragEvent',true); // v0.9.2: 드래그 이벤트 기록 on/off
+        // v0.9.23: 장소 감지 모드 + 이벤트 자동 기록
+        bind('#wt-s-autoevent','autoEvent',true);
+        {
+            const dm = s?.detectMode || (s?.autoDetect ? 'auto' : 'off'); // 레거시 autoDetect 환산
+            if (s && !s.detectMode) { s.detectMode = dm; saveSettingsDebounced(); }
+            $('#wt-s-detectmode').val(dm).on('change', () => {
+                s.detectMode = $('#wt-s-detectmode').val();
+                s.autoDetect = (s.detectMode === 'auto'); // 레거시 호환 유지
+                saveSettingsDebounced();
+                toastSuccess(s.detectMode === 'off' ? '🔍 장소 감지 끔' : s.detectMode === 'confirm' ? '🔍 감지 시 팝업 확인' : '🔍 자동 등록');
+            });
+        }
         // r23: 디버그 체크박스 — localStorage + extension_settings 이중 저장
         const self = this;
         $('#wt-s-debug').prop('checked', this._debugEnabled).on('change', function() {
@@ -4123,6 +4144,44 @@ ${trimmed.substring(0, 1500)}`;
     }
 
     // ★ AI 중복 방지: 유저 장소와 AI 장소 병합 제안
+    // v0.9.23: 감지된 새 장소를 팝업으로 확인 후 등록 (확인 모드)
+    showDetectConfirm(name) {
+        $('#wt-detect-overlay').remove();
+        const sendBtn = document.querySelector('#send_but');
+        if (!sendBtn || sendBtn.offsetParent === null) return;
+        const self = this;
+        const safe = (name || '').replace(/"/g, '&quot;');
+        const overlay = $(`<div id="wt-detect-overlay" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);width:320px;max-width:90vw;background:rgba(245,244,237,0.98);border:2px solid #2B8A6E;border-radius:14px;padding:10px 14px;z-index:2147483646;box-shadow:0 6px 24px rgba(0,0,0,0.2);backdrop-filter:blur(8px);font-family:-apple-system,'Noto Sans KR',sans-serif">
+            <div style="font-size:13px;font-weight:700;color:#3C4043;margin-bottom:4px">🆕 새 장소 감지</div>
+            <div style="font-size:11px;color:#9A8A7A;margin-bottom:6px">맥락에서 잡은 이름이에요 — 수정해서 등록하거나 무시하세요</div>
+            <input id="wt-detect-name" type="text" value="${safe}" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #2B8A6E;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:8px;background:#fff;color:#3C4043"/>
+            <div style="display:flex;gap:6px">
+                <button id="wt-detect-yes" style="flex:1;padding:8px;background:#E6F4EF;border:1.5px solid #2B8A6E;border-radius:8px;font-size:12px;font-weight:600;color:#1E6B54;cursor:pointer;font-family:inherit">📍 등록</button>
+                <button id="wt-detect-no" style="flex:1;padding:8px;background:#fff;border:1.5px solid #E8E4D8;border-radius:8px;font-size:12px;color:#775537;cursor:pointer;font-family:inherit">무시</button>
+            </div>
+        </div>`);
+        $('body').append(overlay);
+        setTimeout(() => overlay.find('#wt-detect-name').trigger('focus'), 50);
+        overlay.find('#wt-detect-yes').on('click', async () => {
+            const nm = (overlay.find('#wt-detect-name').val() || '').trim();
+            if (!nm) { overlay.find('#wt-detect-name').css('border-color', '#E2574C'); return; }
+            overlay.remove();
+            try {
+                const rpDate = (window._wtGetRpDate && window._wtGetRpDate()) || '';
+                const loc = await self.lm.addLocation(nm);
+                if (loc) {
+                    await self.lm.moveTo(loc.id, rpDate);
+                    self.pi?.inject();
+                    if (self.panelVisible) self.refresh();
+                    toastSuccess(`📍 "${loc.name}" 등록 + 현재 위치로 설정!`);
+                    setTimeout(async () => { try { await self.lm.autoCalcDistances(); await self.lm.autoReverseGeocode(); self.pi?.inject(); } catch (_) {} }, 1500);
+                }
+            } catch (e) { toastWarn('등록 실패: ' + e.message); }
+        });
+        overlay.find('#wt-detect-no').on('click', () => overlay.remove());
+        setTimeout(() => overlay.remove(), 90000); // 방치 시 자동 닫힘
+    }
+
     showMergeToast(userLoc, aiName) {
         $('#wt-merge-overlay').remove();
 

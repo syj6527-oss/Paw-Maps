@@ -98,7 +98,8 @@ export function toastSuccess(msg) { wtNotify(msg, 'move', 2000); }
 const defaults = {
     // v0.9.0: autoDetect 기본 OFF — 수동 모드로 전환 (드래그 이벤트 등록만 자동)
     // v0.9.2: autoDetect는 "모든 자동 장소 감지"의 마스터 스위치 (캐릭터시트 추출 포함). 기본 OFF 유지.
-    enabled:true, autoDetect:false, showDetectToast:true,
+    // v0.9.23: detectMode = 'off'(수동) | 'confirm'(팝업 확인) | 'auto'(자동). autoEvent = 텍스트에서 이벤트 자동 추출 on/off
+    enabled:true, autoDetect:false, detectMode:'off', autoEvent:true, showDetectToast:true,
     aiInjection:true, memoryMode:'natural', memorySummaryDays:7, panelOpacity:100,
     debugMode:false, mapMode:'leaflet', fantasyTheme:false,
     eventLang:'auto', // auto=RP언어, ko=한국어, en=English
@@ -163,7 +164,10 @@ async function _legacyScanMessage(text, source = 'USER') {
             return false;
         }
         const s = extension_settings[EXTENSION_NAME];
-        if (!s?.enabled || !s?.autoDetect || !text?.trim()) return false;
+        // v0.9.23: detectMode 우선, 없으면 레거시 autoDetect로 환산
+        const _dm = s?.detectMode || (s?.autoDetect ? 'auto' : 'off');
+        if (!s?.enabled || _dm === 'off' || !text?.trim()) return false;
+        window._wtDetectMode = _dm; // 새 장소 등록 분기에서 사용
         if (!lm.currentChatId) await lm.loadChat();
         if (!lm.currentChatId) return false;
 
@@ -525,6 +529,12 @@ async function _legacyScanMessage(text, source = 'USER') {
                     dbg(`🔀 AI loc "${np}" → merge candidate with user loc "${_lastUserNewLoc.loc.name}"`);
                     ui.showMergeToast(_lastUserNewLoc.loc, np);
                     await _tryEvent(text, _lastUserNewLoc.loc.id, source);
+                    return true;
+                }
+                // v0.9.23: 확인 모드면 자동 등록 대신 팝업으로 사용자 확인
+                if (window._wtDetectMode === 'confirm') {
+                    dbg(`🪧 confirm 모드 — 팝업으로 "${np}" 등록 확인 요청`);
+                    ui.showDetectConfirm(np);
                     return true;
                 }
                 const loc = await lm.addLocation(np);
@@ -1063,6 +1073,8 @@ let _lastEventLocId = null; // 마지막 이벤트 저장 장소
 const _triggerKw = /키스|kiss|포옹|hug|사랑|love|고백|confess|속삭|whisper|입술|lip|심장|heart|두근|떨[리렸]|tremble|끌어안|embrace|울[었다]|눈물|cry|tear|싸[우웠움]|fight|배신|betray|도망|escape|발견|discover|비밀|secret|부상|injur|약속|promise|내일|tomorrow|선물|gift|devour|cupped|passion|intimate|desire|breathless|gasp|moan|shudder|groan|tongue|stole|steal|stolen|snuck|sneak|훔[쳤치]|침입|threat|경고|죽|kill|death|총|gun|칼|sword|knife|피[가를]|blood|curse|저주|분노|rage|복수|revenge|떠나|이별|작별|farewell|goodbye|depart|leave.*behind|결심|맹세|선언|다짐|decide|swear|vow|declare|귀환|재회|돌아[왔오]|return|reunion|위험|위협|위기|danger|warn|peril|잃어버|잃[은었을]|분실|사라[졌진]|lost|lose|missing|vanish|disappear|계획|작전|일정|schedule|operation|mission|trip|run|shopping|장보기|나들이|쇼핑|appointment|check[- ]?up|검진|재검|진료|예약|clinic|hospital|병원|산부인과|two\s+weeks|next\s+week|next\s+month|다음\s*주|다음\s*달|주\s*뒤|주\s*후|every\s+(?:week|month|time)|영화|cinema|movie|데이트|date|일주일|마트|mart|tesco|가자|가기로|만나자|오기로|ticket|티켓|초대|invite|여행|travel|vacation|휴가|놀러|이사|짐.*싸|옮기|transfer|pack|moving\s+(?:in|out|to)|wheels\s+up|gear\s+up|새\s*집|new\s+(?:place|house|room|gaff|building)/i;
 
 async function _tryEvent(text, locId, source) {
+    const _s = extension_settings[EXTENSION_NAME];
+    if (_s && _s.autoEvent === false) { dbg('⏭️ autoEvent OFF — 이벤트 자동 기록 생략'); return; }
     dbg(`📋 _tryEvent (${source}) len=${text.length}`);
     if (text.length < 25) { dbg('⏭️ Text too short'); return; }
     // 같은 장소 5초 내 중복 방지 (다른 장소는 OK!)
