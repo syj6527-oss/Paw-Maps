@@ -640,8 +640,9 @@ async function init() {
             // AI (장소+이벤트) — 유저 컨텍스트도 전달
             _userContext = userMsg?.mes?.trim() || '';
             if (aiMsg.mes?.trim()) await scanMessage(aiMsg.mes, 'AI');
-            // v0.9.24: 예정 일정 감지 — 장소 감지(detectMode)와 독립, autoSchedule만으로 동작
-            if (aiMsg.mes?.trim()) await scanSchedule(aiMsg.mes, 'AI');
+            // v0.9.25: 예정 일정 — 인풋(유저)+아웃풋(AI) 둘 다 읽음 (약속은 유저가 먼저 꺼내는 경우 많음)
+            const _schedText = [userMsg?.mes, aiMsg?.mes].filter(t => t && t.trim()).join('\n---\n');
+            if (_schedText.trim()) await scanSchedule(_schedText, 'BOTH');
             _userContext = '';
         } catch(e) { console.error(`[${EXTENSION_NAME}] Handle:`, e); }
     }
@@ -1109,7 +1110,19 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
             const nm = String(p.place).trim();
             const existing = lm.findByName(nm);
             if (existing) locId = existing.id;
-            else { const nl = await lm.addLocation(nm); if (nl) locId = nl.id; }
+            else {
+                // 새 임시 장소: addLocation이 현재 위치 반경 내(30~150m)에 자동 핀 → 지도 등록
+                const nl = await lm.addLocation(nm);
+                if (nl) {
+                    locId = nl.id;
+                    // 임시 표시 + 사용자가 이름/위치 수정 가능하게
+                    nl.tags = Array.from(new Set([...(nl.tags || []), 'wantToGo']));
+                    nl._tempAddress = true;
+                    if (!nl.memo) nl.memo = '📅 예정 장소 (임시 — 이름/위치 수정 가능)';
+                    await lm.updateLocation(nl.id, { tags: nl.tags, _tempAddress: true, memo: nl.memo });
+                    if (s.showDetectToast) wtNotify(`📍 임시 장소 등록: ${nm} (지도 확인·수정 가능)`, 'new', 4000);
+                }
+            }
         }
         if (!locId) return;
         const loc = lm.locations.find(l => l.id === locId);
