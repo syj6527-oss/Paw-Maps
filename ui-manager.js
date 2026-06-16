@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.25</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.26</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -665,6 +665,8 @@ export class UIManager {
                     <button id="wt-close-btn" class="wt-btn-icon">✕</button>
                 </div>
             </div>
+            <!-- 헤더가 숨는 풀스크린(Paw Map)에서도 항상 닫을 수 있는 플로팅 버튼 -->
+            <button id="wt-float-close" title="닫기" style="display:none;position:fixed;top:10px;right:10px;z-index:2147483647;width:36px;height:36px;border-radius:50%;background:rgba(40,40,40,0.62);color:#fff;border:none;font-size:18px;line-height:36px;text-align:center;padding:0;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.35)">✕</button>
             <!-- 데이터 관리 드롭다운 -->
             <div id="wt-data-menu" style="display:none;padding:10px;background:var(--wt-surface);border-bottom:1px solid var(--wt-border);font-size:13px">
                 <div style="font-weight:700;color:var(--wt-brown);margin-bottom:8px">📦 이 채팅 데이터</div>
@@ -849,6 +851,7 @@ export class UIManager {
     // ========== 이벤트 바인딩 ==========
     _bind() {
         $('#wt-close-btn').on('click', () => this.togglePanel(false));
+        $('#wt-float-close').on('click', () => this.togglePanel(false));
 
         // 🏰 판타지 모드 토글
         $('#wt-fantasy-btn').on('click', () => this._toggleFantasyTheme());
@@ -1446,7 +1449,9 @@ ${trimmed.substring(0, 1500)}`;
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
             $('.wt-panel-header,.wt-map-mode-bar').hide(); // ★ refresh마다 강제 숨김
             $('#wt-paw-nav').show();
+            $('#wt-float-close').show(); // 헤더 숨는 풀스크린 → 플로팅 닫기 노출
         } else {
+            $('#wt-float-close').hide();
             this._updLocList(); this._updMoveList();
             $('#wt-paw-nav').hide();
         }
@@ -1507,6 +1512,7 @@ ${trimmed.substring(0, 1500)}`;
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
             $('.wt-map-mode-bar').hide(); // ★ 약도/Paw Map 탭 숨김
             $('.wt-panel-header').hide(); // ★ 헤더 숨김
+            $('#wt-float-close').show(); // ★ 헤더 숨겨도 닫을 수 있게 플로팅 버튼 노출
             $('#wt-map-section').show();
             $('#wt-map-toggle').hide(); // 접기 버튼 숨김
             $('#wt-btn-refresh').hide(); // 약도 재생성 숨김
