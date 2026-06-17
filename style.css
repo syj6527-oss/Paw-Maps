@@ -253,7 +253,8 @@
 .wt-leaflet-full .wt-map-mode-bar{display:none!important}
 .wt-leaflet-full #wt-search-bar{position:absolute!important;top:8px;left:8px;right:8px;z-index:20!important}
 .wt-leaflet-full #wt-search-tabs{display:none!important}
-.wt-leaflet-full #wt-search-input{background:rgba(255,255,255,.6)!important;backdrop-filter:blur(14px)!important;-webkit-backdrop-filter:blur(14px)!important;box-shadow:0 2px 10px rgba(0,0,0,.08)!important;border-radius:22px!important;border:none!important;padding:10px 14px!important;font-size:13px!important}
+.wt-leaflet-full #wt-search-input{background:rgba(255,255,255,.16)!important;backdrop-filter:blur(3px)!important;-webkit-backdrop-filter:blur(3px)!important;box-shadow:0 1px 6px rgba(0,0,0,.06)!important;border-radius:22px!important;border:1px solid rgba(255,255,255,.35)!important;padding:10px 14px!important;font-size:13px!important}
+.wt-leaflet-full #wt-search-input::placeholder{color:rgba(60,64,67,.75)!important}
 /* 뒤로가기 버튼 — 제거(헤더 ✕로 닫음) */
 .wt-leaflet-full .wt-back-btn{display:none!important}
 /* Full 바텀시트 */

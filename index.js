@@ -857,6 +857,22 @@ async function scanChatHistory(ctx) {
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
 
 // ========== 자동 지오코딩 (캐릭터시트/약속 장소용) ==========
+// v0.9.32: 조용한 지오코딩 — 좌표만 반환, 실패해도 토스트 없음 (자동 일정 핀용)
+async function _geocodeQuiet(query) {
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=ko`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.4' } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!Array.isArray(data) || !data.length) return null;
+        return {
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon),
+            addr: (data[0].display_name || '').split(',').slice(0, 3).join(',') || query
+        };
+    } catch (_) { return null; }
+}
+
 async function _geocodePlace(locId, placeName, retry = 0) {
     dbg(`🌐 Geocoding attempt ${retry + 1}: "${placeName}" (locId=${locId})`);
     try {
@@ -1091,7 +1107,7 @@ async function scanSchedule(text, source) {
         if (!lm.currentChatId) return;
         let rpDate = ''; try { rpDate = window._wtGetRpDate?.() || ''; } catch (_) {}
         const prompt = `다음 RP 텍스트에서 "앞으로 예정된 일정/약속"만 추출해. 이미 일어난 일이 아니라 미래 계획만.
-JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place":"장소명 또는 빈 문자열","when":"예상 일시 (예: 내일 저녁 7시, 3일 후, 다음 주 토요일)","what":"무엇을 할지 짧게"}
+JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place":"장소명 또는 빈 문자열","geo":"지도 검색용 실제 위치 — 다른 도시·국가면 그 지명까지 포함 (예: '도쿄 디즈니랜드, 일본', '신세계백화점 강남, 서울'). 가상이거나 불명확하면 빈 문자열","when":"예상 일시 (예: 내일 저녁 7시, 3일 후, 다음 주 토요일)","what":"무엇을 할지 짧게"}
 구체적인 미래 계획이 없으면 {"hasPlan":false} 만 출력.
 
 텍스트:
@@ -1106,15 +1122,16 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
         _lastSchedTime = Date.now();
         // 장소: place 있으면 find/create, 없으면 현재 위치
         let locId = lm.currentLocationId;
+        let _schedNewLocId = null;
         if (p.place && String(p.place).trim()) {
             const nm = String(p.place).trim();
             const existing = lm.findByName(nm);
             if (existing) locId = existing.id;
             else {
-                // 새 임시 장소: addLocation이 현재 위치 반경 내(30~150m)에 자동 핀 → 지도 등록
                 const nl = await lm.addLocation(nm);
                 if (nl) {
                     locId = nl.id;
+                    _schedNewLocId = nl.id;
                     // 임시 표시 + 사용자가 이름/위치 수정 가능하게
                     nl.tags = Array.from(new Set([...(nl.tags || []), 'wantToGo']));
                     nl._tempAddress = true;
@@ -1127,6 +1144,35 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
         if (!locId) return;
         const loc = lm.locations.find(l => l.id === locId);
         if (!loc) return;
+
+        // v0.9.32: 새 임시 장소 핀 좌표 — 지오코딩(타지역/국가 OK) → 실패 시 현재 근처 강제 배치(핀 보장)
+        if (_schedNewLocId && loc.id === _schedNewLocId) {
+            const geoQ = (p.geo && String(p.geo).trim()) || (p.place && String(p.place).trim()) || '';
+            let placed = false;
+            if (geoQ) {
+                const g = await _geocodeQuiet(geoQ);
+                if (g) {
+                    await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr });
+                    placed = true;
+                    dbg(`📍 일정 장소 지오코딩: "${geoQ}" → ${g.lat.toFixed(3)},${g.lng.toFixed(3)}`);
+                    if (s.showDetectToast) wtNotify(`📍 ${loc.name} → 지도 표시 (${g.addr})`, 'new', 3500);
+                }
+            }
+            // 지오코딩 실패 & 좌표 없으면 현재 위치 근처에 강제 배치
+            if (!placed && (loc.lat == null || loc.lng == null)) {
+                const anchor = lm.locations.find(l => l.id === lm.currentLocationId && l.lat != null && l.lng != null);
+                if (anchor) {
+                    const dist = 80 + Math.random() * 220, ang = Math.random() * 2 * Math.PI;
+                    await lm.updateLocation(loc.id, {
+                        lat: anchor.lat + (dist / 111320) * Math.cos(ang),
+                        lng: anchor.lng + (dist / (111320 * Math.cos(anchor.lat * Math.PI / 180))) * Math.sin(ang)
+                    });
+                    dbg(`📍 일정 장소 현재 근처 배치 (지오코딩 실패): ${loc.name}`);
+                }
+            }
+            if (ui?.panelVisible) ui.refresh();
+        }
+
         if (!loc.events) loc.events = [];
         const what = p.what || '예정된 일정';
         if (loc.events.some(e => e.isPlan && e.text === what)) return; // 중복 방지

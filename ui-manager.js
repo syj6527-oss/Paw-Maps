@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.30</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.32</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -3961,7 +3961,7 @@ ${trimmed.substring(0, 1500)}`;
         });
 
         // 날짜 그룹 전체 삭제
-        $(document).on('click.wtTlGDel touchend.wtTlGDel', '.wt-tl-group-del', async function(e) {
+        $(document).on('click.wtTlGDel', '.wt-tl-group-del', async function(e) {
             e.preventDefault(); e.stopPropagation();
             if (Date.now() - (window._wtBsDragEndTs || 0) < 400) return; // 시트 드래그 직후 오발동 방지
             if (window._wtTapFireLock) return;
@@ -3987,7 +3987,7 @@ ${trimmed.substring(0, 1500)}`;
         });
 
         // 전체 초기화
-        $(document).on('click.wtTlRst touchend.wtTlRst', '#wt-tl-reset-all', async function(e) {
+        $(document).on('click.wtTlRst', '#wt-tl-reset-all', async function(e) {
             e.preventDefault(); e.stopPropagation();
             if (Date.now() - (window._wtBsDragEndTs || 0) < 400) return; // 시트 드래그 직후 오발동 방지
             if (window._wtTapFireLock) return;
