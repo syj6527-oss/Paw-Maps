@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.28</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.29</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -660,7 +660,7 @@ export class UIManager {
             <div class="wt-panel-header">
                 <div class="wt-panel-title"><span>🐾</span> Paw Map</div>
                 <div style="display:flex;gap:4px;align-items:center">
-                    <button id="wt-fantasy-btn" class="wt-btn-icon" style="font-size:16px" title="판타지 모드">🏰</button>
+                    <button id="wt-fantasy-btn" class="wt-btn-icon" style="font-size:16px;opacity:.5" title="판타지 모드 (업뎃 예정)">🏰</button>
                     <button id="wt-data-btn" class="wt-btn-icon" style="font-size:16px">⚙️</button>
                     <button id="wt-close-btn" class="wt-btn-icon">✕</button>
                 </div>
@@ -853,8 +853,8 @@ export class UIManager {
         $('#wt-close-btn').on('click', () => this.togglePanel(false));
         $('#wt-float-close').on('click', () => this.togglePanel(false));
 
-        // 🏰 판타지 모드 토글
-        $('#wt-fantasy-btn').on('click', () => this._toggleFantasyTheme());
+        // 🏰 판타지 모드 — 업뎃 예정 (활성화 비활성, 안내만)
+        $('#wt-fantasy-btn').on('click', () => wtNotify('🏰 판타지 모드는 업데이트 예정 중이에요! 조금만 기다려주세요 🐾', 'new', 3500));
 
         // 데이터 관리 메뉴
         $('#wt-data-btn').on('click', () => $('#wt-data-menu').toggle());
@@ -1315,8 +1315,9 @@ ${trimmed.substring(0, 1500)}`;
         this.panelVisible = show ?? !this.panelVisible;
         if (this.panelVisible) {
             $('#wt-panel').addClass('wt-panel-open').css('opacity',(extension_settings[EXTENSION_NAME]?.panelOpacity??100)/100);
-            // 판타지 테마 상태 복원
+            // 판타지 테마 상태 복원 (v0.9.29: 판타지 모드 업뎃 예정 — 강제 비활성)
             const s = extension_settings[EXTENSION_NAME];
+            if (s) s.fantasyTheme = false;
             if (s?.fantasyTheme) {
                 $('#wt-panel').addClass('wt-panel-fantasy');
                 $('#wt-fantasy-btn').css({ background: '#DAA520', borderRadius: '6px' });
