@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.29</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.30</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -2271,6 +2271,10 @@ ${trimmed.substring(0, 1500)}`;
         if (!loc) return;
         const bs = $('#wt-bottomsheet');
         bs.attr('data-id', locId);
+        // #2/#3: 장소(현재 위치 포함) 클릭 시 지도도 그 위치로 이동
+        if (this._isLeafletFull && this.leafletRenderer?.map && loc.lat != null && loc.lng != null) {
+            try { this.leafletRenderer.map.flyTo([loc.lat, loc.lng], 16, { duration: 0.5 }); } catch (_) {}
+        }
 
         const style = this.leafletRenderer?._locStyle?.(loc.name) || { emoji: '📍' };
         const v = loc.visitCount || 0;
@@ -3151,6 +3155,7 @@ ${trimmed.substring(0, 1500)}`;
             totalDelta = delta;
             if (Math.abs(delta) < DRAG_THRESHOLD) return;
             dragged = true;
+            window._wtBsDragEndTs = Date.now(); // 드래그 중 표시 → 삭제/초기화 오발동 방지
             const newH = Math.max(40, startH + delta);
             bsEl.style.maxHeight = newH + 'px';
             bsEl.style.top = 'auto';
@@ -3958,6 +3963,7 @@ ${trimmed.substring(0, 1500)}`;
         // 날짜 그룹 전체 삭제
         $(document).on('click.wtTlGDel touchend.wtTlGDel', '.wt-tl-group-del', async function(e) {
             e.preventDefault(); e.stopPropagation();
+            if (Date.now() - (window._wtBsDragEndTs || 0) < 400) return; // 시트 드래그 직후 오발동 방지
             if (window._wtTapFireLock) return;
             window._wtTapFireLock = true;
             setTimeout(() => window._wtTapFireLock = false, 600);
@@ -3983,6 +3989,7 @@ ${trimmed.substring(0, 1500)}`;
         // 전체 초기화
         $(document).on('click.wtTlRst touchend.wtTlRst', '#wt-tl-reset-all', async function(e) {
             e.preventDefault(); e.stopPropagation();
+            if (Date.now() - (window._wtBsDragEndTs || 0) < 400) return; // 시트 드래그 직후 오발동 방지
             if (window._wtTapFireLock) return;
             window._wtTapFireLock = true;
             setTimeout(() => window._wtTapFireLock = false, 600);
