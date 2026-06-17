@@ -547,15 +547,15 @@ async function _legacyScanMessage(text, source = 'USER') {
                     await _tryEvent(text, loc.id, source);
                     setTimeout(async () => {
                         try {
-                            // v0.9.34: 지역/도시/국가명이면 지오코딩해서 실제 위치로 핀 이동 (일반 장소는 현재 근처 유지)
-                            let g = await _geocodeQuiet(np, true);
-                            // v0.9.36: 실패 시 이름 속 도시로 재시도 ("도쿄 롯폰기 호텔" → "도쿄")
-                            if (!g) {
-                                const cityNm = det.cityInName(np);
-                                if (cityNm && cityNm !== np) {
-                                    g = await _geocodeQuiet(cityNm, true);
-                                    if (g) dbg(`📍 이름 속 도시로 지오코딩: "${np}" → "${cityNm}"`);
-                                }
+                            // v0.9.42: 알려진 도시/국가면 placeOnly 없이 그 이름으로 지오코딩 (도시는 명확 — "뉴욕"/"New York"이 다른 class로 와도 수용)
+                            const cityNm = det.cityInName(np);
+                            let g;
+                            if (cityNm) {
+                                g = await _geocodeQuiet(cityNm, false);
+                                if (g && cityNm !== np) dbg(`📍 이름 속 도시로 지오코딩: "${np}" → "${cityNm}"`);
+                            } else {
+                                // 일반 장소 → placeOnly (도시/지역이면 핀 이동, 아니면 현재근처 유지)
+                                g = await _geocodeQuiet(np, true);
                             }
                             if (g) {
                                 await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
@@ -1141,7 +1141,7 @@ async function _ensureTempPinned() {
             const cityNm = det.cityInName(l.name);
             if (cityNm) {
                 // 이름에 도시/국가 → 그 위치로 지오코딩 (집 근처 오배치 교정)
-                const g = await _geocodeQuiet(cityNm, true);
+                const g = await _geocodeQuiet(cityNm, false);
                 if (g) {
                     await lm.updateLocation(l.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
                     changed++;
@@ -1178,7 +1178,7 @@ async function scanSchedule(text, source) {
         const _curL = lm.locations.find(l => l.id === lm.currentLocationId);
         const _curHint = _curL ? `\n참고: 캐릭터의 현재 위치는 "${_curL.name}"${_curL.address ? ` (${_curL.address})` : ''} 근처야. geo에는 이 지역 맥락을 반영해 실제 지명을 넣어줘 (예: 현재 멕시코 카보면 "만타 레스토랑, 카보 산 루카스").` : '';
         const prompt = `다음 RP 텍스트에서 "앞으로 예정된 일정/약속"만 추출해. 이미 일어난 일이 아니라 미래 계획만.
-JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place":"장소명 또는 빈 문자열","geo":"지도 검색용 실제 위치 — 다른 도시·국가면 그 지명까지 포함 (예: '도쿄 디즈니랜드, 일본', '신세계백화점 강남, 서울'). 가상이거나 불명확하면 빈 문자열","when":"예상 일시 (예: 내일 저녁 7시, 3일 후, 다음 주 토요일)","what":"무엇을 할지 짧게"}
+JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place":"구체적인 장소·시설·도시 이름만 (예: '후쿠오카 공항', '강남 신세계백화점', '도쿄'). 형용사·사물·동작 파편(예: '두꺼운', '작전 지도')은 장소가 아니므로 빈 문자열. 명확한 장소명이 없으면 빈 문자열","geo":"지도 검색용 실제 위치 — 다른 도시·국가면 그 지명까지 포함 (예: '도쿄 디즈니랜드, 일본', '신세계백화점 강남, 서울'). 가상이거나 불명확하면 빈 문자열","when":"예상 일시 (예: 내일 저녁 7시, 3일 후, 다음 주 토요일)","what":"무엇을 할지 짧게"}
 구체적인 미래 계획이 없으면 {"hasPlan":false} 만 출력.${_curHint}
 
 텍스트:
@@ -1225,7 +1225,7 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
                 // v0.9.36: 실패 시 이름 속 도시로 재시도
                 if (!g) {
                     const cityNm = det.cityInName(geoQ) || det.cityInName(loc.name);
-                    if (cityNm) g = await _geocodeQuiet(cityNm, true);
+                    if (cityNm) g = await _geocodeQuiet(cityNm, false);
                 }
                 if (g) {
                     await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });

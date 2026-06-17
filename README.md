@@ -89,6 +89,10 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.42
+- [지오코딩] 외국 도시(뉴욕/도쿄 등)가 집 근처로 찍히던 문제 — placeOnly 필터가 Nominatim의 'place'/'boundary' class만 받아서 "뉴욕"/"New York"이 다른 class로 오면 거부됐음. **알려진 도시/국가는 placeOnly 없이 지오코딩**하도록 변경 (scanMessage·scanSchedule·마이그레이션 전부)
+- [예정장소 오탐] scanSchedule이 "두꺼운" 같은 형용사·사물 파편을 장소로 등록하던 문제 — 프롬프트에 "구체적 장소·시설·도시 이름만, 형용사·사물 파편은 빈 문자열" 가이드 추가
+
 ### v0.9.41
 - 🔥 [핵심 버그] **현재 이동 감지가 v0.9.0부터 완전히 죽어있었음** — 활성 `scanMessage()`가 즉시 `return false`만 하고, 실제 로직(`_legacyScanMessage`)은 호출되지 않는 상태. v0.9.23에서 추가한 detectMode·confirm·지오코딩 등 모든 개선이 죽은 코드에 들어가 있었음. scanMessage를 실제 로직에 연결 → detectMode 설정이 비로소 동작
 - [confirm 모드] 확인 팝업이 조용히 안 뜨던 문제 — `#send_but` 존재/표시 여부로 막던 가드 제거(독립 오버레이라 불필요)
