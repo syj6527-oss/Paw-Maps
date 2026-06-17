@@ -89,6 +89,9 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.40
+- [진단] 디버그 로그(🐛)에 감지 설정 상태 추가 — `enabled` / `🔍 detectMode(장소감지)` / `📅 autoSchedule` / `📝 autoEvent` / `autoDetectPaused`. detectMode가 OFF면 현재 이동이 감지 안 되는 게 한눈에 보임. 감지가 안 될 때 이 로그를 확인
+
 ### v0.9.39
 - [영어 감지 보강] 실제 RP 영어 문장으로 검증하며 영어 이동 동사 대폭 확장 (engMoveVerbs: reach·reaching·make it to·pull into·stop by·step into·head into·landed in/at 등). "managed to reach Caesar's share house" 같은 타동사+소유격 목적어도 인식
 - 검증: Tokyo/JFK Airport/New York/share house/football field/arrivals hall 정상 감지, 도로(Van Wyck Expressway)·향수성 언급("peace of Cabo")은 오탐 없이 제외

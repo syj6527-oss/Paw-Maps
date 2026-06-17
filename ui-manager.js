@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.39</span></b>
+                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.40</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -5615,6 +5615,11 @@ JSON만 응답. 앞뒤에 설명·코드블록·주석 금지.`;
         // v0.9.0: 현재 저장된 설정 값 확인 (키 자체는 마스킹)
         const s = extension_settings[EXTENSION_NAME] || {};
         const cfgSummary = [
+            `enabled: ${s.enabled !== false ? 'on' : 'OFF ⚠️'}`,
+            `🔍 detectMode(장소감지): ${s.detectMode || (s.autoDetect ? 'auto(레거시)' : 'OFF ⚠️ 현재이동 감지안됨')}`,
+            `📅 autoSchedule(예정일정): ${s.autoSchedule ? 'on' : 'off'}`,
+            `📝 autoEvent: ${s.autoEvent !== false ? 'on' : 'off'}`,
+            `autoDetectPaused: ${(typeof window !== 'undefined' && window._wtIsPaused && window._wtIsPaused()) ? '⏸️ PAUSED ⚠️' : 'no'}`,
             `provider: ${s.llmProvider || '(미설정)'}`,
             `model: ${s.llmModel || '(미설정)'}`,
             `llmApiKey: ${s.llmApiKey ? `***${s.llmApiKey.slice(-4)} (${s.llmApiKey.length}자)` : '(없음)'}`,

@@ -28,6 +28,7 @@ export async function runWithoutAutoDetect(task, cooldownMs = 1500) {
 function isAutoDetectPaused() {
     return _autoDetectPauseCount > 0;
 }
+if (typeof window !== 'undefined') window._wtIsPaused = isAutoDetectPaused;
 
 // ========== v0.9.2: ST 데이터 호출 충돌 방어 ==========
 //   1) ST가 응답 생성 중일 때(_stBusy) 확장의 자동 LLM 호출/쓰기를 피해서 호출 경쟁 방지
