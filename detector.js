@@ -416,6 +416,24 @@ export class LocationDetector {
         return null;
     }
 
+    // v0.9.36: 장소 이름 안에 알려진 도시/지역/국가가 들어있으면 반환 (지오코딩 폴백용, 이동 맥락 불필요)
+    cityInName(name) {
+        if (!name) return null;
+        const lo = name.toLowerCase();
+        let best = null;
+        for (const city of this.cityNames) {
+            const cl = city.toLowerCase();
+            if (/[a-zA-Z]/.test(city)) {
+                const rx = new RegExp('\\b' + cl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+                if (!rx.test(name)) continue;
+            } else {
+                if (!lo.includes(cl)) continue;
+            }
+            if (!best || city.length > best.length) best = city; // 더 구체적인(긴) 지명 우선
+        }
+        return best;
+    }
+
     _detectCity(text) {
         const lo = text.toLowerCase();
         // 이동 맥락 확인

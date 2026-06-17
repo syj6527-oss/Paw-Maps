@@ -59,7 +59,8 @@
 @media(min-width:768px){.wt-panel{width:380px;right:-400px;border-left:2px solid var(--wt-border)}}
 
 .wt-panel-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--wt-surface);border-bottom:1px solid var(--wt-border);flex-shrink:0}
-.wt-panel-title{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:700;color:var(--wt-brown)}
+.wt-panel-title{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:700;color:var(--wt-brown);text-transform:uppercase}
+#wt-wand-btn{text-transform:uppercase}
 
 .wt-panel-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;max-width:100%}
 .wt-panel-body::-webkit-scrollbar{width:4px}

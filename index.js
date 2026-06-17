@@ -548,7 +548,15 @@ async function _legacyScanMessage(text, source = 'USER') {
                     setTimeout(async () => {
                         try {
                             // v0.9.34: 지역/도시/국가명이면 지오코딩해서 실제 위치로 핀 이동 (일반 장소는 현재 근처 유지)
-                            const g = await _geocodeQuiet(np, true);
+                            let g = await _geocodeQuiet(np, true);
+                            // v0.9.36: 실패 시 이름 속 도시로 재시도 ("도쿄 롯폰기 호텔" → "도쿄")
+                            if (!g) {
+                                const cityNm = det.cityInName(np);
+                                if (cityNm && cityNm !== np) {
+                                    g = await _geocodeQuiet(cityNm, true);
+                                    if (g) dbg(`📍 이름 속 도시로 지오코딩: "${np}" → "${cityNm}"`);
+                                }
+                            }
                             if (g) {
                                 await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr });
                                 dbg(`📍 새 장소 지역 지오코딩: "${np}" → ${g.lat.toFixed(3)},${g.lng.toFixed(3)}`);
@@ -1195,7 +1203,12 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
             const geoQ = (p.geo && String(p.geo).trim()) || (p.place && String(p.place).trim()) || '';
             let placed = false;
             if (geoQ) {
-                const g = await _geocodeQuiet(geoQ);
+                let g = await _geocodeQuiet(geoQ);
+                // v0.9.36: 실패 시 이름 속 도시로 재시도
+                if (!g) {
+                    const cityNm = det.cityInName(geoQ) || det.cityInName(loc.name);
+                    if (cityNm) g = await _geocodeQuiet(cityNm, true);
+                }
                 if (g) {
                     await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr });
                     placed = true;
