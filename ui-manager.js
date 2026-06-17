@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.27</span></b>
+                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.28</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -1447,9 +1447,10 @@ ${trimmed.substring(0, 1500)}`;
         // ★ Leaflet 풀스크린이면 장소목록/이동히스토리 숨김 유지
         if (this._isLeafletFull) {
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
-            $('.wt-panel-header,.wt-map-mode-bar').hide(); // ★ refresh마다 강제 숨김
+            $('.wt-map-mode-bar').hide(); // 탭만 숨김 (헤더는 유지 → 닫기 ✕ 접근)
+            $('.wt-panel-header').show();
             $('#wt-paw-nav').show();
-            $('#wt-float-close').show(); // 헤더 숨는 풀스크린 → 플로팅 닫기 노출
+            $('#wt-float-close').hide();
         } else {
             $('#wt-float-close').hide();
             this._updLocList(); this._updMoveList();
@@ -1511,8 +1512,8 @@ ${trimmed.substring(0, 1500)}`;
             $('#wt-panel-body').addClass('wt-leaflet-full');
             $('#wt-loc-toggle,#wt-loc-wrap,#wt-move-toggle,#wt-move-wrap,#wt-add-toggle,#wt-add-form,.wt-scene-loc,#wt-popover').hide();
             $('.wt-map-mode-bar').hide(); // ★ 약도/Paw Map 탭 숨김
-            $('.wt-panel-header').hide(); // ★ 헤더 숨김
-            $('#wt-float-close').show(); // ★ 헤더 숨겨도 닫을 수 있게 플로팅 버튼 노출
+            $('.wt-panel-header').show(); // ★ 헤더 유지 → 깔끔한 닫기 ✕ 접근 (맵은 헤더 높이만큼만 축소)
+            $('#wt-float-close').hide();
             $('#wt-map-section').show();
             $('#wt-map-toggle').hide(); // 접기 버튼 숨김
             $('#wt-btn-refresh').hide(); // 약도 재생성 숨김
