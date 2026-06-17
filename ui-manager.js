@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.43</span></b>
+                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.44</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -2356,6 +2356,7 @@ ${trimmed.substring(0, 1500)}`;
                 <button class="wt-bs-pill-btn" data-action="edit" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #5E84E2;background:#EAF0FF;font-size:10.5px;font-weight:600;color:#3A5FBA;white-space:nowrap;cursor:pointer;font-family:inherit">✏️ 수정</button>
                 <button class="wt-bs-pill-btn" data-action="save" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #8B6BB4;background:#F3EEFA;font-size:10.5px;font-weight:600;color:#6B4F91;white-space:nowrap;cursor:pointer;font-family:inherit">🔖 ${((loc.tags||[]).length ? (loc.tags||[]).map(t=>({favorites:'💜',starred:'⭐',wantToGo:'🚩',travel:'🧳'})[t]||'').join('') : '저장')}</button>
                 <button class="wt-bs-pill-btn" data-action="dist" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E07C3A;background:#FFF3E8;font-size:10.5px;font-weight:600;color:#B85A1A;white-space:nowrap;cursor:pointer;font-family:inherit">📏 거리</button>
+                <button class="wt-bs-pill-btn" data-action="del" style="display:flex;align-items:center;gap:3px;padding:6px 12px;border-radius:18px;border:1.5px solid #E2574C;background:#FDECEA;font-size:10.5px;font-weight:600;color:#C0392B;white-space:nowrap;cursor:pointer;font-family:inherit">🗑️ 삭제</button>
             </div>
             <div id="wt-bs-tabs" style="display:flex;border-bottom:2px solid #F0EDE5">
                 <div class="wt-bs-tab" data-tab="overview" style="flex:1;text-align:center;padding:8px;font-size:11px;font-weight:600;color:#2B8A6E;cursor:pointer;border-bottom:2.5px solid #2B8A6E;margin-bottom:-2px">개요</div>
@@ -2521,6 +2522,13 @@ ${trimmed.substring(0, 1500)}`;
             if (action === 'edit' && id) { self._hideBottomSheet(); self.showPop(id); }
             if (action === 'dist' && id) { self._showDistanceMeasure(id); }
             if (action === 'save' && id) { self._showTagPopup(id, $(this)); }
+            if (action === 'del' && id) {
+                const loc = self.lm.locations.find(l => l.id === id);
+                const nm = loc?.name || '이 장소';
+                if (confirm(`"${nm}"를 삭제할까? (하위 장소·이벤트도 함께 삭제, 되돌릴 수 없음)`)) {
+                    self.lm.deleteLocation(id).then(() => { self.pi?.inject(); self.refresh(); self._hideBottomSheet(); toastSuccess(`🗑️ "${nm}" 삭제됨`); });
+                }
+            }
         });
         bs.find('.wt-bs-tab').on('click', function(e) {
             e.stopPropagation();

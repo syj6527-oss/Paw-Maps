@@ -211,6 +211,8 @@ export class LocationDetector {
             // 추가 도시/관광지
             '칸쿤','카보','괌','하와이','발리','세부','다낭','오키나와','니스','베네치아','피렌체',
             'Cancun','Cabo San Lucas','Guam','Hawaii','Bali','Cebu','Okinawa','Nice','Venice','Florence',
+            // 미주/유럽 도시 (한국어 표기) — AI가 한국어로 쓸 때
+            '뉴욕','로스앤젤레스','샌프란시스코','시카고','런던','파리','베를린','로마','마드리드','바르셀로나','암스테르담',
         ];
     }
 
@@ -418,6 +420,35 @@ export class LocationDetector {
             }
         }
         return null;
+    }
+
+    // v0.9.44: 알려진 도시 → "City, Country" 영문 쿼리 (한국어 지명이 Nominatim 도시 결과에 안 뜨는 문제 해결)
+    cityGeoQuery(name) {
+        if (!name) return name;
+        const hint = {
+            // 일본
+            '도쿄':'Tokyo, Japan','오사카':'Osaka, Japan','교토':'Kyoto, Japan','요코하마':'Yokohama, Japan',
+            '나고야':'Nagoya, Japan','삿포로':'Sapporo, Japan','후쿠오카':'Fukuoka, Japan','고베':'Kobe, Japan',
+            '히로시마':'Hiroshima, Japan','센다이':'Sendai, Japan','나라':'Nara, Japan','오키나와':'Okinawa, Japan',
+            // 중국
+            '베이징':'Beijing, China','상하이':'Shanghai, China','광저우':'Guangzhou, China','선전':'Shenzhen, China',
+            '항저우':'Hangzhou, China','난징':'Nanjing, China','충칭':'Chongqing, China','청두':'Chengdu, China',
+            '시안':"Xi'an, China",'우한':'Wuhan, China',
+            // 미주/유럽 (한국어 표기)
+            '뉴욕':'New York, USA','로스앤젤레스':'Los Angeles, USA','샌프란시스코':'San Francisco, USA',
+            '시카고':'Chicago, USA','런던':'London, UK','파리':'Paris, France','베를린':'Berlin, Germany',
+            '로마':'Rome, Italy','마드리드':'Madrid, Spain','바르셀로나':'Barcelona, Spain','암스테르담':'Amsterdam, Netherlands',
+            // 관광지
+            '칸쿤':'Cancun, Mexico','카보':'Cabo San Lucas, Mexico','괌':'Guam','하와이':'Honolulu, Hawaii, USA',
+            '발리':'Bali, Indonesia','세부':'Cebu, Philippines','다낭':'Da Nang, Vietnam',
+            '니스':'Nice, France','베네치아':'Venice, Italy','피렌체':'Florence, Italy',
+            // 국가
+            '한국':'South Korea','대한민국':'South Korea','일본':'Japan','중국':'China','미국':'United States',
+            '영국':'United Kingdom','프랑스':'France','독일':'Germany','이탈리아':'Italy','스페인':'Spain',
+            '캐나다':'Canada','호주':'Australia','멕시코':'Mexico','브라질':'Brazil','인도':'India',
+            '태국':'Thailand','베트남':'Vietnam','필리핀':'Philippines','인도네시아':'Indonesia',
+        };
+        return hint[name] || name;
     }
 
     // v0.9.36: 장소 이름 안에 알려진 도시/지역/국가가 들어있으면 반환 (지오코딩 폴백용, 이동 맥락 불필요)
