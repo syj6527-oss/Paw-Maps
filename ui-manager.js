@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.40</span></b>
+                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.41</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -4164,8 +4164,6 @@ ${trimmed.substring(0, 1500)}`;
     // v0.9.23: 감지된 새 장소를 팝업으로 확인 후 등록 (확인 모드)
     showDetectConfirm(name) {
         $('#wt-detect-overlay').remove();
-        const sendBtn = document.querySelector('#send_but');
-        if (!sendBtn || sendBtn.offsetParent === null) return;
         const self = this;
         const safe = (name || '').replace(/"/g, '&quot;');
         const overlay = $(`<div id="wt-detect-overlay" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);width:320px;max-width:90vw;background:rgba(245,244,237,0.98);border:2px solid #2B8A6E;border-radius:14px;padding:10px 14px;z-index:2147483646;box-shadow:0 6px 24px rgba(0,0,0,0.2);backdrop-filter:blur(8px);font-family:-apple-system,'Noto Sans KR',sans-serif">

@@ -89,6 +89,10 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.41
+- 🔥 [핵심 버그] **현재 이동 감지가 v0.9.0부터 완전히 죽어있었음** — 활성 `scanMessage()`가 즉시 `return false`만 하고, 실제 로직(`_legacyScanMessage`)은 호출되지 않는 상태. v0.9.23에서 추가한 detectMode·confirm·지오코딩 등 모든 개선이 죽은 코드에 들어가 있었음. scanMessage를 실제 로직에 연결 → detectMode 설정이 비로소 동작
+- [confirm 모드] 확인 팝업이 조용히 안 뜨던 문제 — `#send_but` 존재/표시 여부로 막던 가드 제거(독립 오버레이라 불필요)
+
 ### v0.9.40
 - [진단] 디버그 로그(🐛)에 감지 설정 상태 추가 — `enabled` / `🔍 detectMode(장소감지)` / `📅 autoSchedule` / `📝 autoEvent` / `autoDetectPaused`. detectMode가 OFF면 현재 이동이 감지 안 되는 게 한눈에 보임. 감지가 안 될 때 이 로그를 확인
 

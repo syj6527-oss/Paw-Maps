@@ -145,11 +145,10 @@ function dbg(msg) {
 }
 
 // ========== 메시지 스캔 (USER/AI 감도 분리) ==========
+// v0.9.41: detectMode 도입으로 자동 감지 재활성화 — 실제 로직(_legacyScanMessage) 연결.
+//   detectMode='off'(기본)이면 _legacyScanMessage 내부에서 즉시 return하므로 옵트인 안전.
 async function scanMessage(text, source = 'USER') {
-    // v0.9.0: 자동 감지 완전 제거 — 수동 입력 모드로 전환
-    //   장소/이벤트 자동 추출 비활성화. 드래그→이벤트 수동 등록만 유지.
-    //   이전 detect/detectNewPlace/detectNPCs/detectPromisePlace 로직 전부 비활성.
-    return false;
+    return await _legacyScanMessage(text, source);
 }
 
 // v0.9.0 비활성: 이전 자동 감지 로직 (참고용으로 유지, 호출되지 않음)
