@@ -909,6 +909,21 @@ async function _geocodeQuiet(query, placeOnly = false, retry = 0) {
     }
 }
 
+// v0.9.45: 도시명이면 그 도시로 지오코딩해서 좌표 보정 (confirm 팝업 등록 등 외부에서 호출)
+async function _geoFixCity(locId, name) {
+    try {
+        const cityNm = det.cityInName(name);
+        if (!cityNm) return;
+        const g = await _geocodeQuiet(det.cityGeoQuery(cityNm), true);
+        if (g) {
+            await lm.updateLocation(locId, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
+            dbg(`📍 confirm 등록 도시 지오코딩: "${name}" → "${cityNm}"`);
+            if (ui.panelVisible) ui.refresh();
+        }
+    } catch (_) {}
+}
+if (typeof window !== 'undefined') window._wtGeoFixCity = _geoFixCity;
+
 async function _geocodePlace(locId, placeName, retry = 0) {
     dbg(`🌐 Geocoding attempt ${retry + 1}: "${placeName}" (locId=${locId})`);
     try {
@@ -1151,7 +1166,7 @@ async function _ensureTempPinned() {
                 if (g) {
                     await lm.updateLocation(l.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
                     changed++;
-                    await new Promise(r => setTimeout(r, 400)); // rate-limit 완화
+                    await new Promise(r => setTimeout(r, 1100)); // rate-limit 완화
                     continue;
                 }
                 // 지오코딩 실패 → _geoFixed 안 박음 (다음 로드에 재시도)

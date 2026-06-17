@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.44</span></b>
+                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.45</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -4197,6 +4197,7 @@ ${trimmed.substring(0, 1500)}`;
                     self.pi?.inject();
                     if (self.panelVisible) self.refresh();
                     toastSuccess(`📍 "${loc.name}" 등록 + 현재 위치로 설정!`);
+                    if (window._wtGeoFixCity) window._wtGeoFixCity(loc.id, loc.name);
                     setTimeout(async () => { try { await self.lm.autoCalcDistances(); await self.lm.autoReverseGeocode(); self.pi?.inject(); } catch (_) {} }, 1500);
                 }
             } catch (e) { toastWarn('등록 실패: ' + e.message); }
