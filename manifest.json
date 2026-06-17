@@ -1,13 +1,12 @@
 {
-    "display_name": "🎤 Hot Mic",
-    "name": "hot-mic",
-    "version": "2.28.6",
-    "description": "마이크 꺼진 줄 알았지? 캐릭터 몰래 다 녹음되는 감독판 코멘터리. RP에 개입하지 않고 해설만 답니다. 다큐/스포츠중계/예능/법정수사/공략집/위키/속보 7가지 모드 + 테마·투명도 조절.",
-    "author": "Yun",
+    "display_name": "🐾 Paw Map",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "homePage": "https://github.com/YOUR_USERNAME/SillyTavern-HotMic",
-    "auto_update": true,
-    "tags": ["utility", "fun", "commentary"],
-    "requires": []
+    "author": "Yun",
+    "version": "0.9.27",
+    "homePage": "https://github.com/syj6527-oss/RP_World_Tracker",
+    "auto_update": true
 }
