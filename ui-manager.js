@@ -230,7 +230,7 @@ export class UIManager {
     createSettingsPanel() {
         const html = `<div id="wt-settings" class="wt-settings"><div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🐾 Paw Map <span class="wt-version" style="cursor:default;user-select:none">v0.9.34</span></b>
+                <b>🐾 PAW MAP <span class="wt-version" style="cursor:default;user-select:none">v0.9.35</span></b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div><div class="inline-drawer-content">
                 <div class="wt-s-row"><label><input type="checkbox" id="wt-s-enabled"/> 활성화</label></div>
@@ -649,7 +649,7 @@ export class UIManager {
 
     registerWandButton() {
         try { const b=document.createElement('div'); b.id='wt-wand-btn'; b.className='list-group-item flex-container flexGap5';
-            b.innerHTML='<span>🐾</span> Paw Map'; b.addEventListener('click',()=>this.togglePanel());
+            b.innerHTML='<span>🐾</span> PAW MAP'; b.addEventListener('click',()=>this.togglePanel());
             const m=document.getElementById('extensionsMenu'); if(m)m.appendChild(b); } catch(e){}
     }
 
@@ -658,7 +658,7 @@ export class UIManager {
         const html = `
         <div id="wt-panel" class="wt-panel">
             <div class="wt-panel-header">
-                <div class="wt-panel-title"><span>🐾</span> Paw Map</div>
+                <div class="wt-panel-title"><span>🐾</span> PAW MAP</div>
                 <div style="display:flex;gap:4px;align-items:center">
                     <button id="wt-fantasy-btn" class="wt-btn-icon" style="font-size:16px;opacity:.5" title="판타지 모드 (업뎃 예정)">🏰</button>
                     <button id="wt-data-btn" class="wt-btn-icon" style="font-size:16px">⚙️</button>
@@ -682,7 +682,7 @@ export class UIManager {
                 <div class="wt-map-toggle" id="wt-map-toggle" style="display:none">🗺️ 지도 ▾</div>
                 <div id="wt-map-section" style="display:none">
                     <div class="wt-map-mode-bar" style="display:none">
-                        <button id="wt-mode-leaflet" class="wt-mode-btn wt-mode-active">🐾 Paw Map</button>
+                        <button id="wt-mode-leaflet" class="wt-mode-btn wt-mode-active">🐾 PAW MAP</button>
                         <button id="wt-mode-node" class="wt-mode-btn">🗺️ 약도</button>
                         <button id="wt-mode-fantasy" class="wt-mode-btn" style="display:none">🏰 지도</button>
                     </div>
@@ -829,7 +829,7 @@ export class UIManager {
                 <div class="wt-section-toggle" id="wt-move-toggle">🚶 이동 히스토리 <span id="wt-move-arrow">▾</span></div>
                 <div id="wt-move-wrap" style="display:none"><div id="wt-move-list" class="wt-move-list"></div></div>
             </div>
-            <!-- 🐾 Paw Map 하단 탭 (Leaflet 모드에서만 보임) -->
+            <!-- 🐾 PAW MAP 하단 탭 (Leaflet 모드에서만 보임) -->
             <div id="wt-paw-nav" style="display:none;border-top:1px solid #E0E0E0;background:#fff;flex-shrink:0;z-index:40">
                 <div style="display:flex">
                     <div class="wt-paw-tab wt-paw-tab-on" data-tab="explore" onclick="window.__wtNavTab&&window.__wtNavTab('explore',this)" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 4px 12px;min-height:68px;cursor:pointer;background:#fff">
@@ -1526,7 +1526,7 @@ ${trimmed.substring(0, 1500)}`;
             if (lContainer) { lContainer.style.flex = '1'; lContainer.style.height = 'auto'; lContainer.style.minHeight = '0'; }
             // 3. Paw Map 태그 (좌하단)
             if (!$('#wt-pawmap-tag').length) {
-                $('#wt-leaflet-wrap').append('<div id="wt-pawmap-tag" style="position:absolute;bottom:8px;left:8px;z-index:20;font-size:11px;font-weight:600;color:rgba(0,0,0,.35);font-family:Outfit,sans-serif;pointer-events:none">🐾 Paw Map</div>');
+                $('#wt-leaflet-wrap').append('<div id="wt-pawmap-tag" style="position:absolute;bottom:8px;left:8px;z-index:20;font-size:11px;font-weight:600;color:rgba(0,0,0,.35);font-family:Outfit,sans-serif;pointer-events:none">🐾 PAW MAP</div>');
             }
             if (!this.leafletRenderer) {
                 const ok = await loadLeaflet();

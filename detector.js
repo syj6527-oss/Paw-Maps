@@ -44,6 +44,8 @@ export class LocationDetector {
             '얼굴','머리','어깨','가슴','손목','손등','손바닥','발목','무릎','허리','입가','입술','눈가','눈빛','이마','어깻',
             '표정','목소리','분위기','마음','기분','감정','생각','시선','고개','자세','걸음','발걸음',
             '마지막','처음','나중','방금','잠시','동안','사이','이내','당신','본인','그들','상대방','우리들',
+            // 도로/조각 단어 오탐 방지 (교차로→"교차" 등)
+            '교차','교차로','스크램블','한복판','통창','인파','한가운','정중앙','복판',
             '이중문','출입문','철문','나무문','유리문',
             // 부사 오탐 방지
             '제멋대','마음대','맘대','억지','저절','함부','대충대',
@@ -259,6 +261,10 @@ export class LocationDetector {
         if (this.futureKw.some(k => clean.toLowerCase().includes(k))) return null;
         const nar = clean.replace(/"[^"]*"/g,' ').replace(/「[^」]*」/g,' ').replace(/"[^"]*"/g,' ');
         let lastFound = null;
+
+        // v0.9.35: 알려진 도시/지역/국가가 이동 맥락과 함께 나오면 최우선 — 조각 단어(교차로→"교차", 카보 산 루카스→"루카스") 오인 방지
+        const earlyCity = this._detectCity(nar);
+        if (earlyCity) { console.log(`[${EXTENSION_NAME}] 🆕 (city-priority): "${earlyCity}"`); return earlyCity; }
 
         // 한국어 방법 1: 조사 패턴 — USER만
         if (mode === 'user') {
