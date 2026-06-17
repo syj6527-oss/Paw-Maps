@@ -22,9 +22,12 @@ export class LocationDetector {
             '놀러갔','놀러가','놀러간','여행갔','여행간','여행을 떠',
             '출발했','출발한','다녀왔','다녀온','구경갔','구경하러',
             '데려갔','데려간','끌고 갔','끌려갔','이사했','이사한',
-            'headed to','walked to','went to','arrived at','entered','moved to',
+            'headed to','walked to','went to','arrived at','arrived in','arrived to','entered','moved to',
             'returned to','reached','walked into','headed home','went home','got home','came home',
-            'drove to','ran to','rushed to','hurried to','traveled to','flew to',
+            'drove to','ran to','rushed to','hurried to','traveled to','travelled to','flew to','flew into','flew in',
+            'landed in','landed at','landed','made it to','got to','came to','back in','now in','here in',
+            'reach','reaching','stop by','stopped by','stopping by','pull into','pulled into','pulled in','pull in',
+            'step into','stepped into','head into','heading into','heading to','heading toward','headed toward','walk to','walking to',
         ];
         this.presKw = ['에서 앉','에서 서 있','에 앉아','에 서서','안에 있','안에서'];
         this.futureKw = ['갈래','갈까','가자','가볼까','어때','가고 싶','가보자','갈 거','갈게','shall we',"let's go",'want to go','how about'];
@@ -147,10 +150,11 @@ export class LocationDetector {
         ];
 
         this.engMoveVerbs = [
-            'headed to','walked to','went to','arrived at','moved to',
+            'headed to','walked to','went to','arrived at','arrived in','moved to',
             'returned to','ran to','rushed to','hurried to',
-            'entered','reached','left','marched to',
-            'stepped into','burst into','stormed into',
+            'entered','reached','reach','reaches','reaching','left','marched to',
+            'stepped into','burst into','stormed into','step into','pull into','pulled into',
+            'made it to','make it to','got to','get to','stop by','stopped by','head into','heading to','heading into','landed at','landed in',
             'headed home','went home','got home','came home',
             'drove to','traveled to','flew to','took a taxi to',
             'made it to','pulled up to','showed up at',

@@ -89,6 +89,13 @@ Google Search Grounding은 1,000회당 $35 (별도 유료).
 
 ## 변경 이력
 
+### v0.9.39
+- [영어 감지 보강] 실제 RP 영어 문장으로 검증하며 영어 이동 동사 대폭 확장 (engMoveVerbs: reach·reaching·make it to·pull into·stop by·step into·head into·landed in/at 등). "managed to reach Caesar's share house" 같은 타동사+소유격 목적어도 인식
+- 검증: Tokyo/JFK Airport/New York/share house/football field/arrivals hall 정상 감지, 도로(Van Wyck Expressway)·향수성 언급("peace of Cabo")은 오탐 없이 제외
+
+### v0.9.38
+- [감지 버그] 영어 "we arrived **in** Tokyo"가 감지 안 되던 문제 — 이동 키워드에 "arrived at"만 있고 "arrived in"(도시엔 보통 in 사용)이 빠져있었음. arrived in/to·landed·flew into·made it to·got to 등 영어 도착/이동 표현 대폭 보강
+
 ### v0.9.37
 - [핀 교정] 이름에 도시/국가가 있는데 집 근처에 잘못 박힌 임시/예정 장소("하네다 공항 VIP 의전실, 도쿄, 일본" → 서울)를 채팅 열 때 **그 도시로 자동 재지오코딩**(도쿄로 이동). 기존에 잘못 박힌 장소도 교정됨. `_geoFixed` 플래그로 1회만 처리(중복 호출 방지)
 
