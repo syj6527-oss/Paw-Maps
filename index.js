@@ -558,7 +558,7 @@ async function _legacyScanMessage(text, source = 'USER') {
                                 }
                             }
                             if (g) {
-                                await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr });
+                                await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
                                 dbg(`📍 새 장소 지역 지오코딩: "${np}" → ${g.lat.toFixed(3)},${g.lng.toFixed(3)}`);
                                 if (s.showDetectToast) wtNotify(`📍 ${loc.name} → ${g.addr}`, 'new', 3000);
                             }
@@ -1127,23 +1127,41 @@ function _hasScheduleSignal(text) {
     return /(내일|모레|글피|다음\s*주|담주|이따|좀\s*있다|나중에|저녁에|아침에|점심에|밤에|\d+\s*시|\d+일\s*후|다음\s*달|주말|약속|예약|예매|만나(?:자|기로|요)|보자|가기로|갈\s*예정|갈\s*거|할\s*예정|하기로|계획|tomorrow|tonight|later|next\s+(?:week|day|month)|appointment|reserv|booked|plan\s+to|let'?s\s+meet|meet\s+(?:at|up))/i.test(text);
 }
 // v0.9.33: 좌표 없는 임시/예정 장소(wantToGo·_tempAddress)에 핀 좌표 보정 — 채팅 열 때 무조건 보이게
+// v0.9.37: 이름에 도시가 있으면 그 도시로 재지오코딩 (집 근처 오배치 교정). _geoFixed로 1회만.
 async function _ensureTempPinned() {
     try {
         if (!lm.currentChatId) return;
-        const need = lm.locations.filter(l => !l.parentId && (l.lat == null || l.lng == null) &&
-            ((Array.isArray(l.tags) && l.tags.includes('wantToGo')) || l._tempAddress));
-        if (!need.length) return;
         const anchor = lm.locations.find(l => l.lat != null && l.lng != null);
         const base = anchor ? { lat: anchor.lat, lng: anchor.lng } : { lat: 37.5665, lng: 126.9780 };
-        for (const l of need) {
-            const dist = 80 + Math.random() * 220, ang = Math.random() * 2 * Math.PI;
-            await lm.updateLocation(l.id, {
-                lat: base.lat + (dist / 111320) * Math.cos(ang),
-                lng: base.lng + (dist / (111320 * Math.cos(base.lat * Math.PI / 180))) * Math.sin(ang)
-            });
+        let changed = 0;
+        for (const l of lm.locations) {
+            if (l.parentId || l._geoFixed) continue;
+            const isTemp = (Array.isArray(l.tags) && l.tags.includes('wantToGo')) || l._tempAddress;
+            if (!isTemp) continue;
+            const cityNm = det.cityInName(l.name);
+            if (cityNm) {
+                // 이름에 도시/국가 → 그 위치로 지오코딩 (집 근처 오배치 교정)
+                const g = await _geocodeQuiet(cityNm, true);
+                if (g) {
+                    await lm.updateLocation(l.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
+                    changed++;
+                    await new Promise(r => setTimeout(r, 400)); // rate-limit 완화
+                    continue;
+                }
+                // 지오코딩 실패 → _geoFixed 안 박음 (다음 로드에 재시도)
+            }
+            // 도시 없음 & 좌표 없음 → 앵커 근처 배치
+            if (l.lat == null || l.lng == null) {
+                const dist = 80 + Math.random() * 220, ang = Math.random() * 2 * Math.PI;
+                await lm.updateLocation(l.id, {
+                    lat: base.lat + (dist / 111320) * Math.cos(ang),
+                    lng: base.lng + (dist / (111320 * Math.cos(base.lat * Math.PI / 180))) * Math.sin(ang),
+                    _geoFixed: true
+                });
+                changed++;
+            }
         }
-        dbg(`📍 임시 장소 핀 보정: ${need.length}곳 (anchor=${anchor?.name || '기본값'})`);
-        if (ui.panelVisible) ui.refresh();
+        if (changed) { dbg(`📍 임시 장소 핀 보정: ${changed}곳`); if (ui.panelVisible) ui.refresh(); }
     } catch (_) {}
 }
 
@@ -1210,7 +1228,7 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
                     if (cityNm) g = await _geocodeQuiet(cityNm, true);
                 }
                 if (g) {
-                    await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr });
+                    await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
                     placed = true;
                     dbg(`📍 일정 장소 지오코딩: "${geoQ}" → ${g.lat.toFixed(3)},${g.lng.toFixed(3)}`);
                     if (s.showDetectToast) wtNotify(`📍 ${loc.name} → 지도 표시 (${g.addr})`, 'new', 3500);
