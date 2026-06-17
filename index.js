@@ -545,7 +545,19 @@ async function _legacyScanMessage(text, source = 'USER') {
                     pi.inject(); if (ui.panelVisible) ui.refresh();
                     ui.showAutoToast(loc);
                     await _tryEvent(text, loc.id, source);
-                    setTimeout(async () => { try { await lm.autoCalcDistances(); await lm.autoReverseGeocode(); pi.inject(); } catch(_){} }, 1500);
+                    setTimeout(async () => {
+                        try {
+                            // v0.9.34: 지역/도시/국가명이면 지오코딩해서 실제 위치로 핀 이동 (일반 장소는 현재 근처 유지)
+                            const g = await _geocodeQuiet(np, true);
+                            if (g) {
+                                await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr });
+                                dbg(`📍 새 장소 지역 지오코딩: "${np}" → ${g.lat.toFixed(3)},${g.lng.toFixed(3)}`);
+                                if (s.showDetectToast) wtNotify(`📍 ${loc.name} → ${g.addr}`, 'new', 3000);
+                            }
+                            await lm.autoCalcDistances(); await lm.autoReverseGeocode(); pi.inject();
+                            if (ui.panelVisible) ui.refresh();
+                        } catch (_) {}
+                    }, 1500);
                 }
             }
             return true;
@@ -671,6 +683,7 @@ async function init() {
         const newId = lm.getChatId();
         dbg(`🔄 CHAT_CHANGED → ${newId}`);
         await lm.loadChat();
+        await _ensureTempPinned(); // 좌표 없는 임시/예정 장소 핀 보정
         pi.inject();
         ui.resetMap();
         if (ui.panelVisible) ui.refresh();
@@ -857,20 +870,29 @@ async function scanChatHistory(ctx) {
 jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSION_NAME}] Init:`, e); } });
 
 // ========== 자동 지오코딩 (캐릭터시트/약속 장소용) ==========
-// v0.9.32: 조용한 지오코딩 — 좌표만 반환, 실패해도 토스트 없음 (자동 일정 핀용)
-async function _geocodeQuiet(query) {
+// v0.9.32: 조용한 지오코딩 — 좌표만 반환, 실패해도 토스트 없음. HTTP/네트워크 실패 시 1회 재시도
+// v0.9.34: placeOnly=true면 도시·지역·국가(class place/boundary)만 — 임의 POI 오매칭 방지
+async function _geocodeQuiet(query, placeOnly = false, retry = 0) {
     try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=ko`;
         const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.4' } });
-        if (!res.ok) return null;
+        if (!res.ok) {
+            if (retry < 1) { await new Promise(r => setTimeout(r, 1200)); return _geocodeQuiet(query, placeOnly, retry + 1); }
+            return null;
+        }
         const data = await res.json();
         if (!Array.isArray(data) || !data.length) return null;
+        const r0 = data[0];
+        if (placeOnly && !['place', 'boundary'].includes(r0.class)) return null; // 도시/지역/국가만
         return {
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            addr: (data[0].display_name || '').split(',').slice(0, 3).join(',') || query
+            lat: parseFloat(r0.lat),
+            lng: parseFloat(r0.lon),
+            addr: (r0.display_name || '').split(',').slice(0, 3).join(',') || query
         };
-    } catch (_) { return null; }
+    } catch (_) {
+        if (retry < 1) { await new Promise(r => setTimeout(r, 1200)); return _geocodeQuiet(query, placeOnly, retry + 1); }
+        return null;
+    }
 }
 
 async function _geocodePlace(locId, placeName, retry = 0) {
@@ -1096,6 +1118,27 @@ let _lastSchedTime = 0;
 function _hasScheduleSignal(text) {
     return /(내일|모레|글피|다음\s*주|담주|이따|좀\s*있다|나중에|저녁에|아침에|점심에|밤에|\d+\s*시|\d+일\s*후|다음\s*달|주말|약속|예약|예매|만나(?:자|기로|요)|보자|가기로|갈\s*예정|갈\s*거|할\s*예정|하기로|계획|tomorrow|tonight|later|next\s+(?:week|day|month)|appointment|reserv|booked|plan\s+to|let'?s\s+meet|meet\s+(?:at|up))/i.test(text);
 }
+// v0.9.33: 좌표 없는 임시/예정 장소(wantToGo·_tempAddress)에 핀 좌표 보정 — 채팅 열 때 무조건 보이게
+async function _ensureTempPinned() {
+    try {
+        if (!lm.currentChatId) return;
+        const need = lm.locations.filter(l => !l.parentId && (l.lat == null || l.lng == null) &&
+            ((Array.isArray(l.tags) && l.tags.includes('wantToGo')) || l._tempAddress));
+        if (!need.length) return;
+        const anchor = lm.locations.find(l => l.lat != null && l.lng != null);
+        const base = anchor ? { lat: anchor.lat, lng: anchor.lng } : { lat: 37.5665, lng: 126.9780 };
+        for (const l of need) {
+            const dist = 80 + Math.random() * 220, ang = Math.random() * 2 * Math.PI;
+            await lm.updateLocation(l.id, {
+                lat: base.lat + (dist / 111320) * Math.cos(ang),
+                lng: base.lng + (dist / (111320 * Math.cos(base.lat * Math.PI / 180))) * Math.sin(ang)
+            });
+        }
+        dbg(`📍 임시 장소 핀 보정: ${need.length}곳 (anchor=${anchor?.name || '기본값'})`);
+        if (ui.panelVisible) ui.refresh();
+    } catch (_) {}
+}
+
 async function scanSchedule(text, source) {
     try {
         const s = extension_settings[EXTENSION_NAME];
@@ -1106,9 +1149,11 @@ async function scanSchedule(text, source) {
         if (!lm.currentChatId) await lm.loadChat();
         if (!lm.currentChatId) return;
         let rpDate = ''; try { rpDate = window._wtGetRpDate?.() || ''; } catch (_) {}
+        const _curL = lm.locations.find(l => l.id === lm.currentLocationId);
+        const _curHint = _curL ? `\n참고: 캐릭터의 현재 위치는 "${_curL.name}"${_curL.address ? ` (${_curL.address})` : ''} 근처야. geo에는 이 지역 맥락을 반영해 실제 지명을 넣어줘 (예: 현재 멕시코 카보면 "만타 레스토랑, 카보 산 루카스").` : '';
         const prompt = `다음 RP 텍스트에서 "앞으로 예정된 일정/약속"만 추출해. 이미 일어난 일이 아니라 미래 계획만.
 JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place":"장소명 또는 빈 문자열","geo":"지도 검색용 실제 위치 — 다른 도시·국가면 그 지명까지 포함 (예: '도쿄 디즈니랜드, 일본', '신세계백화점 강남, 서울'). 가상이거나 불명확하면 빈 문자열","when":"예상 일시 (예: 내일 저녁 7시, 3일 후, 다음 주 토요일)","what":"무엇을 할지 짧게"}
-구체적인 미래 계획이 없으면 {"hasPlan":false} 만 출력.
+구체적인 미래 계획이 없으면 {"hasPlan":false} 만 출력.${_curHint}
 
 텍스트:
 """${text.slice(0, 1500)}"""`;
@@ -1158,17 +1203,17 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
                     if (s.showDetectToast) wtNotify(`📍 ${loc.name} → 지도 표시 (${g.addr})`, 'new', 3500);
                 }
             }
-            // 지오코딩 실패 & 좌표 없으면 현재 위치 근처에 강제 배치
+            // 지오코딩 실패 & 좌표 없으면 → 현재 위치 → 좌표 있는 아무 장소 → 기본값(서울) 순으로 무조건 배치(핀 보장)
             if (!placed && (loc.lat == null || loc.lng == null)) {
-                const anchor = lm.locations.find(l => l.id === lm.currentLocationId && l.lat != null && l.lng != null);
-                if (anchor) {
-                    const dist = 80 + Math.random() * 220, ang = Math.random() * 2 * Math.PI;
-                    await lm.updateLocation(loc.id, {
-                        lat: anchor.lat + (dist / 111320) * Math.cos(ang),
-                        lng: anchor.lng + (dist / (111320 * Math.cos(anchor.lat * Math.PI / 180))) * Math.sin(ang)
-                    });
-                    dbg(`📍 일정 장소 현재 근처 배치 (지오코딩 실패): ${loc.name}`);
-                }
+                const anchor = lm.locations.find(l => l.id === lm.currentLocationId && l.lat != null && l.lng != null)
+                            || lm.locations.find(l => l.id !== loc.id && l.lat != null && l.lng != null);
+                const base = anchor ? { lat: anchor.lat, lng: anchor.lng } : { lat: 37.5665, lng: 126.9780 };
+                const dist = 80 + Math.random() * 220, ang = Math.random() * 2 * Math.PI;
+                await lm.updateLocation(loc.id, {
+                    lat: base.lat + (dist / 111320) * Math.cos(ang),
+                    lng: base.lng + (dist / (111320 * Math.cos(base.lat * Math.PI / 180))) * Math.sin(ang)
+                });
+                dbg(`📍 일정 장소 폴백 배치: ${loc.name} (anchor=${anchor?.name || '기본값'})`);
             }
             if (ui?.panelVisible) ui.refresh();
         }

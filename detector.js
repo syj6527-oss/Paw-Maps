@@ -198,6 +198,13 @@ export class LocationDetector {
             'Budapest','Stockholm','Oslo','Helsinki','Copenhagen','Dublin','Edinburgh',
             'Singapore','Bangkok','Manila','Jakarta','Hanoi','Taipei','Mumbai','Delhi',
             'Cairo','Dubai','Istanbul','Athens','Lisbon','Rio','São Paulo',
+            // 국가 (한국어) — "내일 한국 갈거야" 등
+            '한국','대한민국','일본','중국','미국','영국','프랑스','독일','이탈리아','스페인','캐나다','호주','멕시코','브라질','인도','태국','베트남','필리핀','인도네시아','싱가포르','러시아','네덜란드','스위스','스웨덴','터키','이집트','그리스','포르투갈','아일랜드','오스트리아',
+            // 국가 (영어)
+            'Korea','South Korea','Japan','China','United States','France','Germany','Italy','Spain','Canada','Australia','Mexico','Brazil','India','Thailand','Vietnam','Philippines','Indonesia','Singapore','Russia','Netherlands','Switzerland','Sweden','Turkey','Egypt','Greece','Portugal','Ireland','Austria',
+            // 추가 도시/관광지
+            '칸쿤','카보','괌','하와이','발리','세부','다낭','오키나와','니스','베네치아','피렌체',
+            'Cancun','Cabo San Lucas','Guam','Hawaii','Bali','Cebu','Okinawa','Nice','Venice','Florence',
         ];
     }
 

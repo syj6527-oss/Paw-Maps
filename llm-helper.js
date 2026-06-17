@@ -623,6 +623,9 @@ export async function callLLM(prompt, options = {}) {
     // ★ 마지막 에러 저장 (디버깅용)
     window._wtLastLLMError = null;
 
+    // v0.9.34: 토큰/thinking/temp 오버라이드는 "이번 호출만" — 끝나면(에러 포함) 무조건 정리(누수 방지)
+    try {
+
     // ★ v0.9.16: 방법 0 — 연결 프로필 (선택 시 우선). ConnectionManagerRequestService 경유.
     //   실패하면 아래 기존 직접-API / 폴백 경로로 자연스럽게 넘어감 (회귀 방지)
     const _s = extension_settings?.[EXTENSION_NAME];
@@ -726,6 +729,12 @@ export async function callLLM(prompt, options = {}) {
     }
 
     return null;
+    } finally {
+        // 이번 callLLM 호출에만 적용되는 오버라이드 정리 (누수 시 다른 호출이 256토큰 등에 걸리는 버그 방지)
+        window._wtMaxTokensOverride = null;
+        window._wtDisableThinking = false;
+        window._wtTempOverride = null;
+    }
 }
 
 // ========== 최근 채팅 맥락 추출 ==========
