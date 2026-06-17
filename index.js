@@ -551,7 +551,7 @@ async function _legacyScanMessage(text, source = 'USER') {
                             const cityNm = det.cityInName(np);
                             let g;
                             if (cityNm) {
-                                g = await _geocodeQuiet(cityNm, false);
+                                g = await _geocodeQuiet(cityNm, true);
                                 if (g && cityNm !== np) dbg(`📍 이름 속 도시로 지오코딩: "${np}" → "${cityNm}"`);
                             } else {
                                 // 일반 장소 → placeOnly (도시/지역이면 핀 이동, 아니면 현재근처 유지)
@@ -882,7 +882,8 @@ jQuery(async () => { try { await init(); } catch(e) { console.error(`[${EXTENSIO
 // v0.9.34: placeOnly=true면 도시·지역·국가(class place/boundary)만 — 임의 POI 오매칭 방지
 async function _geocodeQuiet(query, placeOnly = false, retry = 0) {
     try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=ko`;
+        const lim = placeOnly ? 5 : 1;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=${lim}&accept-language=ko`;
         const res = await fetch(url, { headers: { 'User-Agent': 'RP-World-Tracker/0.4' } });
         if (!res.ok) {
             if (retry < 1) { await new Promise(r => setTimeout(r, 1200)); return _geocodeQuiet(query, placeOnly, retry + 1); }
@@ -890,8 +891,13 @@ async function _geocodeQuiet(query, placeOnly = false, retry = 0) {
         }
         const data = await res.json();
         if (!Array.isArray(data) || !data.length) return null;
-        const r0 = data[0];
-        if (placeOnly && !['place', 'boundary'].includes(r0.class)) return null; // 도시/지역/국가만
+        let r0 = data[0];
+        if (placeOnly) {
+            // v0.9.43: 여러 결과 중 도시/지역/국가(class place·boundary)를 골라냄 — 엉뚱한 POI 방지
+            const cityR = data.find(d => ['place', 'boundary'].includes(d.class));
+            if (!cityR) return null;
+            r0 = cityR;
+        }
         return {
             lat: parseFloat(r0.lat),
             lng: parseFloat(r0.lon),
@@ -1141,7 +1147,7 @@ async function _ensureTempPinned() {
             const cityNm = det.cityInName(l.name);
             if (cityNm) {
                 // 이름에 도시/국가 → 그 위치로 지오코딩 (집 근처 오배치 교정)
-                const g = await _geocodeQuiet(cityNm, false);
+                const g = await _geocodeQuiet(cityNm, true);
                 if (g) {
                     await lm.updateLocation(l.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
                     changed++;
@@ -1190,6 +1196,14 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
         window._wtDisableThinking = false;
         const p = result ? parseLLMJson(result) : null;
         if (!p || !p.hasPlan) return;
+        // v0.9.43: 동사/형용사 활용형 파편 거르기 ("들어"=들어온다, "두꺼운" 등 — 도시도 아니고 짧은 활용형이면 장소 아님)
+        if (p.place && typeof p.place === 'string') {
+            const _pp = p.place.trim();
+            if (_pp && !det.cityInName(_pp) && _pp.length <= 3 && /[어아운은는던]$/.test(_pp)) {
+                dbg(`🚫 일정 장소 파편 무시: "${_pp}" → 현재 위치 사용`);
+                p.place = '';
+            }
+        }
         _lastSchedTime = Date.now();
         // 장소: place 있으면 find/create, 없으면 현재 위치
         let locId = lm.currentLocationId;
@@ -1225,7 +1239,7 @@ JSON만 출력 (마크다운/설명 금지): {"hasPlan":true 또는 false,"place
                 // v0.9.36: 실패 시 이름 속 도시로 재시도
                 if (!g) {
                     const cityNm = det.cityInName(geoQ) || det.cityInName(loc.name);
-                    if (cityNm) g = await _geocodeQuiet(cityNm, false);
+                    if (cityNm) g = await _geocodeQuiet(cityNm, true);
                 }
                 if (g) {
                     await lm.updateLocation(loc.id, { lat: g.lat, lng: g.lng, address: g.addr, _geoFixed: true });
